@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-22T15:33Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-22T17:35Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-22T15:33Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-22T17:35Z:**
+  - Returned: FTF-UX05 r1 (models, capabilities and cost screens): the four screens still pass all their certified tests, but they do not use the shared accessible components yet, some failures are silent or blank the whole screen, long model names and hashes overflow on phones, a confirmation dialog loses keyboard focus, and the real-browser checks were skipped. These are the same issues UX02/UX03 fixed; round 2 applies those fixes here.
+  - Returned: FTF-UX07 r1 (sign-in button redesign): the button itself is correct, bilingual and accessible, but the real-browser checks were skipped, three ways of breaking it (hidden hint, text overflow, no focus outline) go unnoticed by the tests, and the design-review evidence is missing. Round 2 is tests and evidence only.
 - **2026-10-22T15:33Z:**
   - Returned: FTF-R006-P1b r1 (Argilla reviewer accounts and workspace membership). Run against a real Argilla server, it let a reviewer from one organization be added to another organization's workspace and read its data, and a revoked reviewer could keep access during a race. The code is not reachable from the product yet (no live route), so nothing is exposed. Round 2 must fix both, pin outage handling, tighten database permissions, and test against a real Argilla server in CI.
 - **2026-10-22T11:23Z:**
