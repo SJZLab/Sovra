@@ -30616,3 +30616,70 @@ outcome (PR #854's own red CI reduced from 4 to 3 disclosed-equivalent survivors
 Control-plane allowlist decision) -- nothing further for relay on this item or on #742 until
 that decision lands. No new Backlog item claimed this shift (time went to the returned-work fix
 and the full-queue red-CI sweep). `BLOCKER.md` unchanged. No owner ask raised.
+
+## 2026-10-22T0230Z -- Scheduled relay shift -- FTF-UX02 round 2 (PR #947): 3 pre-review rounds, parked
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: read PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md fresh this shift (large files; read via targeted offsets/grep, not
+in full). STEP 0.2: no `cognee-cli` binary -- text-search fallback declared.
+
+Checked all open `[relay]` PRs for returned work first: PR #943 (`relay/FTF-UX03-r2`, 0g) and
+PR #934 (`relay/FTF-H011-P2-r1`) both had fresh CI runs in progress, neither red nor conflicted
+-- nothing to fix there. PRs #759/#732/#709 (FTF-1504/FTF-0617/FTF-R004-P3) are older open drafts,
+already claimed (open PR = claimed per the Claim rule) -- skipped, not reclaimed. PR #940
+(FTF-0904-F2, Control-plane produced) and the fresh `relay/FTF-0904-F2-r3` branch (pushed minutes
+before this shift started) meant item 0b was already in flight -- skipped per the 3-hour claim
+window. No merge conflicts found on any open PR.
+
+Claimed QUEUE.md "## Active" item **0k, FTF-UX02 Dataset-factory UI redesign round 2** (the next
+unclaimed item in priority order after 0b/0g): pushed `relay/FTF-UX02-r2` off current `main`,
+implemented findings 1 (CONFIRM-FOCUS-LOST) and 5 (CONFIRM-PROMISES-DISCARD) in full, plus
+findings 2/3/4/6 for FTF-0500A only (FTF-0516 and the rest of FTF-0501-UI left untouched,
+disclosed), added `@radix-ui/react-dialog@1.3.1` for real (the exact dependency QUEUE.md's
+"## Parked" section records as denied by the sandbox on 2026-10-20 -- the denial did not
+reproduce this run), and opened PR #947 as draft, PROVISIONAL (Law 4), with a new real-Chromium
+§72.5 evidence harness (32 tests).
+
+Ran the required "Relay is execution-only" step-4 pre-review (CLAUDE.md) myself as the
+coordinating session, since the producing worker fork could not spawn its own reviewer subagent
+-- three full rounds this shift, each a fresh independent reviewer (no prior context, strongest
+model) against `docs/operations/l2-review-brief.md` with this item's actual DoD, followed by a
+fix round when returned:
+
+- **Round 1: RETURN**, 7 findings (focus lost to `<body>` on abandon-confirm; several finding-4
+  regressions unpinned; FTF-0500A not actually bilingual; errors silent/unannounced; "labels
+  above fields" misclaimed as met; a stale-identity bug; missing UX01/evidence items). Fixed, each
+  with a fault-injected RED-then-GREEN test, independently confirmed by the reviewer's own
+  described revert points.
+- **Round 2: RETURN**, a *different* 7 findings on the fixes -- mostly test-pin gaps on code the
+  reviewer found already correct, but also 3 genuine new bugs the rebuild surfaced: raw English
+  server-error `detail` text shown to Arabic-locale users, a silent "Authorized" success result
+  with no `role="status"`, and keyboard focus falling through to `<body>` after
+  Check-authorization/Confirm-fails/Retry-fails. Fixed and independently confirmed, including
+  the reviewer's own additional fault-injection points beyond what the producer tested.
+- **Round 3: RETURN**, narrowly -- the reviewer's own words: "the code is correct on every
+  user-facing path I probed." Two items only: (1) 4 of the Arabic strings round 2 named are
+  confirmed correctly translated but still carry no exact-string assertion (coverage gap, not a
+  behavioral defect), and (2) the submission's own FTF-0500A heuristic-evaluation table was never
+  updated to reflect round 2's fixes. No reproduced behavioral defect remains at head `c61e406`.
+
+Per CLAUDE.md's 3-round limit (fix and re-review until CERTIFY or three rounds fail, then park),
+this item parks now rather than attempting a 4th cycle, regardless of how narrow the remaining
+gap is. Full QUEUE.md "## Parked" entry added (what failed, what was tried, three route options
+-- recommending Control plane either certify PR #947 as-is given the round-3 reviewer's own
+"code is correct" finding, or make the two trivial corrections directly, rather than spending a
+4th full relay-plus-review cycle on a documentation/coverage gap). Every round's full verbatim
+reviewer report and fix log is pasted into
+`docs/certifications/submissions/2026-10-22T0119Z-FTF-UX02-r2.md`; shift log in
+`docs/progress/2026-10-22T0119Z-dataset-factory.md`. PR #947 itself was not edited by this
+designated-branch PR (relay PRs/QUEUE.md stay separate, "No shared-file edits" ruling) -- a
+summary comment was left on PR #947 pointing to the Parked entry.
+
+STEP 3: this file and the designated-branch docs-only PR (QUEUE.md's Parked entry + this entry;
+neither `docs/certifications/queue.md` nor any `[relay]`-titled PR touched). STEP 4 stop
+condition: item-level park (b is for a systemic blocker; this is (per the relay process) an
+item-level park after 3 failed attempts on the same item -- not a `BLOCKER.md` case, since other
+work is unaffected). No owner ask raised (the pre-existing FTF-UX01 Dialog owner-ask line in
+QUEUE.md stays open, unchanged, since PR #947 is unmerged). Certified count/product-true count
+unchanged by this shift (PR #947 is PROVISIONAL, unmerged, parked -- Control plane has not
+certified anything here).
