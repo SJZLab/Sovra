@@ -7363,7 +7363,7 @@ FTF-0501:
   certification_state: CERTIFIED
   criticality: MUST
   description: Direct object-storage upload
-  evidence_hash: 41904e5fe5702a08a12483760c9bc811acfa2ddf
+  evidence_hash: 05545cfc57be03fab2dfc7ee1d48c96d96c30301
   implementation_state: IMPLEMENTED
   notes: >-
     kind=retained_feature; requirements=AF-02, AF-15; scenarios=Q08, Q09, Q31; deps=FTF-0500,
