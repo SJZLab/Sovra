@@ -10283,8 +10283,12 @@ FTF-0904:
   evidence_hash: 51f8753fe8aa21a6105fb62d78b4e758921d1788
   implementation_state: IMPLEMENTED
   notes: >-
-    REQUALIFICATION PENDING (Law 15, 2026-10-21T12:49Z): PR #905 (FTF-0904-F2 r1) made the generic quoted-value
-    rule print a quoted secret ending in a backslash; restored when FTF-0904-F2 r2 is certified (QUEUE 0b).
+    REQUALIFICATION PENDING (Law 15, 2026-10-22T0238Z): PR #905 (FTF-0904-F2 r1) made the generic quoted-value
+    rule print a quoted secret ending in a backslash; #940 fixed the _QUOTED_VALUE half (merged); FTF-0904-F2
+    r3 (this submission) fixes the remaining qsep/_QUOTED_SECRET escaped-quote leak plus V6/V10/V11/V17 pins;
+    restored when r3 is certified (QUEUE 0b). Disclosed, Control-plane-ruling-needed: an escaped-open single-
+    quoted value after a _SECRET_KEY_WORDS name (or the two F2 names that substring-collide with it) still
+    leaks -- fixing it needs _QUOTED_VALUE, outside r3's own file scope.
 
     WIRED 2026-10-14 via FTF-0904-W1 (child slice, CERTIFIED, PR #792 merge b4d401fc): create_app() calls
     install_api_log_redaction() -> install_redaction() first; live-path proof tests/tasks/test_ftf_0904_w1.py
