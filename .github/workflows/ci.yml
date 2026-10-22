@@ -2096,7 +2096,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       argilla-elasticsearch:
-        image: elasticsearch@sha256:632745d3d218cd1091765aa24dc72ce9998daab9a2afb189d9a32923b29c18cd # elasticsearch:8.17.0 (amd64) -- Argilla's own documented minimum search engine
+        image: elasticsearch@sha256:d45ef71c0f2680bc38b1427f53ca294ebaef4a4ea88cb243cdefc96c3e44dbab # elasticsearch:8.8.2 (amd64) -- the exact version argilla-io/argilla's own CI (.github/workflows/argilla-server.yml) tests the pinned `elasticsearch8[async] ~= 8.7.0` client library against; 8.17.0 (this job's own first real run) made every real request fail with a genuine 422, Argilla's own ValueError exception handler firing from somewhere in the request path for a reason not yet isolated beyond "real version skew against a client library pinned ~8.7.0" -- matching the exact version upstream's own CI already proves compatible removes the uncertainty rather than chasing the precise internal exception.
         env:
           discovery.type: single-node
           xpack.security.enabled: "false"
