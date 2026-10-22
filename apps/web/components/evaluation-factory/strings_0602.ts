@@ -153,6 +153,58 @@ const STRINGS = {
   },
   rowWord: { en: "Row", ar: "الصف" },
   requestWord: { en: "Request", ar: "الطلب" },
+
+  // ---- FTF-UX06 round 2: recovery hints, empty-state action, and Arabic translations for
+  // server-returned field names / validation codes (the field/code TEXT stays raw at the default
+  // English locale -- byte-identical to round 1 -- these are used only when locale="ar").
+  emptyAction: { en: "Go to import", ar: "الانتقال إلى الاستيراد" },
+  recoverList: { en: "Press Load cases again.", ar: "اضغط تحميل الحالات مرة أخرى." },
+  recoverImport: {
+    en: "Fix the file or text above, then import again.",
+    ar: "أصلح الملف أو النص أعلاه، ثم استورد مرة أخرى.",
+  },
+  recoverSave: {
+    en: "Fix the field shown above, then save again.",
+    ar: "أصلح الحقل الموضَّح أعلاه، ثم احفظ مرة أخرى.",
+  },
+  /** FTF-UX06 round 2 (WRONG-RECOVERY-STEPS, L2 return): a 403 is never fixed by repeating the
+   * same request. */
+  recoverRestricted: {
+    en: "Ask an evaluator or administrator for access.",
+    ar: "اطلب الوصول من أحد المقيِّمين أو المسؤولين.",
+  },
+  /** A transport-level failure (a non-JSON response, or the request never reached the server) is
+   * never a field problem -- this reads correctly for any of the three operations. */
+  recoverRetry: { en: "Try again.", ar: "حاول مرة أخرى." },
+  severityLow: { en: "low", ar: "منخفضة" },
+  severityMedium: { en: "medium", ar: "متوسطة" },
+  severityHigh: { en: "high", ar: "عالية" },
+  severityCritical: { en: "critical", ar: "حرِجة" },
+  fieldCaseKey: { en: "case_key", ar: "مفتاح الحالة" },
+  codeRequired: { en: "required", ar: "مطلوب" },
+  codeTooLong: { en: "too long", ar: "طويل جدًا" },
+  codeInvalidValue: { en: "not a valid value", ar: "قيمة غير صالحة" },
+  codeUnsupported: { en: "not supported", ar: "غير مدعوم" },
+  codeRequiresIndependentGrader: {
+    en: "needs an independent grader",
+    ar: "يحتاج إلى أداة تقييم مستقلة",
+  },
+  codeCriticalOracleNotIndependent: {
+    en: "a critical case needs an independent grader",
+    ar: "تحتاج الحالة الحرِجة إلى أداة تقييم مستقلة",
+  },
+  codeBodyMalformed: { en: "the request body is malformed", ar: "محتوى الطلب غير سليم" },
+  codeDuplicateCaseKeyField: {
+    en: "this case_key already exists",
+    ar: "مفتاح الحالة هذا موجود مسبقًا",
+  },
+  /** Only for the three well-known fetch()-level unreachable-server messages (Chrome/Firefox/
+   * Safari); any other reason falls back to errUnknownReason under Arabic rather than leaking
+   * untranslated browser text (disclosed, not hidden -- same fallback discipline as ERROR_DETAIL_KEY). */
+  networkReasonUnreachable: {
+    en: "the server could not be reached",
+    ar: "تعذّر الوصول إلى الخادم",
+  },
 } as const satisfies Record<string, CatalogueEntry>;
 
 export function t0602(
@@ -165,3 +217,12 @@ export function t0602(
   const template = Object.hasOwn(entry, resolved) ? entry[resolved] : entry.en;
   return fill(template, vars);
 }
+
+/** FTF-UX06 round 2 (EVIDENCE/UNPINNED): exposed so a catalogue-wide test (same pattern
+ * `strings_04a22.ts`'s `MANDATE_STRING_KEYS`/`MANDATE_STRINGS` already uses) can assert every
+ * entry has real, non-English Arabic text and identical `{placeholder}` holes in both languages --
+ * one test that catches a future "ar" value silently replaced with English, instead of relying on
+ * a RED test per string. */
+export type CaseStringKey = keyof typeof STRINGS;
+export const CASE_STRING_KEYS = Object.keys(STRINGS) as CaseStringKey[];
+export const CASE_STRINGS: Record<CaseStringKey, CatalogueEntry> = STRINGS;
