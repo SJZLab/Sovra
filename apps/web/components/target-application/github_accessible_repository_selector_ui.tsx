@@ -165,6 +165,9 @@ function RepositorySelector({
   const [selectedRepositoryIdentity, setSelectedRepositoryIdentity] = useState<string | null>(null);
   // A reply for anything but the newest request is ignored, never merged into the list.
   const latestRequest = useRef(0);
+  // "Load more" continues the search that produced the list, so it uses the token that search used
+  // even if the field has been edited since: a list never mixes two tokens' repositories.
+  const listCredential = useRef("");
 
   const lang = resolveLocale(locale);
 
@@ -177,7 +180,10 @@ function RepositorySelector({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ credential, page: requestedPage }),
+        body: JSON.stringify({
+          credential: append ? listCredential.current : credential,
+          page: requestedPage,
+        }),
       });
       if (!response.ok) {
         const refused = await failureFromResponse(response);
@@ -200,6 +206,7 @@ function RepositorySelector({
       setRepositories((previous) =>
         append ? [...previous, ...body.repositories] : body.repositories,
       );
+      if (!append) listCredential.current = credential;
       setPage(body.page);
       setHasNextPage(body.has_next_page);
       setSearched(true);

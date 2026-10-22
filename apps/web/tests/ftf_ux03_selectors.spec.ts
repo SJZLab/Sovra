@@ -36,6 +36,7 @@ const SNAPSHOT = "44444444-4444-4444-4444-444444444444";
 const CAND_A = "55555555-5555-5555-5555-555555555555";
 const CAND_B = "66666666-6666-6666-6666-666666666666";
 const SHA = "c".repeat(40);
+const CTX = { organizationId: ORG, snapshotId: SNAPSHOT };
 
 type Fetch = ReturnType<typeof vi.fn>;
 const fetchMock = () => fetch as unknown as Fetch;
@@ -116,6 +117,8 @@ const CANDIDATE = (over: Record<string, unknown> = {}) => ({
   framework_or_runtime: "python",
   confidence_score: 0.5,
   discovery_status: "candidate",
+  organization_id: ORG,
+  target_source_snapshot_id: SNAPSHOT,
   ...over,
 });
 const CANDIDATE_PAGE = (over: Record<string, unknown> = {}) => ({
@@ -804,7 +807,10 @@ describe("[UX03-R2-STRICT] generated strict-parse tables", () => {
   }
   test("04A18 entry: framework_or_runtime may be null (documented) and the listing binds", () => {
     expect(
-      bindCandidateListing(CANDIDATE_PAGE({ items: [CANDIDATE({ framework_or_runtime: null })] })),
+      bindCandidateListing(
+        CANDIDATE_PAGE({ items: [CANDIDATE({ framework_or_runtime: null })] }),
+        CTX,
+      ),
     ).not.toBeNull();
   });
 
@@ -1521,9 +1527,9 @@ describe("[UX03-R2-EXTRA] 04A18 fault-injection pins", () => {
   });
 
   test("a non-JSON 200 on the list is 'cannot read'; a listing without items or with a non-object entry is refused", async () => {
-    expect(bindCandidateListing({ limit: 50, offset: 0, total: 0 })).toBeNull();
-    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [7] }))).toBeNull();
-    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [null] }))).toBeNull();
+    expect(bindCandidateListing({ limit: 50, offset: 0, total: 0 }, CTX)).toBeNull();
+    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [7] }), CTX)).toBeNull();
+    expect(bindCandidateListing(CANDIDATE_PAGE({ items: [null] }), CTX)).toBeNull();
     fetchMock().mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -1603,5 +1609,108 @@ describe("[UX03-R2-EXTRA] 04A18 fault-injection pins", () => {
       view.rerender(createElement(CandidateSelectionUI, { ...base, ...change }));
       expect(screen.queryByTestId(`candidate-row-${CAND_A}`)).toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Pre-review round 1 (independent L2 pre-review): findings fixed with a test each.
+// ---------------------------------------------------------------------------------------------
+describe("[UX03-R2-REVIEW1] pre-review findings", () => {
+  test("R01: a selection never survives a new search, even when the same repository is returned again", async () => {
+    await loadRepositories();
+    const first = await screen.findByTestId("github-repository-option-acme/one");
+    fireEvent.click(first);
+    expect(screen.getByTestId("github-repository-selected-notice")).toBeTruthy();
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE()));
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "other" } });
+    fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("github-repository-option-acme/one").getAttribute("aria-pressed"),
+      ).toBe("false"),
+    );
+    expect(screen.queryByTestId("github-repository-selected-notice")).toBeNull();
+  });
+
+  test("P8: 'Load more' keeps using the token that produced the list even after the field is edited", async () => {
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE({ has_next_page: true })));
+    render(repoSelector());
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tokA" } });
+    fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    await screen.findByTestId("github-load-more-button");
+    fireEvent.change(screen.getByTestId("github-credential-input"), { target: { value: "tokB" } });
+    fetchMock().mockResolvedValueOnce(ok(REPO_PAGE({ page: 2 })));
+    fireEvent.click(screen.getByTestId("github-load-more-button"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock().mock.calls[1]![1].body)).toEqual({ credential: "tokA", page: 2 });
+  });
+
+  test("P11: 04A04 does not say 'No branches found' next to 'Load more' on an empty first page", async () => {
+    fetchMock().mockResolvedValueOnce(ok(BRANCH_PAGE({ branches: [], has_next_page: true })));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    await screen.findByTestId("github-branch-load-more-button");
+    expect(screen.queryByRole("region", { name: "No branches found" })).toBeNull();
+  });
+
+  test("R13: a refused branch load is worded as the server's refusal, not as a network failure", async () => {
+    fetchMock().mockResolvedValueOnce(refused(503, {}));
+    render(branchSelector());
+    fireEvent.click(screen.getByTestId("github-load-branches-button"));
+    const error = await screen.findByTestId("github-branch-ref-error");
+    expect(error.textContent).toContain("The service had a problem (503)");
+    expect(error.textContent).not.toContain("Could not reach the server");
+  });
+
+  test("P3: a listed candidate that belongs to another snapshot or organization is refused, not rendered", async () => {
+    for (const bad of [
+      { target_source_snapshot_id: "77777777-7777-7777-7777-777777777777" },
+      { target_source_snapshot_id: undefined },
+      { organization_id: ORG_B },
+      { organization_id: undefined },
+    ]) {
+      cleanup();
+      fetchMock().mockReset();
+      fetchMock().mockResolvedValueOnce(
+        ok(CANDIDATE_PAGE({ items: [CANDIDATE(), CANDIDATE({ id: CAND_B, ...bad })] })),
+      );
+      render(candidateUI());
+      fireEvent.click(screen.getByTestId("candidate-load-button"));
+      await screen.findByTestId("candidate-selection-error");
+      expect(document.querySelectorAll('[data-testid^="candidate-select-button-"]').length).toBe(0);
+    }
+  });
+
+  test("R19: when a reload no longer lists the confirmed candidate, the confirmation names 'the chosen candidate', never a UUID", async () => {
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE()));
+    render(candidateUI());
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await screen.findByTestId(`candidate-row-${CAND_B}`);
+    fetchMock().mockResolvedValueOnce(ok(SELECTION()));
+    fireEvent.click(screen.getByTestId(`candidate-select-button-${CAND_B}`));
+    await screen.findByTestId("candidate-selection-confirmation");
+    fetchMock().mockResolvedValueOnce(ok(CANDIDATE_PAGE({ items: [CANDIDATE()], total: 1 })));
+    fireEvent.click(screen.getByTestId("candidate-load-button"));
+    await waitFor(() => expect(screen.queryByTestId(`candidate-row-${CAND_B}`)).toBeNull());
+    const text = screen.getByTestId("candidate-selection-confirmation").textContent!;
+    expect(text).toContain("the chosen candidate");
+    expect(text).not.toContain(CAND_B);
+  });
+
+  test("P3b: a selected_at that is not a full ISO instant (for example '1') is refused", () => {
+    for (const bad of ["1", "2026", "2026-10-02", "2026-10-02T12:00:00", "12:00"]) {
+      expect(bindSelection(CAND_B, SNAPSHOT, SELECTION({ selected_at: bad }))).toBeNull();
+    }
+    expect(
+      bindSelection(CAND_B, SNAPSHOT, SELECTION({ selected_at: "2026-10-02T12:00:00Z" })),
+    ).not.toBeNull();
+    expect(
+      bindSelection(
+        CAND_B,
+        SNAPSHOT,
+        SELECTION({ selected_at: "2026-10-02T12:00:00.123456+03:00" }),
+      ),
+    ).not.toBeNull();
   });
 });

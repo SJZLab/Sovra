@@ -143,11 +143,27 @@ export function candidateSelectUrl(
   return `${candidatesListUrl(apiBaseUrl, organizationId, projectId, connectionId, snapshotId)}/${candidateId}/select`;
 }
 
+// An ISO-8601 instant with an explicit offset, as the backend's `isoformat()` writes it; a bare "1"
+// parses as a date in JavaScript but is not a time this page may present.
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
 // The backend's closed set (discovered_agent_candidate_schema.ALLOWED_DISCOVERY_STATUSES).
 const DISCOVERY_STATUSES: readonly string[] = ["candidate"];
 
-function parseCandidate(value: unknown): DiscoveredAgentCandidateSummary | null {
+interface ListingContext {
+  organizationId: string;
+  snapshotId: string;
+}
+
+function parseCandidate(
+  value: unknown,
+  context: ListingContext,
+): DiscoveredAgentCandidateSummary | null {
   if (!isRecord(value)) return null;
+  // Each row says which organization and snapshot it belongs to: a row for another one is not
+  // this snapshot's candidate and is never listed or selectable.
+  if (value.organization_id !== context.organizationId) return null;
+  if (value.target_source_snapshot_id !== context.snapshotId) return null;
   const { id, display_name, framework_or_runtime, confidence_score, discovery_status } = value;
   if (typeof id !== "string" || id === "") return null;
   if (typeof display_name !== "string" || display_name.trim() === "") return null;
@@ -161,7 +177,10 @@ function parseCandidate(value: unknown): DiscoveredAgentCandidateSummary | null 
 }
 
 /** A candidate listing is only a listing when every field has its documented type; else `null`. */
-export function bindListing(body: unknown): CandidateListingResponse | null {
+export function bindListing(
+  body: unknown,
+  context: ListingContext,
+): CandidateListingResponse | null {
   if (!isRecord(body)) return null;
   const { items, limit, offset, total } = body;
   if (!Array.isArray(items)) return null;
@@ -170,7 +189,7 @@ export function bindListing(body: unknown): CandidateListingResponse | null {
   }
   const parsed: DiscoveredAgentCandidateSummary[] = [];
   for (const entry of items) {
-    const candidate = parseCandidate(entry);
+    const candidate = parseCandidate(entry, context);
     if (!candidate) return null;
     parsed.push(candidate);
   }
@@ -197,7 +216,8 @@ export function bindSelection(
   if (candidate_id !== requestedCandidateId) return null;
   if (target_source_snapshot_id !== requestedSnapshotId) return null;
   if (typeof selected_by !== "string" || selected_by.trim() === "") return null;
-  if (typeof selected_at !== "string" || Number.isNaN(Date.parse(selected_at))) return null;
+  if (typeof selected_at !== "string" || !ISO_INSTANT.test(selected_at)) return null;
+  if (Number.isNaN(Date.parse(selected_at))) return null;
   return {
     candidate_id: requestedCandidateId,
     target_source_snapshot_id: requestedSnapshotId,
@@ -272,7 +292,7 @@ function CandidateSelection({
       } catch {
         raw = null;
       }
-      const body = bindListing(raw);
+      const body = bindListing(raw, { organizationId, snapshotId });
       if (!body) {
         // Never swallowed into an empty list: the previous list stays and the problem is shown.
         setFailure(MALFORMED_FAILURE);

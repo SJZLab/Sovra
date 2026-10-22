@@ -325,7 +325,8 @@ function BranchRefSelector({
     }
   }
 
-  const showEmpty = branchesLoaded && !loadingBranches && failure === null && branches.length === 0;
+  const showEmpty =
+    branchesLoaded && !loadingBranches && failure === null && !hasNextPage && branches.length === 0;
   const refBlank = !selectedRef.trim();
 
   return (
