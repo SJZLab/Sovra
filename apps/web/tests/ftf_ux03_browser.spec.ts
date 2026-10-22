@@ -568,6 +568,23 @@ const STATES: UiState[] = [
     ready: '[data-testid="manifest-read-only"]',
   },
   {
+    id: "04A21 locked realistic sha256",
+    component: "04A21",
+    props: P21,
+    routes: [
+      {
+        method: "GET",
+        path: MANIFEST_PATH,
+        body: manifest21({
+          status: "locked",
+          manifest_sha256: "3a7bd3e29c41f08d6b5e17a2c94d0f83be6a1d57c20e94f7a8b3d61e05cd4f1b",
+        }),
+      },
+      { method: "GET", path: `${MANIFEST_PATH}/evidence`, body: EVIDENCE },
+    ],
+    ready: '[data-testid="manifest-sha256"]',
+  },
+  {
     id: "04A21 error 503",
     component: "04A21",
     props: P21,
@@ -628,6 +645,20 @@ const STATES: UiState[] = [
       { method: "GET", path: `${P}/requirements`, body: UNBROKEN_REQUIREMENTS },
     ],
     ready: `[data-testid="mandate-lock-blockers"]`,
+  },
+  {
+    id: "04A22 unbroken duplicate-name error",
+    component: "04A22",
+    props: P21,
+    routes: [
+      { method: "GET", path: MANIFEST_PATH, body: UNBROKEN_MANIFEST },
+      { method: "GET", path: `${P}/requirements`, body: UNBROKEN_REQUIREMENTS },
+    ],
+    steps: [
+      { fill: ["new-forbidden-action-name", UNBROKEN_TOOL] },
+      { click: "forbidden-action-add-button" },
+    ],
+    ready: '[id="new-forbidden-action-name-error"]',
   },
   {
     id: "04A22 dirty + discard confirm",

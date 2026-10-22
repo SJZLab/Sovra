@@ -898,7 +898,7 @@ function ManifestReviewEditInner({
           {tt("versionLabel")}: <bdi>{manifest.version}</bdi>
         </p>
         {manifest.manifest_sha256 && (
-          <p data-testid="manifest-sha256">
+          <p data-testid="manifest-sha256" style={{ overflowWrap: "anywhere" }}>
             {tt("hashLabel")}: <bdi dir="ltr">{manifest.manifest_sha256}</bdi>
           </p>
         )}
