@@ -44,6 +44,8 @@ info:
     Values of a probe or preview are masked (`{"masked": true, "chars": n}`) unless the caller is an
     admin or an ml_engineer on a public or internal connection, and a stored mapping's document and
     rationale are then withheld. Responses never carry an object key, a bucket or a credential.
+    Integer-valued fields must be JSON integer literals (`1`, not `1.0`), as the parser requires; a
+    rationale must hold a non-whitespace character (Python `str.isspace`) and no NUL.
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
     parameters:

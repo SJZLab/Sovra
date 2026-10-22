@@ -19,8 +19,8 @@ S  the request store (`dataset_mapping_request_store`) and the store's new read-
 M  migration `0036_dataset_mapping_requests.py`
 C  the interface contract (05-interface.yaml): every path, status code and header; the schema drift
    table (schema-valid <=> `mapping_from_object` accepts) and the app wiring
-F  fault injection: each protection is removed from a copy of the route module on disk and the same
-   route suite must turn RED
+F  (not in this file) fault evidence: the uncapped scripts/mutation_gate.py over the changed modules, run by
+   CI's mutation-gate job against this file and test_ftf_h011_p2.py, plus the migration faults of part M
 
 Acceptance ("Import a real irregular CSV/XLSX/JSON source via UI; preserve Arabic/text types, reject
 unmapped critical roles/tool IDs and deny training for evaluation-only grants"): ACC-*. Negative
@@ -553,8 +553,8 @@ def part_r_access() -> None:
                 got = call(base, method, url, "ml", body, key)
                 check(
                     "R-AUTHZ",
-                    f"{method} {suffix.split('/')[1]}: an ml_engineer is 403 (got {got[0]})",
-                    got[0] == 403,
+                    f"{method} {suffix.split('/')[1]}: an ml_engineer is 403 role_not_authorized (got {got[0]} {got[1]})",
+                    got[0] == 403 and code(got) == "role_not_authorized",
                 )
         before = w.snapshot()
         got = call(
@@ -2030,11 +2030,11 @@ def part_u() -> None:
         "an unknown code is a 409 conflict, never a 500",
         mod._refusal("brand_new").status_code == 409,
     )
-    for good in ("a", " a ", "x" * 2000, "مرحبا", "line1\nline2"):
+    for sample in ("a", " a ", "x" * 2000, "مرحبا", "line1\nline2"):
         check(
             "U-RATIONALE",
-            f"{good[:10]!r} is a valid rationale and is kept byte for byte",
-            mod._rationale(good) == good,
+            f"{sample[:10]!r} is a valid rationale and is kept byte for byte",
+            mod._rationale(sample) == sample,
         )
     for bad in ("", " ", "\t\n", "x" * 2001, "a\x00b", "\ud800", 5, None, b"x", ["x"], True):
         try:
@@ -3768,6 +3768,19 @@ def part_r_races() -> None:
             and replay["replayed"] is True
             and w.calls.get("approve_dataset_mapping", 0) == attempts
             and len(w.base.preview_calls) == previews,
+        )
+        seen_by_action: list[str] = []
+        real_find = real_routes.find_mapping_request_by_action
+        with patched_attr(
+            real_routes,
+            "find_mapping_request_by_action",
+            lambda *a, **k: seen_by_action.append(k["action"]) or real_find(*a, **k),
+        ):
+            status, replay = approve(base, ds, third, key="race-approve-01")
+        check(
+            "R-RACE",
+            f"approve: a replay by key reads the decision once ({seen_by_action})",
+            status == 200 and seen_by_action == ["approve"],
         )
         status, replay = approve(base, ds, third, key="race-approve-02")
         check(
