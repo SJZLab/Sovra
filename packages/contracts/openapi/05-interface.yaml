@@ -35,6 +35,15 @@ info:
     counts, role hashes, sources, frozen grants, status and hashes and a finding-count
     leakage summary; never an assignment, a record id, a group id, a finding, a review
     text or a storage key.
+
+    FTF-H011-P3 adds the dataset field mapping surface under
+    `.../projects/{project_id}/datasets/{dataset_id}`: `mapping-probe`, `mapping-preview`,
+    `mappings` (propose, list), `mappings/{mapping_id}` (get), and `approve` / `reject`. The
+    `DatasetMappingSpec` component mirrors the certified FTF-0502-P1 grammar
+    (`mapping_from_object`): a document is schema-valid exactly when that parser accepts it.
+    Values of a probe or preview are masked (`{"masked": true, "chars": n}`) unless the caller is an
+    admin or an ml_engineer on a public or internal connection, and a stored mapping's document and
+    rationale are then withheld. Responses never carry an object key, a bucket or a credential.
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
     parameters:
@@ -1058,6 +1067,279 @@ paths:
             Idempotency-Key was already used by a request with another digest).
         '413':
           description: '`request_too_large`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mapping-probe:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: >-
+        Headers (tabular sources only) and up to twenty raw rows of the dataset, read with the
+        caller's `csv` / `json` format options and a server-built probe mapping (FTF-H011-P3).
+        Read-only. The audit event `dataset_mapping.probed` carries ids, a row count and the masked
+        flag, never a value.
+      operationId: probeDatasetMapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetMappingProbeRequest'
+      responses:
+        '200':
+          description: The probe verdict (`state` completed or failed) with its rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingProbe'
+        '400':
+          description: '`invalid_body`, `mapping_invalid` or `mapping_unsupported`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` or `purpose_not_authorized` (a revoked or narrowed grant).'
+        '404':
+          description: '`not_found`, identical for a missing, foreign and hidden held-out dataset.'
+        '409':
+          description: '`importer_unavailable` or `source_changed`.'
+        '413':
+          description: '`request_too_large`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mapping-preview:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: >-
+        Previews a `DatasetMappingSpec` against the real dataset: each row raw beside canonical, the
+        rejected rows with their codes, and the digest the approval is bound to (FTF-H011-P3).
+        Read-only; the same grammar and critical checks as a proposal. The audit event
+        `dataset_mapping.previewed` carries ids, counts and the masked flag, never a value.
+      operationId: previewDatasetMapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetMappingRequest'
+      responses:
+        '200':
+          description: The preview verdict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingPreview'
+        '400':
+          description: >-
+            `invalid_body`, `mapping_invalid`, `mapping_unsupported`, `critical_role_unmapped` or
+            `tool_id_unmapped`.
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` or `purpose_not_authorized`.'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: '`importer_unavailable` or `source_changed`.'
+        '413':
+          description: '`request_too_large`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mappings:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: >-
+        The dataset's mapping versions, oldest first (FTF-H011-P3). `after` is the last
+        `mapping_version` of the previous page.
+      operationId: listDatasetMappings
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+        - {name: after, in: query, required: false, schema: {type: integer, minimum: 0, maximum: 999999999}}
+      responses:
+        '200':
+          description: A page of mapping versions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingPage'
+        '400':
+          description: '`invalid_limit` or `invalid_after`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`.'
+    post:
+      summary: >-
+        Proposes the next mapping version (FTF-H011-P3): parses and checks the document, re-authorizes
+        the dataset's connection for the dataset's own purpose and runs the real preview itself. An
+        unchanged re-proposal returns the latest version and writes nothing. The same
+        Idempotency-Key with the same digest replays the stored outcome (200, `replayed: true`); the
+        same key with another digest is 409 `idempotency_key_reused`.
+      operationId: proposeDatasetMapping
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9._:-]{8,200}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetMappingRequest'
+      responses:
+        '200':
+          description: An unchanged re-proposal, or an identical earlier request replayed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingOutcome'
+        '201':
+          description: A new mapping version in `proposed` status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingOutcome'
+        '400':
+          description: >-
+            `invalid_body`, `invalid_idempotency_key`, `mapping_invalid`, `mapping_unsupported`,
+            `critical_role_unmapped` or `tool_id_unmapped`.
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` or `purpose_not_authorized`.'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: >-
+            `importer_unavailable`, `source_changed`, `preview_incomplete`, `mapping_conflict` or
+            `idempotency_key_reused`.
+        '413':
+          description: '`request_too_large`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mappings/{mapping_id}:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: mapping_id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: One mapping version of the dataset (FTF-H011-P3).
+      operationId: getDatasetMapping
+      responses:
+        '200':
+          description: The mapping version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMapping'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found`, identical for a missing id, a mapping of another dataset and a hidden
+            dataset.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mappings/{mapping_id}/approve:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: mapping_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: >-
+        proposed -> approved (FTF-H011-P3). The approver is the authenticated principal; needs
+        workspace_admin or organization_admin. The preview is re-run against the live bytes and must
+        hash to `expected_preview_sha256`. The same Idempotency-Key with the same digest replays
+        (200, `replayed: true`); the same key with another digest is 409 `idempotency_key_reused`.
+      operationId: approveDatasetMapping
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9._:-]{8,200}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetMappingApproveRequest'
+      responses:
+        '200':
+          description: Approved, or an identical earlier request replayed (`replayed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingOutcome'
+        '400':
+          description: '`invalid_body` or `invalid_idempotency_key`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` (including ml_engineer) or `purpose_not_authorized`.'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: >-
+            `purpose_mismatch`, `mapping_not_proposed`, `mapping_superseded`, `preview_changed`,
+            `preview_incomplete`, `critical_rows_unmapped`, `ignored_keys_not_acknowledged`,
+            `approval_refused`, `mapping_tampered`, `importer_unavailable`, `source_changed` or
+            `idempotency_key_reused`.
+        '413':
+          description: '`request_too_large`.'
+        '503':
+          description: '`storage_unavailable` or `storage_not_configured`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/mappings/{mapping_id}/reject:
+    parameters:
+      - {name: organization_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: project_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: dataset_id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: mapping_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: >-
+        proposed -> rejected (FTF-H011-P3); the next proposal is a new version. Needs workspace_admin
+        or organization_admin. The same Idempotency-Key with the same digest replays (200,
+        `replayed: true`); the same key with another digest is 409 `idempotency_key_reused`.
+      operationId: rejectDatasetMapping
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9._:-]{8,200}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetMappingRejectRequest'
+      responses:
+        '200':
+          description: Rejected, or an identical earlier request replayed (`replayed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetMappingOutcome'
+        '400':
+          description: '`invalid_body` or `invalid_idempotency_key`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` (including ml_engineer).'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: '`mapping_not_proposed` or `idempotency_key_reused`.'
+        '413':
+          description: '`request_too_large`.'
 components:
   responses:
     NotAuthenticated:
@@ -1731,4 +2013,383 @@ components:
       properties:
         expected_proposal_sha256: {$ref: '#/components/schemas/Sha256Hex'}
       required: [expected_proposal_sha256]
+      additionalProperties: false
+    DatasetMappingName:
+      type: string
+      minLength: 1
+      maxLength: 256
+    DatasetMappingPointer:
+      type: string
+      maxLength: 256
+      pattern: '^$|^(?:/(?!-(?:/|$))(?!0[0-9]+(?:/|$))(?![0-9]{10,}(?:/|$))(?:[^/~]|~[01])+){1,16}$'
+    DatasetMappingSlot:
+      oneOf:
+        - type: object
+          properties: {key: {$ref: '#/components/schemas/DatasetMappingName'}}
+          required: [key]
+          additionalProperties: false
+        - type: object
+          properties: {header: {$ref: '#/components/schemas/DatasetMappingName'}}
+          required: [header]
+          additionalProperties: false
+        - type: object
+          properties: {index: {type: integer, minimum: 0, maximum: 16383}}
+          required: [index]
+          additionalProperties: false
+        - type: object
+          properties:
+            letters: {type: string, minLength: 1, maxLength: 256, pattern: '^[A-Z]{1,3}$'}
+          required: [letters]
+          additionalProperties: false
+    DatasetMappingRoleMap:
+      type: object
+      minProperties: 1
+      maxProperties: 64
+      propertyNames: {minLength: 1, maxLength: 256}
+      additionalProperties: {type: string, enum: [assistant, system, tool, user]}
+    DatasetMappingCsvOptions:
+      type: object
+      properties:
+        encoding: {$ref: '#/components/schemas/DatasetMappingName'}
+        delimiter: {type: string, minLength: 1, maxLength: 1}
+        has_header: {type: boolean}
+        header_row: {type: integer, minimum: 0, maximum: 1000000}
+      required: [encoding, delimiter, has_header, header_row]
+      additionalProperties: false
+    DatasetMappingXlsxOptions:
+      type: object
+      properties:
+        sheet_name: {$ref: '#/components/schemas/DatasetMappingName'}
+        header_row: {type: integer, minimum: 0, maximum: 1000000}
+      required: [sheet_name, header_row]
+      additionalProperties: false
+    DatasetMappingJsonOptions:
+      type: object
+      properties:
+        container: {$ref: '#/components/schemas/DatasetMappingPointer'}
+        ignored_top_level_keys:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/DatasetMappingName'}
+      required: [container, ignored_top_level_keys]
+      additionalProperties: false
+    DatasetMappingMetadata:
+      type: object
+      properties:
+        language: {$ref: '#/components/schemas/DatasetMappingSlot'}
+        task_category: {$ref: '#/components/schemas/DatasetMappingSlot'}
+        consent: {$ref: '#/components/schemas/DatasetMappingSlot'}
+        quality_label: {$ref: '#/components/schemas/DatasetMappingSlot'}
+        source_record_id: {$ref: '#/components/schemas/DatasetMappingSlot'}
+        event_timestamp: {$ref: '#/components/schemas/DatasetMappingSlot'}
+      additionalProperties: false
+    DatasetMappingSpec:
+      description: >-
+        The FTF-0502-P1 MappingSpec grammar. `grouped_rows` and `grouped_multi_row` are recognised
+        but unsupported and are not valid here (`mapping_unsupported`).
+      oneOf:
+        - type: object
+          properties:
+            shape: {const: messages}
+            messages_pointer: {$ref: '#/components/schemas/DatasetMappingPointer'}
+            role_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            content_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            role_map: {$ref: '#/components/schemas/DatasetMappingRoleMap'}
+            on_unmapped_message_keys: {type: string, enum: [reject, ignore]}
+            tool_calls_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            tool_call_id_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            name_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            group_key: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            metadata: {$ref: '#/components/schemas/DatasetMappingMetadata'}
+            csv: {$ref: '#/components/schemas/DatasetMappingCsvOptions'}
+            xlsx: {$ref: '#/components/schemas/DatasetMappingXlsxOptions'}
+            json: {$ref: '#/components/schemas/DatasetMappingJsonOptions'}
+          required:
+            [shape, messages_pointer, role_key, content_key, role_map, on_unmapped_message_keys]
+          additionalProperties: false
+        - type: object
+          properties:
+            shape: {const: messages_json}
+            messages: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            role_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            content_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            role_map: {$ref: '#/components/schemas/DatasetMappingRoleMap'}
+            on_unmapped_message_keys: {type: string, enum: [reject, ignore]}
+            tool_calls_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            tool_call_id_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            name_key: {$ref: '#/components/schemas/DatasetMappingName'}
+            group_key: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            metadata: {$ref: '#/components/schemas/DatasetMappingMetadata'}
+            csv: {$ref: '#/components/schemas/DatasetMappingCsvOptions'}
+            xlsx: {$ref: '#/components/schemas/DatasetMappingXlsxOptions'}
+            json: {$ref: '#/components/schemas/DatasetMappingJsonOptions'}
+          required: [shape, messages, role_key, content_key, role_map, on_unmapped_message_keys]
+          additionalProperties: false
+        - type: object
+          properties:
+            shape: {const: prompt_completion}
+            prompt: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            completion: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            system: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            group_key: {$ref: '#/components/schemas/DatasetMappingSlot'}
+            metadata: {$ref: '#/components/schemas/DatasetMappingMetadata'}
+            csv: {$ref: '#/components/schemas/DatasetMappingCsvOptions'}
+            xlsx: {$ref: '#/components/schemas/DatasetMappingXlsxOptions'}
+            json: {$ref: '#/components/schemas/DatasetMappingJsonOptions'}
+          required: [shape, prompt, completion]
+          additionalProperties: false
+    DatasetMappingRequest:
+      type: object
+      properties:
+        mapping: {$ref: '#/components/schemas/DatasetMappingSpec'}
+      required: [mapping]
+      additionalProperties: false
+    DatasetMappingProbeRequest:
+      type: object
+      properties:
+        csv: {$ref: '#/components/schemas/DatasetMappingCsvOptions'}
+        json: {$ref: '#/components/schemas/DatasetMappingJsonOptions'}
+      additionalProperties: false
+    DatasetMappingApproveRequest:
+      type: object
+      properties:
+        expected_preview_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        purpose: {type: string, minLength: 1, maxLength: 32}
+        acknowledged_ignored_keys:
+          type: array
+          maxItems: 200
+          items: {type: string, minLength: 1, maxLength: 200}
+        rationale: {type: string, minLength: 1, maxLength: 2000}
+      required: [expected_preview_sha256, purpose, acknowledged_ignored_keys, rationale]
+      additionalProperties: false
+    DatasetMappingRejectRequest:
+      type: object
+      properties:
+        rationale: {type: string, minLength: 1, maxLength: 2000}
+      required: [rationale]
+      additionalProperties: false
+    DatasetMappingMaskedValue:
+      type: object
+      properties:
+        masked: {const: true}
+        chars: {type: integer, minimum: 0}
+      required: [masked, chars]
+      additionalProperties: false
+    DatasetMappingProbe:
+      type: object
+      properties:
+        state: {type: string, enum: [completed, failed, blocked]}
+        failure_code:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        complete: {type: boolean}
+        masked: {type: boolean}
+        headers:
+          oneOf:
+            - type: array
+              items:
+                oneOf:
+                  - {type: string}
+                  - {$ref: '#/components/schemas/DatasetMappingMaskedValue'}
+            - {type: 'null'}
+        rows:
+          type: array
+          items:
+            oneOf:
+              - {type: object}
+              - {type: array}
+      required: [state, failure_code, complete, masked, headers, rows]
+      additionalProperties: false
+    DatasetMappingPreviewComparison:
+      type: object
+      properties:
+        slot: {type: string}
+        raw_type: {type: string}
+        canonical_type: {type: string}
+        identical: {type: boolean}
+      required: [slot, raw_type, canonical_type, identical]
+      additionalProperties: false
+    DatasetMappingPreviewRow:
+      type: object
+      properties:
+        locator: {type: string}
+        outcome: {type: string, enum: [accepted, rejected]}
+        code:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        slot:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        raw_row:
+          oneOf:
+            - {type: object}
+            - {type: array}
+            - {type: 'null'}
+        not_mapped: {type: array}
+        candidate:
+          oneOf:
+            - {type: object}
+            - {type: 'null'}
+        comparison:
+          type: array
+          items: {$ref: '#/components/schemas/DatasetMappingPreviewComparison'}
+      required: [locator, outcome, code, slot, raw_row, not_mapped, candidate, comparison]
+      additionalProperties: false
+    DatasetMappingPreview:
+      type: object
+      properties:
+        state: {type: string, enum: [completed, failed, blocked]}
+        failure_code:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        complete: {type: boolean}
+        masked: {type: boolean}
+        counts:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        source_schema_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+        tool_definitions_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        preview_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        observed_role_values: {type: array}
+        rows:
+          type: array
+          items: {$ref: '#/components/schemas/DatasetMappingPreviewRow'}
+      required:
+        - state
+        - failure_code
+        - complete
+        - masked
+        - counts
+        - source_schema_sha256
+        - tool_definitions_sha256
+        - preview_sha256
+        - observed_role_values
+        - rows
+      additionalProperties: false
+    DatasetMappingDecision:
+      type: object
+      properties:
+        action: {type: string, enum: [approve, reject]}
+        rationale:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        decided_by: {type: string}
+      required: [action, rationale, decided_by]
+      additionalProperties: false
+    DatasetMapping:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        dataset_id: {type: string, format: uuid}
+        dataset_name: {type: string}
+        dataset_purpose: {type: string}
+        dataset_version: {type: integer}
+        dataset_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        mapping_version: {type: integer, minimum: 1}
+        parent_mapping_version:
+          oneOf:
+            - {type: integer, minimum: 1}
+            - {type: 'null'}
+        mapping_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        importer: {type: string}
+        importer_version: {type: string}
+        transform_version: {type: string}
+        source_schema_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+        tool_definitions_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        preview_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        preview_counts:
+          type: object
+          additionalProperties: {type: integer, minimum: 0}
+        status: {type: string, enum: [proposed, approved, rejected]}
+        allowed_purposes_snapshot:
+          type: array
+          items: {type: string}
+        approved_purpose:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        approved_by:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        approver_role:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        approved_at:
+          oneOf:
+            - {type: string, format: date-time}
+            - {type: 'null'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        masked: {type: boolean}
+        mapping_document:
+          oneOf:
+            - {$ref: '#/components/schemas/DatasetMappingSpec'}
+            - {type: 'null'}
+        decision:
+          oneOf:
+            - {$ref: '#/components/schemas/DatasetMappingDecision'}
+            - {type: 'null'}
+      required:
+        - id
+        - dataset_id
+        - dataset_name
+        - dataset_purpose
+        - dataset_version
+        - dataset_sha256
+        - mapping_version
+        - parent_mapping_version
+        - mapping_sha256
+        - importer
+        - importer_version
+        - transform_version
+        - source_schema_sha256
+        - tool_definitions_sha256
+        - preview_sha256
+        - preview_counts
+        - status
+        - allowed_purposes_snapshot
+        - approved_purpose
+        - approved_by
+        - approver_role
+        - approved_at
+        - created_by
+        - created_at
+        - updated_at
+        - masked
+        - mapping_document
+        - decision
+      additionalProperties: false
+    DatasetMappingOutcome:
+      allOf:
+        - $ref: '#/components/schemas/DatasetMapping'
+        - type: object
+          properties:
+            replayed: {type: boolean}
+            created: {type: boolean}
+          required: [replayed]
+    DatasetMappingPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DatasetMapping'}
+        next_after:
+          oneOf:
+            - {type: integer, minimum: 1}
+            - {type: 'null'}
+      required: [items, next_after]
       additionalProperties: false
