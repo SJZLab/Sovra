@@ -399,7 +399,9 @@ class FakeArgillaServer:
                         h._detail(422, "record fields do not match the dataset")
                         return True
                     if item.get("external_id") in existing:
-                        h._detail(409, "record external_id already exists")
+                        # The pinned v2.8.0 `_validate_external_ids_are_not_present_in_db` is a
+                        # 422 UnprocessableEntityError, not a 409.
+                        h._detail(422, "found records with the same external ids in the dataset")
                         return True
                     created.append(item)
                 out = []

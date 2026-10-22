@@ -45,6 +45,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -314,6 +315,7 @@ class World:
         decision: str = "accept",
         rationale: str = "",
         expected_version: int = 0,
+        reviewer_api_factory: Any = None,
     ) -> Any:
         return store.submit_review_response(
             self.env.factory,
@@ -326,9 +328,8 @@ class World:
             rationale=rationale,
             expected_version=expected_version,
             owner_api=self.api,
-            reviewer_api_factory=lambda key: rm.ArgillaReviewApi(
-                self.server.client(api_key=key).transport
-            ),
+            reviewer_api_factory=reviewer_api_factory
+            or (lambda key: rm.ArgillaReviewApi(self.server.client(api_key=key).transport)),
             openbao_config=self.openbao,
             request_id=f"req-{uuid.uuid4().hex[:8]}",
         )
@@ -878,6 +879,100 @@ def section_drift(world: World, built: dict[str, Any]) -> None:
     check("I6: and changes nothing", world.state() == state)
 
 
+def section_reconcile_race(world: World) -> None:
+    env = world.env
+    race = world.dataset("reconcile-race", "training", rows_n(12, "rr"))
+    queue = world.create(race)
+    reviewer = world.reviewer("racer")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        submits = [
+            pool.submit(
+                _try, lambda p=p: world.respond(queue, p, race, reviewer, "accept", f"r{p}")
+            )
+            for p in range(8)
+        ]
+        polls = [pool.submit(_try, lambda: world.reconcile(queue)) for _ in range(8)]
+        outcomes = [f.result() for f in submits + polls]
+    check(
+        f"I6: submits racing reconciles all succeed: {[o for o in outcomes if isinstance(o, str)]}",
+        not any(isinstance(o, str) for o in outcomes),
+    )
+    marked = env.rows(
+        "SELECT record_id, drift_reason FROM review_items WHERE queue_id = :q AND status = 'drift'",
+        q=queue.id,
+    )
+    check(
+        f"I6: no legitimate response was ever marked drift by an overlapping poll: {marked}",
+        marked == [],
+    )
+    check(
+        "I6: every raced response is recorded",
+        int(env.scalar("SELECT count(*) FROM review_responses WHERE queue_id = :q", q=queue.id))
+        == 8,
+    )
+    check("I6: a final reconcile is clean", world.reconcile(queue) == ())
+
+
+class BlockingApi(rm.ArgillaReviewApi):
+    """Writes to Argilla, then holds the surrounding Factory transaction open until released."""
+
+    def __init__(self, transport: Any, entered: threading.Event, release: threading.Event) -> None:
+        super().__init__(transport)
+        self._entered, self._release = entered, release
+
+    def submit_response(self, record_id: str, decision: str, rationale: str) -> Any:
+        result = super().submit_response(record_id, decision, rationale)
+        self._entered.set()
+        self._release.wait(20)
+        return result
+
+
+def section_reconcile_waits_for_submit(world: World) -> None:
+    """The deterministic interleaving: Argilla already holds the response, the Factory row is
+    not committed yet. A poll must wait for the item lock and then see a consistent state."""
+    env = world.env
+    dataset = world.dataset("reconcile-wait", "training", rows_n(3, "rw"))
+    queue = world.create(dataset)
+    reviewer = world.reviewer("waiter")
+    entered, release = threading.Event(), threading.Event()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        submit = pool.submit(
+            _try,
+            lambda: world.respond(
+                queue,
+                0,
+                dataset,
+                reviewer,
+                "accept",
+                "held",
+                reviewer_api_factory=lambda key: BlockingApi(
+                    world.server.client(api_key=key).transport, entered, release
+                ),
+            ),
+        )
+        check("I6: the submit reached Argilla and is holding its transaction", entered.wait(15))
+        poll = pool.submit(_try, lambda: world.reconcile(queue))
+        time.sleep(1.0)
+        check("I6: the poll is waiting on the item lock while the submit is open", not poll.done())
+        release.set()
+        submitted, polled = submit.result(30), poll.result(30)
+    check(
+        f"I6: the held submit commits: {submitted!r}",
+        isinstance(submitted, store.ReviewResponseRecord),
+    )
+    check(f"I6: the waiting poll finds no drift: {polled!r}", polled == ())
+    check(
+        "I6: nothing was marked drift",
+        int(
+            env.scalar(
+                "SELECT count(*) FROM review_items WHERE queue_id = :q AND status = 'drift'",
+                q=queue.id,
+            )
+        )
+        == 0,
+    )
+
+
 def section_database_protections(world: World, built: dict[str, Any]) -> None:
     env = world.env
     queue, train = built["queue"], built["train"]
@@ -1008,6 +1103,33 @@ def section_database_protections(world: World, built: dict[str, Any]) -> None:
             ctx1,
             "UPDATE review_responses SET decision = 'approve', row_version = row_version + 1 WHERE id = :i",
             "ck_review_responses_decision",
+            i=response[0][0],
+        )
+    # uniqueness at the database
+    refused(
+        "a second item for one (queue, record)",
+        ctx1,
+        "INSERT INTO review_items (organization_id, queue_id, record_id, batch_position, group_id, record_sha256, fields_sha256) "
+        "SELECT organization_id, queue_id, record_id, 9999, group_id, record_sha256, fields_sha256 FROM review_items WHERE id = :i",
+        "uq_review_items_queue_record",
+        i=item,
+    )
+    refused(
+        "a second item at one (queue, batch position)",
+        ctx1,
+        "INSERT INTO review_items (organization_id, queue_id, record_id, batch_position, group_id, record_sha256, fields_sha256) "
+        "SELECT organization_id, queue_id, 'dup:record', batch_position, group_id, record_sha256, fields_sha256 FROM review_items WHERE id = :i",
+        "uq_review_items_queue_position",
+        i=item,
+    )
+    if response:
+        refused(
+            "a second response row for one (item, reviewer)",
+            ctx1,
+            "INSERT INTO review_responses (organization_id, queue_id, item_id, identity_id, decision, rationale, response_sha256, argilla_response_id) "
+            "SELECT organization_id, queue_id, item_id, identity_id, decision, rationale, response_sha256, :a FROM review_responses WHERE id = :i",
+            "uq_review_responses_item_identity",
+            a=str(uuid.uuid4()),
             i=response[0][0],
         )
     # sealed purpose at the database
@@ -1162,6 +1284,8 @@ def main() -> None:
         section_resume_and_race(world)
         section_responses(world, built)
         section_drift(world, built)
+        section_reconcile_race(world)
+        section_reconcile_waits_for_submit(world)
         section_database_protections(world, built)
         section_secrecy(world)
     finally:

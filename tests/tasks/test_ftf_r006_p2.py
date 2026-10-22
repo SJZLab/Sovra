@@ -509,11 +509,11 @@ def test_b_adapter() -> None:
             )(len(world.server.review_calls)),
         )
         caught = raises(
-            ArgillaConflictError, lambda: world.api.create_records(dataset.id, payloads[:1])
+            ArgillaRejectedError, lambda: world.api.create_records(dataset.id, payloads[:1])
         )
         check(
             "B3",
-            "a duplicate external_id is a conflict, not a second record",
+            "a duplicate external_id is refused (422 on the pinned server), not a second record",
             caught is not None and len(world.server.records) == 25,
         )
         big = sample_payloads(450, "big")
@@ -775,6 +775,7 @@ class Env:
         self.audits: list[dict[str, Any]] = []
         self.secret_refs: dict[str, str] = {}
         self.resolved: list[str] = []
+        self.on_resolve: Callable[[], None] | None = None
         self.not_found = False
         self.grant_error: Exception | None = None
         self.quality_error: Exception | None = None
@@ -926,6 +927,8 @@ class Env:
 
         def resolve(ref: str, *, config: Any) -> str:
             env.resolved.append(ref)
+            if env.on_resolve is not None:
+                env.on_resolve()
             return env.secret_refs[ref]
 
         def audit(session: Any, **kwargs: Any) -> None:
@@ -1531,8 +1534,8 @@ def test_q_source() -> None:
         queue = env.create()
         check(
             "Q10",
-            "a rejected row is skipped, accepted rows keep their own positions",
-            [i[1] for i in env.items()] == [0, 2, 3] and queue.record_count == 3,
+            "a rejected row is skipped and batch positions count accepted rows only",
+            [i[1] for i in env.items()] == [0, 1, 2] and queue.record_count == 3,
         )
     with env_of(records=2) as env:
         env.sql("DELETE FROM argilla_review_scopes")
@@ -1652,32 +1655,72 @@ def test_q_idempotent_and_resume() -> None:
             all(i[5] is not None for i in env.items()) and len(env.server.records) == 4,
         )
     with env_of(records=4) as env:
-        name = rm.dataset_name_for(env.org, env.project, env.dataset_id)
-        dataset = env.owner_api.ensure_dataset(env.workspace.id, name)
-        pre = rm.review_record_payload(
-            record_id=f"{env.dataset_id}:1",
-            group_id=sha("g"),
-            record_sha256=sha("r"),
-            messages=[{"role": "user", "content": "pre-existing"}],
-        )
-        env.owner_api.create_records(dataset.id, [pre])
+        first = env.create()
+        # a crash after two of the four records reached Argilla
+        env.sql("UPDATE review_queues SET status = 'building', argilla_dataset_id = NULL")
+        env.sql("UPDATE review_items SET argilla_record_id = NULL")
+        for position in (2, 3):
+            env.server.delete_record(env.server_record(f"{env.dataset_id}:{position}")["id"])
+        bulks_before = sum(1 for c in env.server.review_calls if c[1].endswith("/records/bulk"))
         queue = env.create()
         check(
             "Q15",
-            "a record already in Argilla is found, not created again",
-            len(env.server.records) == 4 and queue.status == "ready",
+            "records already in Argilla are found, not created again",
+            len(env.server.records) == 4 and queue.status == "ready" and queue.id == first.id,
         )
-        bulk_sizes = [c for c in env.server.review_calls if c[1].endswith("/records/bulk")]
+        bulks = sum(1 for c in env.server.review_calls if c[1].endswith("/records/bulk"))
+        check(
+            "Q15", "only the two missing records were sent, in one bulk", bulks - bulks_before == 1
+        )
         check(
             "Q15",
-            "only the three missing records were sent (one bulk after the pre-seed)",
-            len(bulk_sizes) == 2,
+            "every item, including the pre-existing records', is linked to its record",
+            all(env.server_record(i[0])["id"] == i[5] for i in env.items()),
         )
-        check(
-            "Q15",
-            "every item, including the pre-existing record's, is linked to it",
-            env.items()[1][5] == env.server_record(f"{env.dataset_id}:1")["id"],
-        )
+    # a record that carries the Factory's external id but is not what the Factory pushed is
+    # never adopted (the queue stays building)
+    for label, mutate in (
+        ("text", lambda env, rec: env.server.edit_record_fields(rec["id"], "conversation", "x")),
+        (
+            "record_sha256",
+            lambda env, rec: env.server.edit_record_metadata(rec["id"], "record_sha256", sha("z")),
+        ),
+        (
+            "group_id",
+            lambda env, rec: env.server.edit_record_metadata(rec["id"], "group_id", sha("z")),
+        ),
+        (
+            "schema_version",
+            lambda env, rec: env.server.edit_record_metadata(rec["id"], "schema_version", "zz"),
+        ),
+        (
+            "record_id",
+            lambda env, rec: env.server.edit_record_metadata(rec["id"], "record_id", "other:1"),
+        ),
+        (
+            "extra metadata",
+            lambda env, rec: env.server.edit_record_metadata(rec["id"], "note", "x"),
+        ),
+    ):
+        with env_of(records=3) as env:
+            env.create()
+            env.sql("UPDATE review_queues SET status = 'building', argilla_dataset_id = NULL")
+            env.sql("UPDATE review_items SET argilla_record_id = NULL")
+            mutate(env, env.server_record(f"{env.dataset_id}:1"))
+            check(
+                "Q15",
+                f"a pre-existing record with a different {label} is argilla_rejected",
+                code_of(env.create) == "argilla_rejected",
+            )
+            check(
+                "Q15",
+                f"and the queue stays building ({label})",
+                env.sql("SELECT status FROM review_queues") == [("building",)]
+                and env.sql(
+                    "SELECT count(*) FROM review_items WHERE argilla_record_id IS NOT NULL"
+                )[0][0]
+                == 0,
+            )
     with env_of(records=3) as env:
         name = rm.dataset_name_for(env.org, env.project, env.dataset_id)
         dataset = env.owner_api.ensure_dataset(env.workspace.id, name)
@@ -3328,8 +3371,8 @@ def test_s_race_and_conflict() -> None:
         env.owner_api.list_records = stale
         check(
             "S22",
-            "a listing that is always stale ends argilla_unavailable after three attempts",
-            code_of(env.create) == "argilla_unavailable",
+            "a listing that is always stale ends argilla_rejected after three attempts",
+            code_of(env.create) == "argilla_rejected",
         )
         creates = sum(1 for c in env.server.review_calls if c[1].endswith("/records/bulk"))
         check("S22", "exactly three bulk attempts were made", creates - bulk_before == 3)
@@ -3516,6 +3559,153 @@ def test_s_right_operand_variants() -> None:
                 and next(iter(env.server.responses.values()))["values"]["rationale"]
                 == {"value": rationale},
             )
+
+
+def test_s_review_findings() -> None:
+    # EXCLUDED-POSITION-SHIFT: a rejected row ahead of an excluded one must not shift positions
+    rows = rows_n(5)
+    rows[3] = {"prompt": "EXCLUDE-ME", "completion": "gone"}
+    with env_of(rows=rows) as env:
+        env.payload = jsonl(rows[:1]) + b'{"prompt": "no completion"}\n' + jsonl(rows[1:])
+        env.excluded = (3,)  # batch positions count accepted rows: p0, p1, p2, EXCLUDE-ME, p4
+        queue = env.create()
+        check(
+            "F1",
+            "the excluded batch position is the accepted ordinal, so EXCLUDE-ME is not queued",
+            [i[1] for i in env.items()] == [0, 1, 2, 4]
+            and not env.server.holds_bytes(b"EXCLUDE-ME"),
+        )
+        check(
+            "F1",
+            "the other records are all queued, with record ids from the batch position",
+            [i[0] for i in env.items()] == [f"{env.dataset_id}:{p}" for p in (0, 1, 2, 4)]
+            and queue.record_count == 4,
+        )
+        # the group id formula keeps using the importer's own record index (rejected rows count)
+        source_indexes = [0, 2, 3, 5]
+        for item, source_index in zip(env.items(), source_indexes, strict=True):
+            record_id = str(
+                uuid.uuid5(
+                    ic.IMPORTER_RECORD_ID_NAMESPACE,
+                    f"{sha(env.payload)}:{MAPPING.mapping_sha256}:{source_index}",
+                )
+            )
+            check(
+                "F1",
+                f"item at position {item[1]} has the singleton group of source index {source_index}",
+                item[2] == sha(f"group:solo:{record_id}"),
+            )
+
+    # RECONCILE-RACE-FALSE-DRIFT: a poll that overlaps a legitimate submit must not mark drift
+    with env_of(records=3) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        real_list = env.owner_api.list_records
+
+        def list_then_submit(dataset_id: str) -> Any:
+            listed = real_list(dataset_id)  # the poll reads Argilla first ...
+            env.respond(queue.id, rid(env, 0), alice, "accept", "raced")  # ... a submit commits
+            return listed
+
+        env.owner_api.list_records = list_then_submit
+        findings = env.reconcile(queue.id)
+        env.owner_api.list_records = real_list
+        check(
+            "F2",
+            "a submit that lands after the listing is not drift",
+            findings == () and drifted(env) == {},
+        )
+        check(
+            "F2",
+            "the raced response is recorded",
+            env.sql("SELECT count(*) FROM review_responses")[0][0] == 1,
+        )
+        check("F2", "and a later reconcile is clean too", env.reconcile(queue.id) == ())
+
+        def list_without_record(dataset_id: str) -> Any:
+            return [r for r in real_list(dataset_id) if r.external_id != rid(env, 1)]
+
+        env.owner_api.list_records = list_without_record
+        findings = env.reconcile(queue.id)
+        env.owner_api.list_records = real_list
+        check(
+            "F2",
+            "a record missing from a stale listing but present on a fresh read is not drift",
+            findings == () and drifted(env) == {},
+        )
+        gone = env.server_record(rid(env, 1))
+        env.server.delete_record(gone["id"])
+        check(
+            "F2",
+            "a record that is really gone is still record_missing after the fresh read",
+            [(f.record_id, f.reason) for f in env.reconcile(queue.id)]
+            == [(rid(env, 1), "record_missing")],
+        )
+        env.sql(
+            "UPDATE review_items SET argilla_record_id = NULL WHERE record_id = :r", r=rid(env, 2)
+        )
+        env.server.edit_record_fields(env.server_record(rid(env, 2))["id"], "conversation", "x")
+        check(
+            "F2",
+            "a candidate whose item has no Argilla link is skipped, not marked",
+            rid(env, 2) not in {f.record_id for f in env.reconcile(queue.id)},
+        )
+
+    # authorization is re-checked under the item lock
+    with env_of(records=2) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        env.on_resolve = lambda: env.sql(
+            "UPDATE argilla_reviewer_identities SET status = 'revoked' WHERE id = :i",
+            i=alice.identity_id,
+        )
+        writes_before = len(writes(env.server))
+        check(
+            "F3",
+            "an identity revoked after the first check but before the write is refused",
+            code_of(lambda: env.respond(queue.id, rid(env, 0), alice)) == "reviewer_not_authorized",
+        )
+        check("F3", "nothing was sent to Argilla", len(writes(env.server)) == writes_before)
+    with env_of(records=2) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        env.on_resolve = lambda: env.sql(
+            "UPDATE argilla_workspace_members SET status = 'revoked' WHERE identity_id = :i",
+            i=alice.identity_id,
+        )
+        check(
+            "F3",
+            "a membership revoked in the same window is refused",
+            code_of(lambda: env.respond(queue.id, rid(env, 0), alice)) == "reviewer_not_authorized",
+        )
+
+    # adoption only ever takes the author's own response
+    with env_of(records=2) as env:
+        queue = env.create()
+        alice, bob = env.reviewer("alice"), env.reviewer("bob")
+        env.respond(queue.id, rid(env, 0), bob, "reject", "bob's")
+
+        def factory(key: str) -> ConflictingApi:
+            return ConflictingApi(env.server.client(api_key=key).transport)
+
+        puts_before = sum(1 for c in env.server.review_calls if c[0] == "PUT")
+        check(
+            "F4",
+            "a conflict with only another reviewer's response on the record is argilla_rejected",
+            code_of(lambda: env.respond(queue.id, rid(env, 0), alice, reviewer_api_factory=factory))
+            == "argilla_rejected",
+        )
+        check(
+            "F4",
+            "and no response was overwritten",
+            sum(1 for c in env.server.review_calls if c[0] == "PUT") == puts_before,
+        )
+    check(
+        "F5",
+        "the decision vocabulary is exactly accept/reject",
+        rm.DECISIONS == ("accept", "reject"),
+    )
+    check("F5", "the rationale cap is 2000", rm.MAX_RATIONALE_CHARS == 2000)
 
 
 def test_s_drift_direct() -> None:
@@ -3840,6 +4030,25 @@ def test_s_migration_executed() -> None:
         "downgrade drops children before parents",
         [a[0] for n, a, _ in down.calls if n == "drop_table"]
         == ["review_responses", "review_items", "review_queues"],
+    )
+    unique = {
+        c.name
+        for items in tables.values()
+        for c in items
+        if c.__class__.__name__ == "UniqueConstraint"
+    }
+    check(
+        "S29",
+        "the queue/record and item/identity uniqueness constraints exist by name",
+        {
+            "uq_review_items_queue_record",
+            "uq_review_items_queue_position",
+            "uq_review_responses_item_identity",
+            "uq_review_responses_argilla_response_id",
+            "uq_review_queues_org_dataset",
+            "uq_review_queues_argilla_dataset_id",
+        }
+        <= unique,
     )
     check("S29", "_in renders a quoted tuple", mod._in(("a", "b")) == "('a', 'b')")
 

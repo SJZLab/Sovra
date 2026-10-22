@@ -60,6 +60,8 @@ from typing import Any
 from packages.integrations.argilla.client import (
     ArgillaClientError,
     ArgillaConflictError,
+    ArgillaNotFoundError,
+    ArgillaRejectedError,
     ArgillaUnavailableError,
 )
 from packages.integrations.argilla.review_mapping import (
@@ -428,6 +430,7 @@ def _read_queue_items(
     )
     items: list[_QueueItem] = []
     total_chars = 0
+    accepted = 0
     try:
         for event in stream:
             if isinstance(event, BlankLine | RowRejection):
@@ -437,8 +440,14 @@ def _read_queue_items(
             key = group_keys.pop() if group_keys else None
             group_keys.clear()
             candidate = event.candidate
-            position = candidate["record_index"]
-            if type(position) is not int or position in excluded:
+            # Batch position (FTF-0511/0516): the ordinal among the accepted candidates handed to
+            # the detectors. `record_index` also counts rejected rows, so it is only the
+            # importer's own record number (the group id and record id formulas use it).
+            position = accepted
+            accepted += 1
+            source_index = candidate["record_index"]
+            assert type(source_index) is int
+            if position in excluded:
                 continue
             content = candidate["content"]
             assert isinstance(content, Mapping)
@@ -446,7 +455,7 @@ def _read_queue_items(
             record_id = f"{dataset_id}:{position}"
             normalized = candidate["normalized_sha256"]
             assert isinstance(normalized, str)
-            group_id = _group_id_for(mapping, source.expected_sha256, position, key)
+            group_id = _group_id_for(mapping, source.expected_sha256, source_index, key)
             payload = review_record_payload(
                 record_id=record_id,
                 group_id=group_id,
@@ -763,13 +772,19 @@ def _push_queue(
             if existing.keys() - wanted:
                 # Records the Factory never queued: refuse to adopt the dataset.
                 raise ReviewQueueError("argilla_rejected")
+            for external_id, found in existing.items():
+                # A record is adopted only if it is exactly what the Factory would have pushed.
+                assert external_id is not None  # `existing` holds only queued ids here
+                if _record_reason(_item_view(by_id[external_id]), found) is not None:
+                    raise ReviewQueueError("argilla_rejected")
             missing = [by_id[record_id] for record_id in sorted(by_id.keys() - existing.keys())]
             try:
                 created = owner_api.create_records(dataset.id, [i.payload for i in missing])
-            except ArgillaConflictError:
-                # A concurrent push created some of them first: list again.
+            except ArgillaRejectedError:
+                # A concurrent push created some of them first (the pinned server answers a
+                # duplicate external_id with 422): list again, verify, create what is left.
                 if attempt + 1 == _PUSH_ATTEMPTS:
-                    raise ReviewQueueError("argilla_unavailable") from None
+                    raise
                 continue
             ids = {record.external_id: record.id for record in existing.values()}
             ids.update({record.external_id: record.id for record in created})
@@ -930,6 +945,21 @@ def submit_review_response(
             raise ReviewQueueError("review_item_drift")
         if argilla_record_id is None:
             raise ReviewQueueError("queue_not_ready")
+        # Authorization again, under the item lock: a revoke or a narrowed role that committed
+        # after the first check must not let this write through.
+        still_authorized = execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT 1 FROM argilla_workspace_members m JOIN argilla_reviewer_identities i "
+                "ON i.organization_id = m.organization_id AND i.id = m.identity_id "
+                "WHERE m.scope_id = :scope AND m.identity_id = :identity "
+                "AND m.status = 'active' AND i.status = 'active'"
+            ),
+            {"scope": queue.scope_id, "identity": identity_id},
+        ).first()
+        if still_authorized is None:
+            raise ReviewQueueError("reviewer_not_authorized")
         current = execute_tenant_scoped(
             session,
             organization_id,
@@ -1072,16 +1102,17 @@ def _response_by(record: ArgillaReviewRecord, user_id: str) -> Any:
 # -------------------------------------------------------------------------- reconcile
 
 
-def _drift_reason(
-    item: Mapping[str, Any],
-    record: ArgillaReviewRecord | None,
-    stored: Mapping[str, Mapping[str, Any]],
-    mapped_users: Mapping[str, str],
-) -> str | None:
-    """`stored` maps identity id text -> the Factory's response row for this item;
-    `mapped_users` maps Argilla user id -> identity id text."""
-    if record is None:
-        return "record_missing"
+def _item_view(item: _QueueItem) -> dict[str, str]:
+    return {
+        "record_id": item.record_id,
+        "group_id": item.group_id,
+        "record_sha256": item.record_sha256,
+        "fields_sha256": item.fields_sha256,
+    }
+
+
+def _record_reason(item: Mapping[str, Any], record: ArgillaReviewRecord) -> str | None:
+    """Why an Argilla record is not the one the Factory queued for `item` (metadata, then text)."""
     expected_metadata = {
         "record_id": item["record_id"],
         "group_id": item["group_id"],
@@ -1093,6 +1124,22 @@ def _drift_reason(
     rendered = record.fields.get(FIELD_NAME)
     if not isinstance(rendered, str) or fields_sha256(rendered) != item["fields_sha256"]:
         return "record_fields_changed"
+    return None
+
+
+def _drift_reason(
+    item: Mapping[str, Any],
+    record: ArgillaReviewRecord | None,
+    stored: Mapping[str, Mapping[str, Any]],
+    mapped_users: Mapping[str, str],
+) -> str | None:
+    """`stored` maps identity id text -> the Factory's response row for this item;
+    `mapped_users` maps Argilla user id -> identity id text."""
+    if record is None:
+        return "record_missing"
+    reason = _record_reason(item, record)
+    if reason is not None:
+        return reason
     seen: set[str] = set()
     for response in record.responses:
         identity = mapped_users.get(response.user_id)
@@ -1157,64 +1204,57 @@ def reconcile_review_queue(
     except ArgillaClientError as exc:
         raise _argilla_error(exc) from None
     by_external = {record.external_id: record for record in records}
+
+    # -- phase 1: candidates, no locks. A poll that overlaps a legitimate submit sees a state
+    # that is already stale, so nothing is marked from this phase alone.
     with tenant_scoped_session(session_factory, organization_id) as session:
-        items = [
-            dict(row._mapping)
-            for row in execute_tenant_scoped(
-                session,
-                organization_id,
-                text(
-                    "SELECT id, record_id, group_id, record_sha256, fields_sha256, status, "
-                    "drift_reason FROM review_items WHERE queue_id = :queue ORDER BY batch_position"
-                ),
-                {"queue": queue_id},
-            )
-        ]
-        responses: dict[uuid.UUID, dict[str, Mapping[str, Any]]] = {}
-        for row in execute_tenant_scoped(
-            session,
-            organization_id,
-            text(
-                "SELECT item_id, identity_id, argilla_response_id, response_sha256 "
-                "FROM review_responses WHERE queue_id = :queue"
-            ),
-            {"queue": queue_id},
-        ):
-            responses.setdefault(row[0], {})[str(row[1])] = {
-                "argilla_response_id": row[2],
-                "response_sha256": row[3],
-            }
-        mapped_users = {
-            row[0]: str(row[1])
-            for row in execute_tenant_scoped(
-                session,
-                organization_id,
-                text(
-                    "SELECT argilla_user_id, id FROM argilla_reviewer_identities "
-                    "WHERE organization_id = :org"
-                ),
-                {"org": organization_id},
-            )
-        }
-        findings: list[DriftFinding] = []
-        new_drift: list[dict[str, Any]] = []
-        for item in items:
-            if item["status"] == "drift":
-                findings.append(DriftFinding(item["id"], item["record_id"], item["drift_reason"]))
-                continue
-            reason = _drift_reason(
+        items, responses, mapped_users = _factory_state(session, organization_id, queue_id)
+    findings: list[DriftFinding] = []
+    candidates: list[dict[str, Any]] = []
+    for item in items:
+        if item["status"] == "drift":
+            findings.append(DriftFinding(item["id"], item["record_id"], item["drift_reason"]))
+        elif (
+            _drift_reason(
                 item,
                 by_external.get(item["record_id"]),
                 responses.get(item["id"], {}),
                 mapped_users,
             )
-            if reason is not None:
-                new_drift.append({"id": item["id"], "reason": reason})
-                findings.append(DriftFinding(item["id"], item["record_id"], reason))
-        known = {item["record_id"] for item in items}
-        for external_id in sorted(by_external.keys() - known, key=lambda e: e or ""):
-            findings.append(DriftFinding(None, external_id, "foreign_record"))
-        if new_drift:
+            is not None
+        ):
+            candidates.append(item)
+    known = {item["record_id"] for item in items}
+    for external_id in sorted(by_external.keys() - known, key=lambda e: e or ""):
+        findings.append(DriftFinding(None, external_id, "foreign_record"))
+
+    # -- phase 2: each candidate is re-verified under its item lock. Every response write holds
+    # that same lock until it commits, so after the lock is taken the Factory rows and a fresh
+    # read of the record agree; only a drift that survives that is marked.
+    newly = 0
+    with tenant_scoped_session(session_factory, organization_id) as session:
+        for item in sorted(candidates, key=lambda c: str(c["id"])):
+            locked = execute_tenant_scoped(
+                session,
+                organization_id,
+                text(
+                    "SELECT status, argilla_record_id FROM review_items "
+                    "WHERE id = :id FOR UPDATE"
+                ),
+                {"id": item["id"]},
+            ).one()
+            if locked[0] != "pending" or locked[1] is None:
+                continue
+            _, responses_now, mapped_now = _factory_state(session, organization_id, queue_id)
+            try:
+                fresh: ArgillaReviewRecord | None = owner_api.get_record(locked[1])
+            except ArgillaNotFoundError:
+                fresh = None
+            except ArgillaClientError as exc:
+                raise _argilla_error(exc) from None
+            reason = _drift_reason(item, fresh, responses_now.get(item["id"], {}), mapped_now)
+            if reason is None:
+                continue
             execute_tenant_scoped(
                 session,
                 organization_id,
@@ -1222,8 +1262,10 @@ def reconcile_review_queue(
                     "UPDATE review_items SET status = 'drift', drift_reason = :reason, "
                     "updated_at = now() WHERE id = :id AND status = 'pending'"
                 ),
-                new_drift,  # type: ignore[arg-type]  # executemany rows
+                {"id": item["id"], "reason": reason},
             )
+            findings.append(DriftFinding(item["id"], item["record_id"], reason))
+            newly += 1
         write_audit_event(
             session,
             organization_id=organization_id,
@@ -1234,10 +1276,56 @@ def reconcile_review_queue(
             resource_id=str(queue_id),
             request_id=request_id,
             details={
-                "newly_drifted": len(new_drift),
+                "newly_drifted": newly,
                 "drifted_total": len(findings),
                 "queue_snapshot_sha256": queue.queue_snapshot_sha256,
             },
         )
         session.flush()
     return tuple(findings)
+
+
+def _factory_state(
+    session: Session, organization_id: uuid.UUID, queue_id: uuid.UUID
+) -> tuple[list[dict[str, Any]], dict[uuid.UUID, dict[str, Mapping[str, Any]]], dict[str, str]]:
+    """The queue's items, their recorded responses (by identity id text) and the Argilla user id
+    -> identity id text map, as the database holds them now."""
+    items = [
+        dict(row._mapping)
+        for row in execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT id, record_id, group_id, record_sha256, fields_sha256, status, "
+                "drift_reason FROM review_items WHERE queue_id = :queue ORDER BY batch_position"
+            ),
+            {"queue": queue_id},
+        )
+    ]
+    responses: dict[uuid.UUID, dict[str, Mapping[str, Any]]] = {}
+    for row in execute_tenant_scoped(
+        session,
+        organization_id,
+        text(
+            "SELECT item_id, identity_id, argilla_response_id, response_sha256 "
+            "FROM review_responses WHERE queue_id = :queue"
+        ),
+        {"queue": queue_id},
+    ):
+        responses.setdefault(row[0], {})[str(row[1])] = {
+            "argilla_response_id": row[2],
+            "response_sha256": row[3],
+        }
+    mapped_users = {
+        row[0]: str(row[1])
+        for row in execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT argilla_user_id, id FROM argilla_reviewer_identities "
+                "WHERE organization_id = :org"
+            ),
+            {"org": organization_id},
+        )
+    }
+    return items, responses, mapped_users
