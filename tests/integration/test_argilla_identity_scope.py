@@ -507,6 +507,7 @@ def section_identity_and_membership(world: World) -> None:
     )
     real_user = world.fake_server.users.get(identity.argilla_user_id)
     check("ensure_reviewer_identity creates a real Argilla user", real_user is not None)
+    assert real_user is not None
     check(
         "the real user's role reads back exactly 'annotator' (proof bullet 2)",
         real_user["role"] == "annotator",

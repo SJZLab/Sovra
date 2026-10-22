@@ -120,6 +120,29 @@ def test_dataset_source_roles_matches_section_45() -> None:
     )
 
 
+def test_naming_functions_refuse_non_uuid_and_empty_inputs() -> None:
+    check(
+        "workspace_name_for refuses a None organization_id instead of hashing it",
+        raises(TypeError, workspace_name_for, None, uuid.uuid4()),
+    )
+    check(
+        "workspace_name_for refuses a non-UUID string project_id instead of hashing it",
+        raises(TypeError, workspace_name_for, uuid.uuid4(), "not-a-uuid"),
+    )
+    check(
+        "_username_for refuses a None organization_id instead of hashing it",
+        raises(TypeError, _username_for, None, "iss", "sub"),
+    )
+    check(
+        "_username_for refuses an empty issuer instead of hashing it",
+        raises(TypeError, _username_for, uuid.uuid4(), "", "sub"),
+    )
+    check(
+        "_username_for refuses an empty subject instead of hashing it",
+        raises(TypeError, _username_for, uuid.uuid4(), "iss", ""),
+    )
+
+
 def test_error_hierarchy() -> None:
     check(
         "ReviewerIdentityRevokedError is an ArgillaIdentityError",
@@ -137,6 +160,7 @@ def main() -> None:
     test_workspace_name_differs_across_orgs_for_same_project()
     test_username_deterministic_shaped_and_content_free()
     test_dataset_source_roles_matches_section_45()
+    test_naming_functions_refuse_non_uuid_and_empty_inputs()
     test_error_hierarchy()
     if FAILURES:
         for failure in FAILURES:

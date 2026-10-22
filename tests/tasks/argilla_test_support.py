@@ -106,6 +106,9 @@ class FakeArgillaServer:
                 body = self._body()
                 if self.path == f"{_API}/workspaces":
                     name = body.get("name")
+                    if not isinstance(name, str) or not name:
+                        self._detail(422, "name must be a non-empty string")
+                        return
                     with server._lock:
                         if name in server.workspaces:
                             self._detail(409, "workspace already exists")
@@ -116,7 +119,11 @@ class FakeArgillaServer:
                     return
                 if self.path == f"{_API}/users":
                     username = body.get("username")
-                    if body.get("role") != "annotator":
+                    role = body.get("role")
+                    if not isinstance(username, str) or not username:
+                        self._detail(422, "username must be a non-empty string")
+                        return
+                    if role != "annotator":
                         self._detail(422, "only the annotator role may be created")
                         return
                     with server._lock:
@@ -124,10 +131,10 @@ class FakeArgillaServer:
                             self._detail(409, "username already exists")
                             return
                         user_id = str(uuid.uuid4())
-                        user = {
+                        user: dict[str, Any] = {
                             "id": user_id,
                             "username": username,
-                            "role": body.get("role"),
+                            "role": role,
                             "api_key": f"argilla-fake-key-{uuid.uuid4().hex}",
                         }
                         server.users[user_id] = user
@@ -135,18 +142,21 @@ class FakeArgillaServer:
                     return
                 if self.path.startswith(f"{_API}/workspaces/") and self.path.endswith("/users"):
                     workspace_id = self.path.split("/")[-2]
-                    user_id = body.get("user_id")
+                    member_user_id = body.get("user_id")
+                    if not isinstance(member_user_id, str) or not member_user_id:
+                        self._detail(422, "user_id must be a non-empty string")
+                        return
                     with server._lock:
                         if not any(w["id"] == workspace_id for w in server.workspaces.values()):
                             self._detail(404, "workspace not found")
                             return
-                        if user_id not in server.users:
+                        if member_user_id not in server.users:
                             self._detail(404, "user not found")
                             return
-                        if (workspace_id, user_id) in server.memberships:
+                        if (workspace_id, member_user_id) in server.memberships:
                             self._detail(409, "user is already a member of this workspace")
                             return
-                        server.memberships.add((workspace_id, user_id))
+                        server.memberships.add((workspace_id, member_user_id))
                     self._reply(201, {"id": str(uuid.uuid4())})
                     return
                 self._detail(404, "not found")

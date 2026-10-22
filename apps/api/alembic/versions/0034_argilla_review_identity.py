@@ -67,10 +67,6 @@ def _in(values: tuple[str, ...]) -> str:
     return "(" + ", ".join(f"'{v}'" for v in values) + ")"
 
 
-def _uuid_col(name: str, *args: object, **kwargs: object) -> sa.Column:
-    return sa.Column(name, postgresql.UUID(as_uuid=True), *args, **kwargs)
-
-
 def _now_col(name: str, *, nullable: bool = False) -> sa.Column:
     if nullable:
         return sa.Column(name, sa.DateTime(timezone=True), nullable=True)
@@ -85,16 +81,22 @@ _TENANT_SETTING = "NULLIF(current_setting('app.current_organization_id', true), 
 def upgrade() -> None:
     op.create_table(
         "argilla_review_scopes",
-        _uuid_col("id", primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        _uuid_col(
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
             "organization_id",
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
                 "organizations.id", ondelete="CASCADE", name="fk_argilla_review_scopes_org"
             ),
             nullable=False,
         ),
-        _uuid_col("project_id", nullable=False),
-        _uuid_col("component_binding_id", nullable=False),
+        sa.Column("project_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("component_binding_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("argilla_workspace_id", sa.String(36), nullable=False),
         sa.Column("argilla_workspace_name", sa.String(64), nullable=False),
         _now_col("created_at"),
@@ -124,9 +126,15 @@ def upgrade() -> None:
 
     op.create_table(
         "argilla_reviewer_identities",
-        _uuid_col("id", primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        _uuid_col(
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
             "organization_id",
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
                 "organizations.id", ondelete="CASCADE", name="fk_argilla_reviewer_identities_org"
             ),
@@ -178,16 +186,22 @@ def upgrade() -> None:
 
     op.create_table(
         "argilla_workspace_members",
-        _uuid_col("id", primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        _uuid_col(
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
             "organization_id",
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey(
                 "organizations.id", ondelete="CASCADE", name="fk_argilla_workspace_members_org"
             ),
             nullable=False,
         ),
-        _uuid_col("scope_id", nullable=False),
-        _uuid_col("identity_id", nullable=False),
+        sa.Column("scope_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("identity_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("status", sa.String(16), nullable=False, server_default="active"),
         _now_col("created_at"),
         _now_col("updated_at"),

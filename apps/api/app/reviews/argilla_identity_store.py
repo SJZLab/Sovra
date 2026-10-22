@@ -146,7 +146,16 @@ def workspace_name_for(organization_id: uuid.UUID, project_id: uuid.UUID) -> str
     """Deterministic, collision-free, content-free Argilla workspace name:
     `sovra-` + sha256(org|project)[:24]. Matches `ArgillaClient`'s own
     `_WORKSPACE_NAME` identifier shape (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
-    by construction -- a hex digest prefixed with a letter."""
+    by construction -- a hex digest prefixed with a letter.
+
+    Every real caller already validated both ids as real `uuid.UUID`
+    values before reaching here (`tenant_scoped_session`'s own
+    `TenantContextError` guard runs first in `ensure_review_scope`) -- the
+    checks below are defense in depth, not the only guard, so this
+    function never silently hashes a non-UUID into a deterministic-looking
+    but meaningless name."""
+    if not isinstance(organization_id, uuid.UUID) or not isinstance(project_id, uuid.UUID):
+        raise TypeError("workspace_name_for requires real uuid.UUID values")
     digest = hashlib.sha256(f"{organization_id}|{project_id}".encode("ascii")).hexdigest()
     return f"sovra-{digest[:24]}"
 
@@ -155,6 +164,10 @@ def _username_for(organization_id: uuid.UUID, issuer: str, subject: str) -> str:
     """Deterministic, content-free Argilla username for one Sovra identity.
     Never the real issuer/subject text (which could be an email-shaped
     value) -- only a digest, matching `workspace_name_for`'s own rule."""
+    if not isinstance(organization_id, uuid.UUID):
+        raise TypeError("_username_for requires a real uuid.UUID organization_id")
+    if not isinstance(issuer, str) or not issuer or not isinstance(subject, str) or not subject:
+        raise TypeError("_username_for requires non-empty string issuer/subject")
     digest = hashlib.sha256(f"{organization_id}|{issuer}\x00{subject}".encode()).hexdigest()
     return f"sovra-{digest[:24]}"
 
