@@ -3471,6 +3471,53 @@ def test_s_response_readback() -> None:
     )
 
 
+def test_s_right_operand_variants() -> None:
+    rec = rm.ArgillaReviewRecord(
+        U1, "d:0", {}, {}, (rm.ArgillaReviewResponse(U2, U3, True, "accept", None),)
+    )
+    check(
+        "S30",
+        "_response_by does not match an upper-cased wanted user id",
+        store._response_by(rec, U3.upper()) is None,
+    )
+    check(
+        "S30",
+        "_response_by does not match a padded wanted user id",
+        store._response_by(rec, U3 + " ") is None,
+    )
+    name = DS["name"]
+    api = rm.ArgillaReviewApi(StubTransport({("GET", "/me/datasets"): [{"items": [DS]}]}))
+    check(
+        "S30",
+        "_find_dataset does not match an upper-cased wanted name",
+        api._find_dataset(U2, name.upper()) is None,
+    )
+    check(
+        "S30",
+        "_find_dataset does not match a padded wanted name",
+        api._find_dataset(U2, name + " ") is None,
+    )
+    with env_of(records=2) as env:
+        queue = env.create()
+        alice = env.reviewer("alice")
+        for decision, rationale in (
+            ("accept", " Mixed Case OK "),
+            ("reject", "UPPER"),
+            ("accept", "tail "),
+        ):
+            version = env.sql("SELECT coalesce(max(row_version), 0) FROM review_responses")[0][0]
+            result = env.respond(
+                queue.id, rid(env, 0), alice, decision, rationale, expected_version=version
+            )
+            check(
+                "S30",
+                f"a rationale {rationale!r} is stored and read back exactly",
+                result.rationale == rationale
+                and next(iter(env.server.responses.values()))["values"]["rationale"]
+                == {"value": rationale},
+            )
+
+
 def test_s_drift_direct() -> None:
     item = {
         "record_id": "d:0",

@@ -615,12 +615,13 @@ def _same_lineage(
 ) -> ReviewQueueRecord:
     """A queue already exists for this dataset: it is the same queue only if every hash that
     defined it still holds; otherwise the source changed and a new queue needs a decision."""
-    if (
-        record.queue_snapshot_sha256 != snapshot
-        or record.quality_report_sha256 != lineage["quality_report_sha256"]
-        or record.excluded_positions_sha256 != lineage["excluded_positions_sha256"]
-        or record.scope_id != scope_id
-    ):
+    stored = (
+        record.queue_snapshot_sha256,
+        record.quality_report_sha256,
+        record.excluded_positions_sha256,
+    )
+    wanted = (snapshot, lineage["quality_report_sha256"], lineage["excluded_positions_sha256"])
+    if stored != wanted or record.scope_id != scope_id:
         raise ReviewQueueError("queue_source_changed")
     return record
 
@@ -1057,8 +1058,7 @@ def _write_argilla_response(
     if (
         stored is None
         or not stored.submitted
-        or stored.decision != decision
-        or (stored.rationale or "") != rationale
+        or (stored.decision, stored.rationale or "") != (decision, rationale)
     ):
         raise ReviewQueueError("response_author_mismatch")
     return stored.id
