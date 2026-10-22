@@ -62,7 +62,7 @@
  * repository).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button, EmptyState, Field, PendingView } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
@@ -153,7 +153,7 @@ export function datasetSourceAuthorizeUrl(
   return `${datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId)}/${connectionId}/authorize`;
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
@@ -162,10 +162,38 @@ async function readErrorDetail(response: Response): Promise<string> {
   } catch {
     // fall through to the generic message below
   }
-  return `request failed (${response.status})`;
+  // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a 5xx (or any failure with
+  // no server-supplied `detail`) used to render the raw, untranslated `request failed (${status})`
+  // -- never in Arabic, and with no retry affordance. The server's own stable `detail` codes are
+  // shown verbatim above (same precedent as every other FTF-05xx closed-vocabulary surface); only
+  // this no-detail fallback needs translating.
+  return phrase("requestFailedRetryable", locale);
 }
 
-export function DatasetSourceSelectorPurposeAuthorizationUi({
+function networkErrorMessage(caught: unknown, locale: Locale): string {
+  // Distinguish from the above only for logging/debugging; the user-facing text is the same
+  // bilingual, retryable message either way (Law 17: never silent, never a crash).
+  void caught;
+  return phrase("networkErrorRetryable", locale);
+}
+
+export function DatasetSourceSelectorPurposeAuthorizationUi(
+  props: DatasetSourceSelectorPurposeAuthorizationProps,
+) {
+  // FTF-UX02 round-2 pre-review round 1 (STALE-IDENTITY-0500A): any identity change fully remounts
+  // this component (same pattern as the sibling FTF-0501-UI `ResumableDatasetUploadUI`), so a
+  // still-in-flight request for the OLD organization/project can never land on the NEW identity's
+  // state, and the new identity starts from a real loading state immediately instead of showing
+  // the previous identity's stale, still-usable list and authorization panel.
+  return (
+    <DatasetSourceSelectorInner
+      key={`${props.apiBaseUrl}|${props.organizationId}|${props.projectId}`}
+      {...props}
+    />
+  );
+}
+
+function DatasetSourceSelectorInner({
   apiBaseUrl,
   organizationId,
   projectId,
@@ -173,6 +201,17 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
 }: DatasetSourceSelectorPurposeAuthorizationProps) {
   const [connections, setConnections] = useState<DatasetSourceConnectionSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+
+  // Guards every state update after an `await` so a request from an identity this component has
+  // since remounted away from (key change above) can never write into the new instance's state --
+  // belt-and-suspenders alongside the key-based remount itself.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const [formStep, setFormStep] = useState<FormStep>("form");
   const [sourceType, setSourceType] = useState<DatasetSourceType>(DATASET_SOURCE_TYPES[0]);
@@ -192,17 +231,35 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
 
   async function refreshConnections() {
     setListError(null);
-    const response = await fetch(
-      datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId),
-      {
-        credentials: "include",
-      },
-    );
-    if (!response.ok) {
-      setListError(await readErrorDetail(response));
-      return;
+    try {
+      const response = await fetch(
+        datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId),
+        {
+          credentials: "include",
+        },
+      );
+      if (!aliveRef.current) return;
+      if (!response.ok) {
+        setListError(await readErrorDetail(response, locale));
+        return;
+      }
+      const body = await response.json().catch(() => null);
+      if (!aliveRef.current) return;
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a 200 whose body is not
+      // an array (an object like `{items: []}`, `null`, a string, ...) used to crash the component
+      // outright (`connections?.find is not a function`) or spin the loading state forever -- a
+      // malformed 2xx is never success (Law 17), so it becomes a typed, retryable, announced error.
+      if (!Array.isArray(body)) {
+        setListError(phrase("responseMalformedRetryable", locale));
+        return;
+      }
+      setConnections(body);
+    } catch (caught) {
+      if (!aliveRef.current) return;
+      // A thrown fetch (offline, DNS failure, a dropped connection) used to leave the loading
+      // state showing forever with an unhandled rejection and nothing announced to assistive tech.
+      setListError(networkErrorMessage(caught, locale));
     }
-    setConnections(await response.json());
   }
 
   // Deliberately runs once per identity triple, not on every keystroke of
@@ -267,20 +324,28 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
           }),
         },
       );
+      if (!aliveRef.current) return;
       if (!response.ok) {
         // Preserve the draft on a real failure -- never revert the user's
         // own in-progress entries back to empty fields.
-        setCreateError(await readErrorDetail(response));
+        setCreateError(await readErrorDetail(response, locale));
         return;
       }
       const created: DatasetSourceConnectionSummary = await response.json();
+      if (!aliveRef.current) return;
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
       setAuthorizeState("idle");
       setAuthorizeMessage(null);
       resetForm();
+    } catch (caught) {
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
+      // here used to throw past this function's own `finally` as an unhandled rejection, leaving
+      // the preview showing with no error and `creating` never cleared except by the `finally`.
+      if (!aliveRef.current) return;
+      setCreateError(networkErrorMessage(caught, locale));
     } finally {
-      setCreating(false);
+      if (aliveRef.current) setCreating(false);
     }
   }
 
@@ -307,20 +372,26 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
           body: JSON.stringify({ purpose: purposeToCheck }),
         },
       );
+      if (!aliveRef.current) return;
       if (response.status === 403) {
         setAuthorizeState("denied");
-        setAuthorizeMessage(await readErrorDetail(response));
+        setAuthorizeMessage(await readErrorDetail(response, locale));
         return;
       }
       if (!response.ok) {
         setAuthorizeState("idle");
-        setAuthorizeMessage(await readErrorDetail(response));
+        setAuthorizeMessage(await readErrorDetail(response, locale));
         return;
       }
       setAuthorizeState("authorized");
       setAuthorizeMessage(null);
-    } finally {
-      // state already set in each branch above
+    } catch (caught) {
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
+      // here used to leave "Check authorization" disabled forever (`checking` state) with an
+      // unhandled rejection and nothing announced -- now a typed, retryable, announced error.
+      if (!aliveRef.current) return;
+      setAuthorizeState("idle");
+      setAuthorizeMessage(networkErrorMessage(caught, locale));
     }
   }
 
@@ -338,9 +409,18 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
       <section data-testid="dataset-source-list-section">
         <h2>{phrase("datasetSourceHeading", locale)}</h2>
         {listError && (
-          <p role="alert" data-testid="dataset-source-list-error">
-            {listError}
-          </p>
+          <div data-testid="dataset-source-list-error-section">
+            <p role="alert" data-testid="dataset-source-list-error">
+              {listError}
+            </p>
+            <Button
+              variant="secondary"
+              data-testid="dataset-source-list-retry-button"
+              onClick={() => void refreshConnections()}
+            >
+              {phrase("retry", locale)}
+            </Button>
+          </div>
         )}
         {connections === null && !listError && (
           <PendingView
@@ -374,7 +454,7 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
                 aria-pressed={selectedConnectionId === connection.id}
                 onClick={() => handleSelectConnection(connection)}
               >
-                {connection.display_name} ({connection.source_type},{" "}
+                <bdi>{connection.display_name}</bdi> ({connection.source_type},{" "}
                 {connection.security_classification},{" "}
                 {connectionStatusLabel(connection.connection_status)})
               </Button>
@@ -393,7 +473,14 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
 
         {formStep === "form" && (
           <form onSubmit={handleReview} data-testid="dataset-source-form">
-            <label htmlFor="dataset-source-type">{phrase("sourceTypeLabel", locale)}</label>
+            {/* FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS): block labels, same fix
+                as `Field` itself -- real layout, not DOM order, is what NN/g forms measures. */}
+            <label
+              htmlFor="dataset-source-type"
+              style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+            >
+              {phrase("sourceTypeLabel", locale)}
+            </label>
             <select
               id="dataset-source-type"
               data-testid="dataset-source-type-select"
@@ -444,7 +531,10 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </fieldset>
 
-            <label htmlFor="dataset-source-security-classification">
+            <label
+              htmlFor="dataset-source-security-classification"
+              style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+            >
               {phrase("securityClassificationLabel", locale)}
             </label>
             <select

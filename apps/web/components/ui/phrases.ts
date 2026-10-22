@@ -87,7 +87,23 @@ export const PHRASES = {
   newConnectionHeading: { en: "New connection", ar: "اتصال جديد" },
   sourceTypeLabel: { en: "Source type", ar: "نوع المصدر" },
   displayNameLabel: { en: "Display name", ar: "الاسم المعروض" },
-  credentialLabel: { en: "Credential (optional)", ar: "بيانات الاعتماد (اختياري)" },
+  // FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS misclaimed): the label text used to
+  // bake in "(optional)" on top of the one `Field` itself renders from `requirement`, producing a
+  // doubled "Credential (optional) (optional)". The requirement marker is `Field`'s job alone.
+  credentialLabel: { en: "Credential", ar: "بيانات الاعتماد" },
+  retry: { en: "Retry", ar: "إعادة المحاولة" },
+  requestFailedRetryable: {
+    en: "Something went wrong loading this. You can retry.",
+    ar: "حدث خطأ أثناء التحميل. يمكنك إعادة المحاولة.",
+  },
+  responseMalformedRetryable: {
+    en: "The server's reply could not be read. You can retry.",
+    ar: "تعذّرت قراءة رد الخادم. يمكنك إعادة المحاولة.",
+  },
+  networkErrorRetryable: {
+    en: "A network problem occurred. You can retry.",
+    ar: "حدث خطأ في الشبكة. يمكنك إعادة المحاولة.",
+  },
   allowedPurposesLegend: { en: "Allowed purposes", ar: "الأغراض المسموح بها" },
   securityClassificationLabel: {
     en: "Security classification (privacy boundary)",

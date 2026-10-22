@@ -30,7 +30,10 @@ export function Field({
   const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
   return (
     <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
-      <label htmlFor={id}>
+      {/* FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS): a block label forces the
+          control onto its own line below it in real layout (NN/g forms) -- DOM order alone is
+          not visual layout, since two inline-level elements still sit side by side. */}
+      <label htmlFor={id} style={{ display: "block", marginBlockEnd: "var(--space-1)" }}>
         {label}{" "}
         <span>
           {phrase(requirement === "required" ? "fieldRequired" : "fieldOptional", locale)}

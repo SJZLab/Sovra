@@ -739,6 +739,14 @@ function UploadInner({
   const [phase, setPhase] = useState<Phase>("idle");
   const [resumableDraft, setResumableDraft] = useState<Draft | null>(null);
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
+  // FTF-UX02 round-2 pre-review round 1 (CONFIRM-FOCUS-ON-CONFIRM): confirming abandon used to
+  // close the dialog AND discard the whole "resumable" section (the dialog's own trigger button
+  // included) in the same update, so the Dialog's close-focus had nowhere live to land and focus
+  // fell through to `<body>`. `pendingAbandon` defers the actual reset to a dedicated effect that
+  // runs only after the dialog has cleanly closed on its own (while the trigger is still mounted),
+  // and `needsFocusOnIdle` then moves focus to the fresh form's first control once IT has mounted.
+  const [pendingAbandon, setPendingAbandon] = useState(false);
+  const [needsFocusOnIdle, setNeedsFocusOnIdle] = useState(false);
   const [purpose, setPurpose] = useState<UploadPurpose>(ALLOWED_PURPOSES[0]);
   const [contentType, setContentType] = useState<UploadContentType>(SUPPORTED_CONTENT_TYPES[0]);
   const [file, setFile] = useState<File | null>(null);
@@ -765,6 +773,25 @@ function UploadInner({
     };
     // Runs once per identity (the parent keys this component on it).
   }, [storageKey, organizationId, projectId, datasetSourceConnectionId]);
+
+  // Step 1: once the dialog has actually closed (confirmingAbandon became false) after the
+  // destructive button requested it, finish the reset. This runs in its own effect so the dialog's
+  // own close -- and Radix's close-focus handling, with the trigger button still mounted -- happens
+  // first, cleanly, instead of racing the section swap.
+  useEffect(() => {
+    if (!pendingAbandon || confirmingAbandon) return;
+    setPendingAbandon(false);
+    resetToIdle();
+    setNeedsFocusOnIdle(true);
+  }, [pendingAbandon, confirmingAbandon]);
+
+  // Step 2: once the fresh "idle" form has actually mounted, move focus to its first control
+  // (NN/g H3/WCAG 2.4.3: a destructive confirm must not strand focus on <body>).
+  useEffect(() => {
+    if (!needsFocusOnIdle || phase !== "idle") return;
+    setNeedsFocusOnIdle(false);
+    document.querySelector<HTMLElement>('[data-testid="upload-purpose-select"]')?.focus();
+  }, [needsFocusOnIdle, phase]);
 
   async function exclusive(run: () => Promise<void>) {
     if (busyRef.current) return;
@@ -1243,8 +1270,8 @@ function UploadInner({
                 variant="danger"
                 data-testid="upload-abandon-confirm-button"
                 onClick={() => {
+                  setPendingAbandon(true);
                   setConfirmingAbandon(false);
-                  resetToIdle();
                 }}
               >
                 {phrase("abandonDraft", locale)}

@@ -544,3 +544,405 @@ test("a real list-fetch failure surfaces the server error, not a silent empty li
     expect(screen.getByTestId("dataset-source-list-error").textContent).toBe("internal error"),
   );
 });
+
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 1 (independent L2-style review of PR #947):
+// findings 2 (UNPINNED-F4 / connection_status), 3 (NOT-BILINGUAL-0500A), 4
+// (ERRORS-NOT-ANNOUNCED-0500A), 6 (STALE-IDENTITY-0500A) and 7 (UX01-REBUILD-UNPINNED).
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the connection option names its connection_status, in English and Arabic", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [connection({ connection_status: "revoked" })] }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${connection().id}`).textContent).toContain(
+      "Revoked",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned): connection_status is Arabic when locale is ar", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({ list: () => ({ ok: true, json: async () => [connection()] }) }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${connection().id}`).textContent).toContain(
+      "نشط",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 3 (pinned): the connection's display name is wrapped in <bdi>, not bare text", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({ list: () => ({ ok: true, json: async () => [connection()] }) }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => {
+    const option = screen.getByTestId(`dataset-source-option-${connection().id}`);
+    const bdi = option.querySelector("bdi");
+    expect(bdi?.textContent).toBe(connection().display_name);
+  });
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 3 (pinned): the dataset-source heading is the exact Arabic translation when locale is ar", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "اتصالات مصادر البيانات" })).toBeTruthy(),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 3 (pinned): the empty-state title is the exact Arabic translation, not left English", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-empty-state").textContent).toContain(
+      "لا توجد اتصالات بمصادر البيانات بعد",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 3 (pinned): 'Confirm and create' is the exact Arabic translation on the preview step", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-confirm-button").textContent).toBe("تأكيد وإنشاء"),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4 (ERRORS-NOT-ANNOUNCED-0500A): a rejected list fetch is a typed, announced, retryable error, not an endless loading state", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("network down"))),
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  const alertEl = await screen.findByRole("alert");
+  expect(alertEl.getAttribute("data-testid")).toBe("dataset-source-list-error");
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByTestId("dataset-source-list-retry-button")).toBeTruthy();
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4: a 200 body shaped {items: []} is a typed error, never a crash", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, json: async () => ({ items: [] }) })),
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-list-error")).toBeTruthy());
+  // Proves the tree is still alive and did not unmount from a thrown render error.
+  expect(screen.getByTestId("dataset-source-selector")).toBeTruthy();
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4: a 200 body of null is a typed error, not an endless spinner", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, json: async () => null })),
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-list-error")).toBeTruthy());
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4: Retry re-issues the real list request and can recover", async () => {
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error("network down"));
+      return { ok: true, json: async () => [] };
+    }),
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-list-retry-button")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-list-retry-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+  expect(calls).toBe(2);
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4: a rejected create request surfaces a role=alert error and re-enables the form, never silent", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [] }),
+      onCreate: () => {
+        throw new Error("network down");
+      },
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-create-error")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-create-error").getAttribute("role")).toBe("alert");
+  expect((screen.getByTestId("dataset-source-confirm-button") as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4: a rejected authorize request re-enables 'Check authorization', never stuck disabled", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => {
+        throw new Error("network down");
+      },
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-error")).toBeTruthy(),
+  );
+  expect(screen.getByTestId("dataset-source-authorization-error").getAttribute("role")).toBe(
+    "alert",
+  );
+  expect(
+    (screen.getByTestId("dataset-source-check-authorization-button") as HTMLButtonElement).disabled,
+  ).toBe(false);
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 4 (pinned): the authorization-denied message carries role=alert", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => ({ ok: false, status: 403, json: async () => ({ detail: "denied" }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-result-denied")).toBeTruthy(),
+  );
+  expect(
+    screen.getByTestId("dataset-source-authorization-result-denied").getAttribute("role"),
+  ).toBe("alert");
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 6 (STALE-IDENTITY-0500A): changing project mid-flight shows loading immediately and a late reply for the old identity never overwrites the new one", async () => {
+  let resolveFirst: ((value: unknown) => void) | undefined;
+  const fetchMock = vi.fn((url: string) => {
+    if (url === CONNECTIONS_URL) {
+      return new Promise((resolve) => {
+        resolveFirst = resolve;
+      });
+    }
+    return Promise.resolve({ ok: true, json: async () => [] });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { rerender } = render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  expect(screen.getByRole("status")).toBeTruthy();
+
+  const OTHER_PROJECT_ID = "44444444-4444-4444-4444-444444444444";
+  rerender(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: OTHER_PROJECT_ID,
+    }),
+  );
+  // Still (newly) loading -- a remounted instance, not the stale one left showing its old state.
+  expect(screen.getByRole("status")).toBeTruthy();
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+
+  // The OLD identity's in-flight request now resolves late, with data for the OLD project.
+  resolveFirst?.({ ok: true, json: async () => [connection()] });
+  await new Promise((r) => setTimeout(r, 0));
+  // The new identity's empty state must still be showing -- the late reply must not have landed.
+  expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy();
+  expect(screen.queryByTestId(`dataset-source-option-${connection().id}`)).toBeNull();
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 7 (pinned, UX01-REBUILD-UNPINNED): the Review button is the real UX01 Button, not a native <button>", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-review-button").hasAttribute("data-variant")).toBe(
+    true,
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 7 (pinned): the loading indicator carries aria-busy", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => undefined)),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  expect(screen.getByRole("status").getAttribute("aria-busy")).toBe("true");
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 5 (LABELS-ABOVE-FIELDS misclaimed): the Credential label is not duplicated as '(optional) (optional)'", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  const label = document.querySelector('label[for="dataset-source-credential"]');
+  expect(label?.textContent?.replace(/\s+/g, " ").trim()).toBe("Credential (optional)");
+});

@@ -364,6 +364,96 @@ describe("[UX02-BROWSER] real-Chromium §72.5 evidence", () => {
     }
   });
 
+  // FTF-UX02 round-2 pre-review round 1, finding 1 (pinned): initial open focus is the specific
+  // Keep-draft button, not merely "something inside the dialog" (a Keep/Abandon reorder must RED).
+  test("[0501-UI abandon dialog] initial focus on open is the Keep-draft button specifically", async () => {
+    const state = STATES.find((s) => s.id === "0501-UI abandon dialog")!;
+    const page = await openState(state, "en", "light");
+    try {
+      const focused = await page.evaluate(() => {
+        const keep = document.querySelector('[data-testid="upload-abandon-cancel-button"]');
+        return document.activeElement === keep;
+      });
+      expect(focused, "initial focus must be the Keep-draft button").toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // FTF-UX02 round-2 pre-review round 1, finding 1 (CONFIRM-FOCUS-ON-CONFIRM): confirming abandon
+  // (the destructive path, as opposed to Keep/Escape) must move focus to the fresh form's first
+  // control, never strand it on <body> -- the exact defect the independent review reproduced.
+  test("[0501-UI abandon dialog] confirming Abandon moves focus to the fresh form's first control, never <body>", async () => {
+    const state = STATES.find((s) => s.id === "0501-UI abandon dialog")!;
+    const page = await openState(state, "en", "light");
+    try {
+      await page.getByTestId("upload-abandon-confirm-button").click();
+      await page.waitForSelector('[data-testid="upload-abandon-confirm"]', { state: "detached" });
+      await page.waitForSelector('[data-testid="upload-purpose-select"]', { state: "visible" });
+      const onPurposeSelect = await page.evaluate(() => {
+        const select = document.querySelector('[data-testid="upload-purpose-select"]');
+        return document.activeElement === select;
+      });
+      expect(onPurposeSelect, "focus must land on the fresh form's purpose select").toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // FTF-UX02 round-2 pre-review round 1, finding 5 (LABELS-ABOVE-FIELDS misclaimed): the
+  // independent review measured real layout (not DOM order) and found every labelled 0500A
+  // control's label beside it, not above it, at both 1280 and 390px. Pin the real geometry.
+  test("[0500A populated] every labelled control's label sits visually above it, at 1280 and 390px", async () => {
+    const state = STATES.find((s) => s.id === "0500A populated")!;
+    const page = await openState(state, "en", "light");
+    try {
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        const problems = await page.evaluate(() => {
+          const pairs: [string, string][] = [
+            ['label[for="dataset-source-type"]', "dataset-source-type-select"],
+            ['label[for="dataset-source-display-name"]', "dataset-source-display-name-input"],
+            ['label[for="dataset-source-credential"]', "dataset-source-credential-input"],
+            [
+              'label[for="dataset-source-security-classification"]',
+              "dataset-source-security-classification-select",
+            ],
+          ];
+          const bad: string[] = [];
+          for (const [labelSelector, controlTestId] of pairs) {
+            const label = document.querySelector(labelSelector) as HTMLElement | null;
+            const control = document.querySelector(
+              `[data-testid="${controlTestId}"]`,
+            ) as HTMLElement | null;
+            if (!label || !control) {
+              bad.push(`${controlTestId}: missing label or control`);
+              continue;
+            }
+            const labelRect = label.getBoundingClientRect();
+            const controlRect = control.getBoundingClientRect();
+            // Above, not beside: the label's bottom edge must not sit below the control's top
+            // edge by more than a hairline (sub-pixel rounding), and they must not overlap
+            // vertically in a way that puts them on the same visual row (left-to-left gap check
+            // catches the "beside" case the independent review actually found).
+            const stacked = labelRect.bottom <= controlRect.top + 1;
+            const sameRowBeside =
+              Math.abs(labelRect.top - controlRect.top) < 4 && controlRect.left > labelRect.right;
+            if (!stacked || sameRowBeside) {
+              bad.push(
+                `${controlTestId}: label bottom=${labelRect.bottom} control top=${controlRect.top} ` +
+                  `labelTop=${labelRect.top} controlLeft=${controlRect.left} labelRight=${labelRect.right}`,
+              );
+            }
+          }
+          return bad;
+        });
+        expect(problems, problems.join(" | ")).toEqual([]);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
   test("[0501-UI abandon dialog] Escape closes it and returns focus, without abandoning the draft", async () => {
     const state = STATES.find((s) => s.id === "0501-UI abandon dialog")!;
     const page = await openState(state, "en", "light");

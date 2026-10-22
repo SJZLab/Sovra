@@ -1742,6 +1742,87 @@ test("FTF-UX02 r2: the abandon trigger button text is bilingual, not a hardcoded
   expect(trigger.textContent).toMatch(/[؀-ۿ]/);
 });
 
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 1 (independent L2-style review of PR #947):
+// findings 1 (CONFIRM-FOCUS-ON-CONFIRM, pinned initial-focus), 2 (UNPINNED-F4),
+// 3 (NOT-BILINGUAL-0500A's dialog half) and the lang-attribute gap.
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r1 finding 1 (pinned): initial open focus is the Keep-draft button specifically, not merely 'something inside'", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  // Reordering Keep/Abandon so the destructive button gets initial focus must turn this RED --
+  // the prior assertion (`confirm.contains(document.activeElement)`) could not catch that.
+  expect(document.activeElement).toBe(screen.getByTestId("upload-abandon-cancel-button"));
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 1 (pinned): confirming abandon moves focus to the fresh form's first control, never <body>", async () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+  await waitFor(() => expect(screen.getByTestId("upload-form")).toBeTruthy());
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("upload-purpose-select")),
+  );
+});
+
+test.each([
+  ["en", "Keep draft", "Abandon draft"],
+  ["ar", "الاحتفاظ بالمسودة", "تجاهل المسودة"],
+])(
+  "FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): Keep/Abandon button labels are exact in %s",
+  (locale, keepText, abandonText) => {
+    seedDraft();
+    render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: locale as "en" | "ar" }));
+    fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+    expect(screen.getByTestId("upload-abandon-cancel-button").textContent).toBe(keepText);
+    expect(screen.getByTestId("upload-abandon-confirm-button").textContent).toBe(abandonText);
+  },
+);
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the English confirm body includes the exact 'cannot be undone' sentence", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm").textContent).toContain(
+    "This cannot be undone.",
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the Arabic confirm body is the exact translated sentence, not the English one", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const text = screen.getByTestId("upload-abandon-confirm").textContent ?? "";
+  expect(text).toContain(
+    "سينسى هذا المتصفح التقدم الذي أحرزته وسيبدأ رفع جديد من البداية. لا يمكن التراجع عن ذلك.",
+  );
+  expect(text).not.toContain("This browser forgets");
+});
+
+test.each(["en", "ar"] as const)(
+  "FTF-UX02 r2 pre-review r1 finding 3 (pinned): the abandon dialog's lang attribute is %s, not left unset",
+  (locale) => {
+    seedDraft();
+    render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale }));
+    fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+    expect(screen.getByTestId("upload-abandon-confirm").getAttribute("lang")).toBe(locale);
+  },
+);
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the resume-error paragraph carries role=alert", async () => {
+  seedDraft();
+  renderUI();
+  enqueue("GET", SESSION_URL, fail(500, null));
+  fireEvent.change(screen.getByTestId("upload-resume-file-input"), {
+    target: { files: [testFile(FILE_BYTES)] },
+  });
+  await waitFor(() => expect(screen.getByTestId("upload-resume-error")).toBeTruthy());
+  expect(screen.getByTestId("upload-resume-error").getAttribute("role")).toBe("alert");
+});
+
 test("fault: a secret, a presigned URL or file bytes ever written to localStorage -> RED", async () => {
   await uploadToReadyToFinalize();
   const dump: string[] = [];

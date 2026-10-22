@@ -67,7 +67,11 @@ export function Dialog({
             onOpenChange(false);
           }}
           onCloseAutoFocus={(event) => {
-            if (restoreFocusTo) {
+            // A caller that also unmounts the opener in the same update (e.g. a destructive
+            // confirm that both closes this dialog and discards the section it lives in) hands
+            // back a now-disconnected node -- `.focus()` on it is a silent no-op, so skip it and
+            // let the caller's own post-close effect place focus instead of fighting it.
+            if (restoreFocusTo && document.contains(restoreFocusTo)) {
               event.preventDefault();
               restoreFocusTo.focus();
             }
