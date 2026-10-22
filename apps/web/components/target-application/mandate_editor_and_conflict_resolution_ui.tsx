@@ -62,7 +62,14 @@
  * FTF-04A19/FTF-0407's own live routes; nothing new is added to either.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from "react";
 
 import {
   manifestUrl,
@@ -72,8 +79,30 @@ import {
   requirementsUrl,
   type CriticalBehaviorRequirementView,
 } from "../project-mandate/requirements_ui";
-import { dirFor, type Locale } from "../ui";
-import { MANDATE_FIELD_HELP } from "./mandate_field_help";
+import {
+  Banner,
+  Button,
+  EmptyState,
+  ErrorSummary,
+  Field,
+  Pending,
+  StatusBadge,
+  dirFor,
+  phrase,
+  resolveLocale,
+  type ErrorSummaryItem,
+  type Locale,
+} from "../ui";
+import {
+  MALFORMED_FAILURE,
+  NETWORK_FAILURE,
+  failureFromResponse,
+  safeFailureMessage,
+  isRecord,
+  type Failure,
+} from "./common";
+import { helpFor } from "./mandate_field_help";
+import { mandateT, type MandateStringKey } from "./strings_04a22";
 
 export const MANDATE_TEXT_FIELDS = [
   "business_purpose",
@@ -258,11 +287,20 @@ export function evaluateForbiddenActions(
   return entries.map((entry) => evaluateForbiddenAction(entry.name, requirements));
 }
 
+/** The English reason a blocking conflict blocks lock, for callers that want a plain string (the
+ * editor itself renders the localized form via `conflictSentence`). */
 function blockerMessage(status: ForbiddenActionStatus): string {
-  if (status.reason === "not_declared_critical") {
-    return `${status.name}: repository tool schema does not require confirmation -- a dangerous runtime cannot be declared safe by the mandate alone`;
-  }
-  return `${status.name}: not observed to be enforced at runtime yet`;
+  return `${status.name}: ${conflictSentence(status.reason, "en")}`;
+}
+
+/** The sentence for one conflict reason in the given language; "" for a non-blocking reason. */
+export function conflictSentence(
+  reason: ForbiddenActionConflictReason,
+  locale: Locale | string = "en",
+): string {
+  if (reason === "not_declared_critical") return mandateT("blockerUndeclared", locale);
+  if (reason === "not_runtime_enforced") return mandateT("blockerUnenforced", locale);
+  return "";
 }
 
 /** Every reason "unresolved policy conflicts block lock" (this task's
@@ -274,6 +312,137 @@ export function mandateLockBlockers(statuses: ForbiddenActionStatus[]): string[]
   return statuses
     .filter((s) => BLOCKING_FORBIDDEN_ACTION_REASONS.includes(s.reason))
     .map(blockerMessage);
+}
+
+const MANIFEST_STATUSES = ["draft", "review_required", "locked", "superseded"] as const;
+const STATUS_WORD = {
+  draft: "statusDraft",
+  review_required: "statusReviewRequired",
+  locked: "statusLocked",
+  superseded: "statusSuperseded",
+} as const;
+
+/** `null` or a JSON object: the only shapes either mandate column may hold. */
+function isObjectOrNull(value: unknown): boolean {
+  return value === null || isRecord(value);
+}
+
+export interface ManifestIdentity {
+  manifestId: string;
+  projectId: string;
+  organizationId: string;
+  /** Known once the manifest has loaded; the snapshot is fixed at creation, so a later reply must
+   * name the same one. Absent on the first load. */
+  snapshotId?: string;
+}
+
+/**
+ * The ONE binding function for a manifest body (load AND save response): a typed 2xx that is for
+ * this manifest and this project, in a known status, with both mandate columns present as an
+ * object or null. Anything else is `null` (malformed); nothing is ever defaulted into success.
+ */
+export function bindManifest(body: unknown, expected: ManifestIdentity): ManifestRecord | null {
+  if (!isRecord(body)) return null;
+  if (body.id !== expected.manifestId) return null;
+  if (body.project_id !== expected.projectId) return null;
+  // The tenant is part of the identity: a manifest of another organization (or one that does not
+  // say) is never shown or saved as this organization's.
+  if (body.organization_id !== expected.organizationId) return null;
+  if (typeof body.target_source_snapshot_id !== "string" || body.target_source_snapshot_id === "") {
+    return null;
+  }
+  if (expected.snapshotId !== undefined && body.target_source_snapshot_id !== expected.snapshotId) {
+    return null;
+  }
+  if (typeof body.version !== "number" || !Number.isInteger(body.version)) return null;
+  if (
+    typeof body.status !== "string" ||
+    !(MANIFEST_STATUSES as readonly string[]).includes(body.status)
+  ) {
+    return null;
+  }
+  for (const column of ["mandate_json", "forbidden_actions_json"] as const) {
+    // `undefined` (a missing column) is neither an object nor null, so absence is refused too.
+    if (!isObjectOrNull(body[column])) return null;
+  }
+  return body as ManifestRecord;
+}
+
+/** `.json()` that reports an unreadable body as `null` instead of throwing, so a non-JSON 200
+ * reaches the binding functions (which refuse `null`) and reads "cannot read", never "could not
+ * reach the server". */
+async function readBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Structural equality that ignores object key order (a jsonb column does not keep it). */
+export function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameJson(item, b[index]))
+    );
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]))
+    );
+  }
+  return false;
+}
+
+export interface SentMandate {
+  mandate_json: unknown;
+  forbidden_actions_json: unknown;
+}
+
+/**
+ * Binds a SAVE reply to the request that produced it, on top of `bindManifest`: the stored
+ * `mandate_json` and `forbidden_actions_json` must be what was sent (a 200 that kept the old
+ * columns is a dropped edit, not a save) and the lifecycle `status` must be unchanged (a save never
+ * locks or supersedes). `null` when anything differs.
+ */
+export function bindSavedManifest(
+  body: unknown,
+  expected: ManifestIdentity,
+  sent: SentMandate,
+  statusBefore: string,
+): ManifestRecord | null {
+  const bound = bindManifest(body, expected);
+  if (!bound) return null;
+  if (bound.status !== statusBefore) return null;
+  if (!sameJson(bound.mandate_json, sent.mandate_json)) return null;
+  if (!sameJson(bound.forbidden_actions_json, sent.forbidden_actions_json)) return null;
+  return bound;
+}
+
+const REQUIREMENT_STRINGS = ["tool_definition_id", "name", "side_effect_class"] as const;
+const REQUIREMENT_BOOLEANS = [
+  "is_critical",
+  "requires_confirmation",
+  "measurable",
+  "runtime_enforced",
+] as const;
+
+/** The `/requirements` list, every row fully typed. One bad row refuses the whole list: dropping
+ * it would turn an unknown tool into "not found", which reads as "nothing to enforce". */
+export function parseRequirements(body: unknown): CriticalBehaviorRequirementView[] | null {
+  if (!Array.isArray(body)) return null;
+  for (const row of body) {
+    if (!isRecord(row)) return null;
+    for (const key of REQUIREMENT_STRINGS) if (typeof row[key] !== "string") return null;
+    for (const key of REQUIREMENT_BOOLEANS) if (typeof row[key] !== "boolean") return null;
+  }
+  return body as CriticalBehaviorRequirementView[];
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -288,23 +457,75 @@ export interface MandateEditorAndConflictResolutionUIProps {
   locale?: Locale;
 }
 
-function FieldHelp({ field, locale }: { field: string; locale: Locale }) {
-  return <p id={`mandate-${field}-help`}>{MANDATE_FIELD_HELP[field]?.[locale]}</p>;
+function Shell({
+  locale,
+  busy,
+  children,
+}: {
+  locale: Locale;
+  busy?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-testid="mandate-editor-ui"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      aria-busy={busy ? true : undefined}
+      style={{ display: "grid", gap: "var(--space-4)" }}
+    >
+      {children}
+    </div>
+  );
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
-  try {
-    const body = await response.json();
-    if (body && typeof body.detail === "string") return body.detail;
-  } catch {
-    // fall through to the generic message below
-  }
-  return `request failed (${response.status})`;
+/** Field has no multi-line variant, so the long-text mandate fields use this one with the same
+ * contract (label above, requirement marker, helper and error wired by aria-describedby). */
+function TextAreaField({
+  id,
+  label,
+  helper,
+  locale,
+  ...rest
+}: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "id"> & {
+  id: string;
+  label: string;
+  helper?: string;
+  locale: Locale;
+}) {
+  const helperId = helper ? `${id}-helper` : undefined;
+  return (
+    <div>
+      <label htmlFor={id}>
+        {label} <span>{phrase("fieldOptional", locale)}</span>
+      </label>
+      {helper ? <div id={helperId}>{helper}</div> : null}
+      <textarea {...rest} id={id} aria-describedby={helperId} />
+    </div>
+  );
 }
 
-function networkErrorMessage(caught: unknown): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
+function ConflictBadge({
+  icon,
+  tone,
+  label,
+  locale,
+}: {
+  icon: string;
+  tone: "success" | "muted";
+  label: string;
+  locale: Locale;
+}) {
+  return (
+    <span
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      data-tone={tone}
+      style={{ color: `var(--color-${tone})` }}
+    >
+      <span aria-hidden="true">{icon}</span> {label}
+    </span>
+  );
 }
 
 export function MandateEditorAndConflictResolutionUI({
@@ -312,13 +533,20 @@ export function MandateEditorAndConflictResolutionUI({
   organizationId,
   projectId,
   manifestId,
-  locale = "en",
+  locale: localeProp = "en",
 }: MandateEditorAndConflictResolutionUIProps) {
   const base = trimBase(apiBaseUrl);
+  const locale = resolveLocale(localeProp);
+  const t = (key: MandateStringKey, vars?: Record<string, string | number>) =>
+    mandateT(key, locale, vars);
+  const identity = `${base}|${organizationId}|${projectId}|${manifestId}`;
+  const identityRef = useRef(identity);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const [manifest, setManifest] = useState<ManifestRecord | null>(null);
   const [requirements, setRequirements] = useState<CriticalBehaviorRequirementView[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<Failure | null>(null);
+  const [loadNonce, setLoadNonce] = useState(0);
 
   const [mandate, setMandate] = useState<MandateContent>(emptyMandateContent());
   const [forbiddenActions, setForbiddenActions] = useState<ForbiddenActionEntry[]>([]);
@@ -330,13 +558,41 @@ export function MandateEditorAndConflictResolutionUI({
 
   const [newActionName, setNewActionName] = useState("");
   const [newActionReason, setNewActionReason] = useState("");
+  const [addErrors, setAddErrors] = useState<ErrorSummaryItem[]>([]);
+  const [addSubmitCount, setAddSubmitCount] = useState(0);
 
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [saveFailure, setSaveFailure] = useState<Failure | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [refreshFailure, setRefreshFailure] = useState<Failure | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  useEffect(() => {
+    identityRef.current = identity;
+  }, [identity]);
 
   useEffect(() => {
     let cancelled = false;
+    // A different organization, project or manifest never shows the previous one's data or edits.
+    setManifest(null);
+    setRequirements([]);
+    setLoadFailure(null);
+    setMandate(emptyMandateContent());
+    setForbiddenActions([]);
+    setMandateBase({});
+    setForbiddenBase({});
+    setListDrafts({});
+    setDirty(false);
+    setNewActionName("");
+    setNewActionReason("");
+    setAddErrors([]);
+    setSaveFailure(null);
+    setSaved(false);
+    setRefreshFailure(null);
+    setSaving(false);
+    setRefreshing(false);
+    setConfirmingDiscard(false);
     async function load() {
       try {
         const [manifestResponse, requirementsResponse] = await Promise.all([
@@ -350,58 +606,67 @@ export function MandateEditorAndConflictResolutionUI({
           }),
         ]);
         if (!manifestResponse.ok) {
-          if (!cancelled) setLoadError(await readErrorDetail(manifestResponse));
+          const failure = await failureFromResponse(manifestResponse);
+          if (!cancelled) setLoadFailure(failure);
           return;
         }
         if (!requirementsResponse.ok) {
-          if (!cancelled) setLoadError(await readErrorDetail(requirementsResponse));
+          const failure = await failureFromResponse(requirementsResponse);
+          if (!cancelled) setLoadFailure(failure);
           return;
         }
-        const manifestBody: ManifestRecord = await manifestResponse.json();
-        const requirementsBody: CriticalBehaviorRequirementView[] =
-          await requirementsResponse.json();
-        if (!manifestBody || typeof manifestBody.status !== "string") {
-          if (!cancelled) setLoadError("malformed manifest response");
-          return;
-        }
-        if (!Array.isArray(requirementsBody)) {
-          if (!cancelled) setLoadError("malformed requirements response");
-          return;
-        }
+        const manifestRaw = await readBody(manifestResponse);
+        const requirementsRaw = await readBody(requirementsResponse);
         if (cancelled) return;
+        const manifestBody = bindManifest(manifestRaw, { manifestId, projectId, organizationId });
+        const requirementsBody = parseRequirements(requirementsRaw);
+        if (!manifestBody || !requirementsBody) {
+          setLoadFailure(MALFORMED_FAILURE);
+          return;
+        }
         setManifest(manifestBody);
         setRequirements(requirementsBody);
         setMandate(parseMandateContent(manifestBody.mandate_json));
         setForbiddenActions(parseForbiddenActions(manifestBody.forbidden_actions_json));
         setMandateBase(mandateBaseOf(manifestBody.mandate_json));
         setForbiddenBase(forbiddenBaseOf(manifestBody.forbidden_actions_json));
-        setListDrafts({});
-        setDirty(false);
-      } catch (caught) {
-        if (!cancelled) setLoadError(networkErrorMessage(caught));
+      } catch {
+        // A rejected fetch is a visible, retryable failure, never a blank
+        // page and never an empty "no conflicts" state (Law 17).
+        if (!cancelled) setLoadFailure(NETWORK_FAILURE);
       }
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [base, organizationId, projectId, manifestId]);
+  }, [base, organizationId, projectId, manifestId, loadNonce]);
 
-  const editable = manifest?.status === "draft" || manifest?.status === "review_required";
+  const statusEditable = manifest?.status === "draft" || manifest?.status === "review_required";
+  // While a save is in flight the form is read-only: an edit typed now would be neither in the
+  // request nor in the reply, and the reply would overwrite it while the screen read "saved".
+  const editable = statusEditable && !saving;
+  const busy = saving || refreshing;
 
   const forbiddenActionStatuses = useMemo(
     () => evaluateForbiddenActions(forbiddenActions, requirements),
     [forbiddenActions, requirements],
   );
   const blockers = useMemo(
-    () => mandateLockBlockers(forbiddenActionStatuses),
+    () =>
+      forbiddenActionStatuses.filter((s) => BLOCKING_FORBIDDEN_ACTION_REASONS.includes(s.reason)),
     [forbiddenActionStatuses],
   );
+
+  function markEdited() {
+    setDirty(true);
+    setSaved(false);
+  }
 
   function setTextField(field: MandateTextField, value: string) {
     if (!editable) return;
     setMandate((prev) => ({ ...prev, [field]: value === "" ? null : value }));
-    setDirty(true);
+    markEdited();
   }
 
   function setNumberField(field: MandateNumberField, value: string) {
@@ -411,7 +676,7 @@ export function MandateEditorAndConflictResolutionUI({
       ...prev,
       [field]: parsed !== null && Number.isFinite(parsed) ? parsed : null,
     }));
-    setDirty(true);
+    markEdited();
   }
 
   function setListField(field: MandateListField, value: string) {
@@ -422,48 +687,110 @@ export function MandateEditorAndConflictResolutionUI({
       .filter((item) => item.length > 0);
     setListDrafts((prev) => ({ ...prev, [field]: value }));
     setMandate((prev) => ({ ...prev, [field]: items }));
-    setDirty(true);
+    markEdited();
   }
 
   function addForbiddenAction() {
     if (!editable) return;
     const name = newActionName.trim();
-    if (!name || forbiddenActions.some((entry) => entry.name === name)) return;
+    const problems: ErrorSummaryItem[] = [];
+    if (!name) {
+      problems.push({ fieldId: "new-forbidden-action-name", message: t("addNameEmpty") });
+    } else if (forbiddenActions.some((entry) => entry.name === name)) {
+      problems.push({
+        fieldId: "new-forbidden-action-name",
+        message: t("addNameDuplicate", { name }),
+      });
+    }
+    if (problems.length > 0) {
+      setAddErrors(problems);
+      setAddSubmitCount((count) => count + 1);
+      return;
+    }
+    setAddErrors([]);
     setForbiddenActions((prev) => [...prev, { name, reason: newActionReason.trim() }]);
     setNewActionName("");
     setNewActionReason("");
-    setDirty(true);
+    markEdited();
   }
 
   function removeForbiddenAction(name: string) {
     if (!editable) return;
     setForbiddenActions((prev) => prev.filter((entry) => entry.name !== name));
-    setDirty(true);
+    markEdited();
+  }
+
+  function focusById(id: string) {
+    document.getElementById(id)?.focus();
+  }
+
+  function discardEdits() {
+    if (!manifest) return;
+    setMandate(parseMandateContent(manifest.mandate_json));
+    setForbiddenActions(parseForbiddenActions(manifest.forbidden_actions_json));
+    setMandateBase(mandateBaseOf(manifest.mandate_json));
+    setForbiddenBase(forbiddenBaseOf(manifest.forbidden_actions_json));
+    setListDrafts({});
+    setNewActionName("");
+    setNewActionReason("");
+    setAddErrors([]);
+    setSaveFailure(null);
+    setDirty(false);
+    setConfirmingDiscard(false);
+    // The trigger just disappeared; keep the keyboard user where the work is.
+    queueMicrotask(() => focusById(`mandate-${MANDATE_TEXT_FIELDS[0]}`));
+  }
+
+  function closeDiscard() {
+    setConfirmingDiscard(false);
+    queueMicrotask(() =>
+      rootRef.current
+        ?.querySelector<HTMLElement>('[data-testid="mandate-discard-button"]')
+        ?.focus(),
+    );
   }
 
   async function handleSave() {
     if (!manifest || !editable || !dirty) return;
-    setBusy(true);
-    setSaveError(null);
+    const started = identityRef.current;
+    setSaving(true);
+    setSaveFailure(null);
+    setSaved(false);
     try {
+      const sent: SentMandate = {
+        mandate_json: serializeMandateContent(mandate, mandateBase),
+        forbidden_actions_json: serializeForbiddenActions(forbiddenActions, forbiddenBase),
+      };
       const response = await fetch(manifestUrl(base, organizationId, projectId, manifestId), {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mandate_json: serializeMandateContent(mandate, mandateBase),
-          forbidden_actions_json: serializeForbiddenActions(forbiddenActions, forbiddenBase),
-        }),
+        body: JSON.stringify(sent),
       });
       if (!response.ok) {
         // The draft stays exactly as the user left it -- a refused save
         // never discards or "resolves" anything.
-        setSaveError(await readErrorDetail(response));
+        const failure = await failureFromResponse(response);
+        if (identityRef.current === started) setSaveFailure(failure);
         return;
       }
-      const updated: ManifestRecord = await response.json();
-      if (!updated || typeof updated.status !== "string") {
-        setSaveError("malformed manifest response");
+      const raw = await readBody(response);
+      if (identityRef.current !== started) return;
+      // A reply that does not say what was sent (unreadable, another manifest, old columns, a
+      // status change) is not a save: the drafts stay and nothing reads "saved".
+      const updated = bindSavedManifest(
+        raw,
+        {
+          manifestId,
+          projectId,
+          organizationId,
+          snapshotId: manifest.target_source_snapshot_id,
+        },
+        sent,
+        manifest.status,
+      );
+      if (!updated) {
+        setSaveFailure(MALFORMED_FAILURE);
         return;
       }
       // Only `manifest` is replaced by the save response. `requirements`
@@ -472,241 +799,417 @@ export function MandateEditorAndConflictResolutionUI({
       // resolution.
       setManifest(updated);
       // The server's returned manifest is what is shown after a save.
-      setMandate(
-        parseMandateContent(updated.mandate_json ?? serializeMandateContent(mandate, mandateBase)),
-      );
-      setForbiddenActions(
-        parseForbiddenActions(
-          updated.forbidden_actions_json ??
-            serializeForbiddenActions(forbiddenActions, forbiddenBase),
-        ),
-      );
-      setMandateBase(
-        mandateBaseOf(updated.mandate_json ?? serializeMandateContent(mandate, mandateBase)),
-      );
-      setForbiddenBase(
-        forbiddenBaseOf(
-          updated.forbidden_actions_json ??
-            serializeForbiddenActions(forbiddenActions, forbiddenBase),
-        ),
-      );
+      setMandate(parseMandateContent(updated.mandate_json));
+      setForbiddenActions(parseForbiddenActions(updated.forbidden_actions_json));
+      setMandateBase(mandateBaseOf(updated.mandate_json));
+      setForbiddenBase(forbiddenBaseOf(updated.forbidden_actions_json));
       setListDrafts({});
       setDirty(false);
-    } catch (caught) {
-      setSaveError(networkErrorMessage(caught));
+      setSaved(true);
+    } catch {
+      if (identityRef.current === started) setSaveFailure(NETWORK_FAILURE);
     } finally {
-      setBusy(false);
+      if (identityRef.current === started) setSaving(false);
     }
   }
 
   async function handleRefreshEnforcement() {
-    setBusy(true);
-    setRefreshError(null);
+    const started = identityRef.current;
+    setRefreshing(true);
+    setRefreshFailure(null);
     try {
       const response = await fetch(requirementsUrl(base, organizationId, projectId), {
         method: "GET",
         credentials: "include",
       });
       if (!response.ok) {
-        setRefreshError(await readErrorDetail(response));
+        const failure = await failureFromResponse(response);
+        if (identityRef.current === started) setRefreshFailure(failure);
         return;
       }
-      const body: CriticalBehaviorRequirementView[] = await response.json();
-      if (!Array.isArray(body)) {
-        setRefreshError("malformed requirements response");
+      const raw = await readBody(response);
+      if (identityRef.current !== started) return;
+      const body = parseRequirements(raw);
+      if (!body) {
+        setRefreshFailure(MALFORMED_FAILURE);
         return;
       }
       setRequirements(body);
-    } catch (caught) {
-      setRefreshError(networkErrorMessage(caught));
+    } catch {
+      if (identityRef.current === started) setRefreshFailure(NETWORK_FAILURE);
     } finally {
-      setBusy(false);
+      if (identityRef.current === started) setRefreshing(false);
     }
   }
 
-  if (loadError) {
+  if (loadFailure) {
     return (
-      <div data-testid="mandate-editor-ui">
-        <p role="alert" data-testid="mandate-load-error">
-          {loadError}
-        </p>
-      </div>
+      <Shell locale={locale}>
+        <div data-testid="mandate-load-error">
+          <Banner kind="error" locale={locale}>
+            {safeFailureMessage(loadFailure, locale)}
+          </Banner>
+        </div>
+        <div>
+          <Button
+            variant="primary"
+            data-testid="mandate-load-retry"
+            onClick={() => setLoadNonce((n) => n + 1)}
+          >
+            {t("retry")}
+          </Button>
+        </div>
+      </Shell>
     );
   }
   if (!manifest) {
     return (
-      <div data-testid="mandate-editor-ui">
-        <p data-testid="mandate-loading">Loading mandate…</p>
-      </div>
+      <Shell locale={locale} busy>
+        <p data-testid="mandate-loading">{t("loading")}</p>
+        <Pending label={t("loading")} locale={locale} />
+      </Shell>
     );
   }
 
+  const statusWord = t(STATUS_WORD[manifest.status as (typeof MANIFEST_STATUSES)[number]]);
+  const nameError = addErrors.find((e) => e.fieldId === "new-forbidden-action-name")?.message;
+
   return (
-    <div data-testid="mandate-editor-ui" dir={dirFor(locale)}>
-      <section data-testid="mandate-fields-section">
-        <h2>Mandate</h2>
-        {!editable && (
-          <p data-testid="mandate-readonly-notice">
-            Manifest is {manifest.status}; mandate fields are read-only.
-          </p>
-        )}
-        {MANDATE_TEXT_FIELDS.map((field) => (
-          <div key={field}>
-            <label htmlFor={`mandate-${field}`}>{field}</label>
-            <textarea
+    <Shell locale={locale} busy={busy}>
+      <div ref={rootRef} style={{ display: "grid", gap: "var(--space-4)" }}>
+        <section
+          data-testid="mandate-fields-section"
+          style={{ display: "grid", gap: "var(--space-3)" }}
+        >
+          <h2>{t("title")}</h2>
+          {!statusEditable && (
+            <div data-testid="mandate-readonly-notice">
+              <Banner kind="info" locale={locale}>
+                {t("readOnly", { status: statusWord })}
+              </Banner>
+            </div>
+          )}
+          {MANDATE_TEXT_FIELDS.map((field) => (
+            <TextAreaField
+              key={field}
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
-              aria-describedby={`mandate-${field}-help`}
+              label={t(field)}
+              helper={helpFor(field, locale)}
+              locale={locale}
               value={mandate[field] ?? ""}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setTextField(field, event.target.value)}
             />
-            <FieldHelp field={field} locale={locale} />
-          </div>
-        ))}
-        {MANDATE_LIST_FIELDS.map((field) => (
-          <div key={field}>
-            <label htmlFor={`mandate-${field}`}>{field} (comma-separated)</label>
-            <input
+          ))}
+          {MANDATE_LIST_FIELDS.map((field) => (
+            <Field
+              style={{ minBlockSize: "var(--target-min)" }}
+              key={field}
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
-              aria-describedby={`mandate-${field}-help`}
+              label={t(field)}
+              helper={helpFor(field, locale)}
+              requirement="optional"
+              locale={locale}
               value={listDrafts[field] ?? mandate[field].join(", ")}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setListField(field, event.target.value)}
             />
-            <FieldHelp field={field} locale={locale} />
-          </div>
-        ))}
-        {MANDATE_NUMBER_FIELDS.map((field) => (
-          <div key={field}>
-            <label htmlFor={`mandate-${field}`}>{field}</label>
-            <input
+          ))}
+          {MANDATE_NUMBER_FIELDS.map((field) => (
+            <Field
+              style={{ minBlockSize: "var(--target-min)" }}
+              key={field}
               id={`mandate-${field}`}
               data-testid={`mandate-field-${field}`}
               type="number"
-              aria-describedby={`mandate-${field}-help`}
+              label={t(field)}
+              helper={helpFor(field, locale)}
+              requirement="optional"
+              locale={locale}
               value={mandate[field] ?? ""}
-              disabled={!editable}
+              disabled={!statusEditable}
+              readOnly={saving}
               onChange={(event) => setNumberField(field, event.target.value)}
             />
-            <FieldHelp field={field} locale={locale} />
-          </div>
-        ))}
-      </section>
-
-      <section data-testid="forbidden-actions-section">
-        <h2>Forbidden actions and conflict resolution</h2>
-        <p>
-          Desired (mandate) vs. observed (repository tool schema) vs. enforced (runtime, Section
-          66.4) -- a declared forbidden action is never shown as safe unless the real backend has
-          actually been observed to enforce it.
-        </p>
-        <ul data-testid="forbidden-action-list">
-          {forbiddenActionStatuses.map((status) => (
-            <li key={status.name} data-testid={`forbidden-action-row-${status.name}`}>
-              <span data-testid={`forbidden-action-name-${status.name}`}>{status.name}</span>
-              <span data-testid={`forbidden-action-status-${status.name}`}>{status.reason}</span>
-              {BLOCKING_FORBIDDEN_ACTION_REASONS.includes(status.reason) && (
-                <span role="alert" data-testid={`forbidden-action-conflict-${status.name}`}>
-                  {blockerMessage(status)}
-                </span>
-              )}
-              {status.reason === "not_found" && (
-                <span data-testid={`forbidden-action-not-found-${status.name}`}>
-                  no matching tool discovered in this project yet
-                </span>
-              )}
-              {status.reason === "enforced" && (
-                <span data-testid={`forbidden-action-enforced-${status.name}`}>
-                  observed enforced at runtime
-                </span>
-              )}
-              {editable && (
-                <button
-                  type="button"
-                  data-testid={`forbidden-action-remove-${status.name}`}
-                  onClick={() => removeForbiddenAction(status.name)}
-                >
-                  Remove from mandate
-                </button>
-              )}
-            </li>
           ))}
-        </ul>
+        </section>
 
-        {editable && (
-          <div data-testid="forbidden-action-add-form">
-            <label htmlFor="new-forbidden-action-name">Action/tool name</label>
-            <input
-              id="new-forbidden-action-name"
-              data-testid="new-forbidden-action-name"
-              value={newActionName}
-              onChange={(event) => setNewActionName(event.target.value)}
-            />
-            <label htmlFor="new-forbidden-action-reason">Reason</label>
-            <input
-              id="new-forbidden-action-reason"
-              data-testid="new-forbidden-action-reason"
-              value={newActionReason}
-              onChange={(event) => setNewActionReason(event.target.value)}
-            />
-            <button
-              type="button"
-              data-testid="forbidden-action-add-button"
-              onClick={addForbiddenAction}
+        <section
+          data-testid="forbidden-actions-section"
+          style={{ display: "grid", gap: "var(--space-3)" }}
+        >
+          <h2>{t("forbiddenTitle")}</h2>
+          <p>{t("forbiddenExplainer")}</p>
+          {forbiddenActionStatuses.length === 0 ? (
+            statusEditable ? (
+              <EmptyState
+                title={t("forbiddenEmptyTitle")}
+                why={t("forbiddenEmptyWhy")}
+                action={
+                  <Button
+                    variant="primary"
+                    data-testid="forbidden-empty-add-action"
+                    onClick={() => focusById("new-forbidden-action-name")}
+                  >
+                    {t("forbiddenEmptyAction")}
+                  </Button>
+                }
+              />
+            ) : (
+              <p data-testid="forbidden-empty-readonly">{t("forbiddenEmptyReadOnly")}</p>
+            )
+          ) : (
+            <ul
+              data-testid="forbidden-action-list"
+              style={{ display: "grid", gap: "var(--space-3)" }}
             >
-              Add forbidden action
-            </button>
-          </div>
-        )}
-
-        <button
-          type="button"
-          data-testid="refresh-enforcement-button"
-          disabled={busy}
-          onClick={() => void handleRefreshEnforcement()}
-        >
-          Refresh enforcement status
-        </button>
-        {refreshError && (
-          <p role="alert" data-testid="refresh-enforcement-error">
-            {refreshError}
-          </p>
-        )}
-      </section>
-
-      <section data-testid="mandate-lock-readiness-section">
-        <h2>Lock readiness</h2>
-        {blockers.length === 0 ? (
-          <p data-testid="mandate-lock-ready">No unresolved mandate conflicts.</p>
-        ) : (
-          <div data-testid="mandate-lock-blocked">
-            <p>Lock is blocked by {blockers.length} unresolved mandate conflict(s):</p>
-            <ul data-testid="mandate-lock-blockers">
-              {blockers.map((blocker) => (
-                <li key={blocker}>{blocker}</li>
-              ))}
+              {forbiddenActionStatuses.map((status) => {
+                const entry = forbiddenActions.find((a) => a.name === status.name);
+                const blocking = BLOCKING_FORBIDDEN_ACTION_REASONS.includes(status.reason);
+                return (
+                  <li key={status.name} data-testid={`forbidden-action-row-${status.name}`}>
+                    <span data-testid={`forbidden-action-name-${status.name}`}>
+                      <bdi>{status.name}</bdi>
+                    </span>{" "}
+                    <span data-testid={`forbidden-action-status-${status.name}`}>
+                      {status.reason === "not_declared_critical" && (
+                        <StatusBadge
+                          state="blocked"
+                          detail={t("badgeUndeclared")}
+                          locale={locale}
+                        />
+                      )}
+                      {status.reason === "not_runtime_enforced" && (
+                        <StatusBadge
+                          state="blocked"
+                          detail={t("badgeUnenforced")}
+                          locale={locale}
+                        />
+                      )}
+                      {status.reason === "not_found" && (
+                        <ConflictBadge
+                          icon="?"
+                          tone="muted"
+                          label={t("badgeNotFound")}
+                          locale={locale}
+                        />
+                      )}
+                      {status.reason === "enforced" && (
+                        <ConflictBadge
+                          icon="✓"
+                          tone="success"
+                          label={t("badgeEnforced")}
+                          locale={locale}
+                        />
+                      )}
+                    </span>
+                    <div>
+                      {t("reasonLabel")}:{" "}
+                      <bdi>{entry && entry.reason.trim() ? entry.reason : t("noReason")}</bdi>
+                    </div>
+                    {blocking && (
+                      <div data-testid={`forbidden-action-conflict-${status.name}`}>
+                        {conflictSentence(status.reason, locale)}
+                      </div>
+                    )}
+                    {status.reason === "not_found" && (
+                      <div data-testid={`forbidden-action-not-found-${status.name}`}>
+                        {t("noteNotFound")}
+                      </div>
+                    )}
+                    {status.reason === "enforced" && (
+                      <div data-testid={`forbidden-action-enforced-${status.name}`}>
+                        {t("noteEnforced")}
+                      </div>
+                    )}
+                    {statusEditable && (
+                      <Button
+                        data-testid={`forbidden-action-remove-${status.name}`}
+                        aria-label={t("removeActionNamed", { name: status.name })}
+                        disabled={saving}
+                        onClick={() => removeForbiddenAction(status.name)}
+                      >
+                        {t("removeAction")}
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
-          </div>
-        )}
-      </section>
+          )}
 
-      {editable && (
-        <button
-          type="button"
-          data-testid="mandate-save-button"
-          disabled={!dirty || busy}
-          onClick={() => void handleSave()}
+          {statusEditable && (
+            <div
+              data-testid="forbidden-action-add-form"
+              style={{ display: "grid", gap: "var(--space-3)" }}
+            >
+              <ErrorSummary errors={addErrors} locale={locale} submitCount={addSubmitCount} />
+              <Field
+                style={{ minBlockSize: "var(--target-min)" }}
+                id="new-forbidden-action-name"
+                data-testid="new-forbidden-action-name"
+                label={t("addName")}
+                requirement="required"
+                locale={locale}
+                error={nameError}
+                readOnly={saving}
+                value={newActionName}
+                onChange={(event) => {
+                  setNewActionName(event.target.value);
+                  if (addErrors.length > 0) setAddErrors([]);
+                }}
+              />
+              <Field
+                style={{ minBlockSize: "var(--target-min)" }}
+                id="new-forbidden-action-reason"
+                data-testid="new-forbidden-action-reason"
+                label={t("addReason")}
+                requirement="optional"
+                locale={locale}
+                readOnly={saving}
+                value={newActionReason}
+                onChange={(event) => setNewActionReason(event.target.value)}
+              />
+              <div>
+                <Button
+                  variant="primary"
+                  data-testid="forbidden-action-add-button"
+                  disabled={saving}
+                  onClick={addForbiddenAction}
+                >
+                  {t("addButton")}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Button
+              data-testid="refresh-enforcement-button"
+              disabled={busy}
+              onClick={() => void handleRefreshEnforcement()}
+            >
+              {refreshing ? t("refreshing") : t("refresh")}
+            </Button>
+          </div>
+          {refreshing && <Pending label={t("refreshing")} locale={locale} />}
+          {refreshFailure && (
+            <div data-testid="refresh-enforcement-error">
+              <Banner kind="error" locale={locale}>
+                {`${safeFailureMessage(refreshFailure, locale)} ${t("refreshStale")}`}
+              </Banner>
+            </div>
+          )}
+        </section>
+
+        <section
+          data-testid="mandate-lock-readiness-section"
+          aria-live="polite"
+          style={{ display: "grid", gap: "var(--space-2)" }}
         >
-          Save mandate
-        </button>
-      )}
-      {saveError && (
-        <p role="alert" data-testid="mandate-save-error">
-          {saveError}
-        </p>
-      )}
-    </div>
+          <h2>{t("lockTitle")}</h2>
+          {blockers.length === 0 ? (
+            <p data-testid="mandate-lock-ready">
+              <span aria-hidden="true">✓</span> {t("lockReady")}
+            </p>
+          ) : (
+            <div data-testid="mandate-lock-blocked">
+              <p>
+                <span aria-hidden="true">⊗</span> {t("lockBlocked", { count: blockers.length })}
+              </p>
+              <ul data-testid="mandate-lock-blockers">
+                {blockers.map((blocker) => (
+                  <li key={blocker.name}>
+                    <bdi>{blocker.name}</bdi>: {conflictSentence(blocker.reason, locale)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+
+        {statusEditable && (
+          <section style={{ display: "grid", gap: "var(--space-3)" }}>
+            {dirty && (
+              <p data-testid="mandate-dirty-notice">
+                <span aria-hidden="true">●</span> {t("unsaved")}
+              </p>
+            )}
+            {saved && !dirty && (
+              <div data-testid="mandate-saved-notice">
+                <Banner kind="success" locale={locale}>
+                  {t("saved")}
+                </Banner>
+              </div>
+            )}
+            {saveFailure && (
+              <div data-testid="mandate-save-error">
+                <Banner kind="error" locale={locale}>
+                  {`${safeFailureMessage(saveFailure, locale)} ${t("saveFailedKept")}`}
+                </Banner>
+              </div>
+            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
+              <Button
+                variant="primary"
+                data-testid="mandate-save-button"
+                disabled={!dirty || busy}
+                disabledReason={!dirty && !busy ? t("saveNothing") : undefined}
+                onClick={() => void handleSave()}
+              >
+                {saving ? t("saving") : t("save")}
+              </Button>
+              {dirty && (
+                <Button
+                  data-testid="mandate-discard-button"
+                  disabled={busy}
+                  onClick={() => {
+                    setConfirmingDiscard(true);
+                    queueMicrotask(() =>
+                      rootRef.current
+                        ?.querySelector<HTMLElement>('[data-testid="mandate-discard-keep"]')
+                        ?.focus(),
+                    );
+                  }}
+                >
+                  {t("discard")}
+                </Button>
+              )}
+            </div>
+            {saving && <Pending label={t("saving")} locale={locale} />}
+            {dirty && confirmingDiscard && (
+              <div
+                role="alertdialog"
+                aria-label={t("discard")}
+                aria-describedby="mandate-discard-body"
+                data-testid="mandate-discard-confirm"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") closeDiscard();
+                }}
+                style={{ display: "grid", gap: "var(--space-3)" }}
+              >
+                <p id="mandate-discard-body">{t("discardConfirm")}</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-3)" }}>
+                  <Button data-testid="mandate-discard-keep" onClick={closeDiscard}>
+                    {t("discardKeep")}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    data-testid="mandate-discard-confirm-button"
+                    onClick={discardEdits}
+                  >
+                    {t("discard")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </Shell>
   );
 }
