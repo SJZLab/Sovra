@@ -880,6 +880,15 @@ describe("[UX04-V] project form: validation prevents errors and recovers from th
     expect(document.activeElement).toBe(tid("project-name-input"));
   });
 
+  test("the long-text fields fill the form column rather than sit in a 20-column box", () => {
+    renderForm();
+    type("project-type-select", "agentic_product");
+    for (const id of ["agent-objective-input", "project-description-input"]) {
+      expect(tid(id).style.inlineSize).toBe("100%");
+      expect(tid(id).style.maxInlineSize).toBe("100%");
+    }
+  });
+
   test("length limits are the backend's (name 200, text 4000)", () => {
     renderForm();
     type("project-type-select", "agentic_product");
@@ -2011,6 +2020,28 @@ describe("[UX04-S2] requirements panel: waiting is shown, and nothing can change
       expect((tid(`budget-scope-${scope}`) as HTMLInputElement).disabled).toBe(false);
   });
 
+  test("a save in flight shows a busy indicator after one second, announced politely (NN/g response times)", async () => {
+    renderPanel({ write: () => new Promise(() => undefined) });
+    await waitFor(() => expect(tid("budget-policy-missing-notice")).toBeTruthy());
+    type("budget-total-amount-input", "10");
+    click("budget-scope-training");
+    vi.useFakeTimers();
+    try {
+      click("budget-policy-submit-button");
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("Saving budget policy…")).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      const status = screen.getByText("Saving budget policy…").closest('[role="status"]')!;
+      expect(status.getAttribute("aria-live")).toBe("polite");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("the budget form opts out of the browser's own validation bubbles", async () => {
     renderPanel({});
     await waitFor(() => expect(tid("budget-policy-form")).toBeTruthy());
@@ -2256,6 +2287,11 @@ describe("[UX04-T] requirements panel: the total is checked BEFORE submit, in ex
     expect(writes()).toHaveLength(0);
     expect(text("budget-scopes-error")).toBe("Choose at least one scope.");
     expect(tid("budget-scopes-error").getAttribute("role")).toBe("alert");
+    const fieldset = tid("budget-scopes-fieldset");
+    expect(fieldset.getAttribute("aria-describedby")).toBe(
+      "budget-scopes-helper budget-scopes-error",
+    );
+    expect(document.getElementById("budget-scopes-error")).toBe(tid("budget-scopes-error"));
     expect(document.activeElement!.querySelector("a")!.getAttribute("href")).toBe(
       "#budget-scope-training",
     );
