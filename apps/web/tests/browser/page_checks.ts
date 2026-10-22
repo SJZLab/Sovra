@@ -227,3 +227,26 @@ export async function keyboardProblems(
   }
   return { problems, stops: count };
 }
+
+/**
+ * No `[role="region"]` (the keyboard-scrollable table wrapper) needs a horizontal scrollbar at any
+ * viewport: the page not overflowing is not enough if the table scrolls inside its own region, which
+ * hides columns on a phone. User data wraps instead (WCAG 1.4.10 reflow, section 72.5).
+ */
+export async function regionScrollProblems(page: Page): Promise<string[]> {
+  const problems: string[] = [];
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    const wide = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="region"]'))
+        .filter((el) => el.scrollWidth - el.clientWidth > 1)
+        .map(
+          (el) =>
+            `${el.getAttribute("aria-label") ?? "region"} ${el.scrollWidth - el.clientWidth}px`,
+        ),
+    );
+    for (const w of wide) problems.push(`inner scroll ${vp.name} ${vp.width}px: ${w}`);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  return problems;
+}

@@ -537,7 +537,6 @@ function RequirementsPanelInner({
       dir={dirFor(locale)}
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr)",
         gap: "var(--space-5)",
         maxInlineSize: "100%",
       }}
@@ -696,7 +695,6 @@ function RequirementsPanelInner({
             aria-busy={saving}
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(0, 1fr)",
               gap: "var(--space-4)",
               maxInlineSize: "100%",
             }}

@@ -36,8 +36,6 @@ function Label({ id, label, requirement, locale }: ControlProps) {
   );
 }
 
-const WRAP = { overflowWrap: "anywhere" } as const;
-
 export function TextAreaField({
   id,
   label,
@@ -55,11 +53,7 @@ export function TextAreaField({
   return (
     <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <Label id={id} label={label} requirement={requirement} locale={locale} />
-      {helper ? (
-        <div id={helperId} style={WRAP}>
-          {helper}
-        </div>
-      ) : null}
+      {helper ? <div id={helperId}>{helper}</div> : null}
       <textarea
         {...rest}
         id={id}
@@ -70,7 +64,7 @@ export function TextAreaField({
         style={{ inlineSize: "100%", maxInlineSize: "100%", boxSizing: "border-box", ...style }}
       />
       {trimmedError ? (
-        <div id={errorId} role="alert" style={WRAP}>
+        <div id={errorId} role="alert">
           {trimmedError}
         </div>
       ) : null}
@@ -109,11 +103,7 @@ export function SelectField({
   return (
     <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <Label id={id} label={label} requirement={requirement} locale={locale} />
-      {helper ? (
-        <div id={helperId} style={WRAP}>
-          {helper}
-        </div>
-      ) : null}
+      {helper ? <div id={helperId}>{helper}</div> : null}
       <select
         {...rest}
         id={id}
@@ -134,12 +124,12 @@ export function SelectField({
         ))}
       </select>
       {reason ? (
-        <div id={reasonId} data-testid={`${id}-locked-reason`} style={WRAP}>
+        <div id={reasonId} data-testid={`${id}-locked-reason`}>
           {reason}
         </div>
       ) : null}
       {trimmedError ? (
-        <div id={errorId} role="alert" style={WRAP}>
+        <div id={errorId} role="alert">
           {trimmedError}
         </div>
       ) : null}

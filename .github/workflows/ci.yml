@@ -3169,6 +3169,55 @@ jobs:
       - name: Prove the real quality-issue UI against the real router and PostgreSQL 16
         run: uv run python3 tests/integration/test_ftf_0516_ui_real_api.py
 
+  project-mandate-ui-real-api-integration:
+    # FTF-UX04 (UI CHECKLIST f): the real project form (FTF-0401) and requirements panel (FTF-0408)
+    # (apps/web/components/project-mandate/*.tsx, Vitest + jsdom) against the real project, budget-policy
+    # and critical-behavior-requirement routers on a real uvicorn server over PostgreSQL 16 as sovra_app:
+    # create / save / clear-description / stale-409 / draft round trip / read-only role 403 / foreign
+    # organization 404 / profile-relaxation 400 for the form, and the real /requirements view, budget
+    # create + revise with exact amounts, a total below the reserved amount stopped before any request,
+    # a stale revise 409, a read-only role 403 and a foreign project for the panel -- then an
+    # independent check of the stored rows --
+    # tests/integration/test_ftf_ux04_real_api.py (spec:
+    # apps/web/tests/real_api/ftf_ux04_real_api.realapi.ts).
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' project-mandate-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfux04
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfux04"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfux04
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real project form and requirements panel against the real routers and PostgreSQL 16
+        run: uv run python3 tests/integration/test_ftf_ux04_real_api.py
+
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
     # (rejected / expired / verified) upload session cannot be reopened or
@@ -3922,6 +3971,7 @@ jobs:
       - direct-upload-routes-integration
       - resumable-upload-ui-real-api-integration
       - dataset-quality-ui-real-api-integration
+      - project-mandate-ui-real-api-integration
       - oidc-provider-integration
       - license-acceptance-workflow-integration
       - artifact-transition-race-integration

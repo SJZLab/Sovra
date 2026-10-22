@@ -19,6 +19,7 @@ import {
   axeProblems,
   keyboardProblems,
   overflowProblems,
+  regionScrollProblems,
   rtlProblems,
   type Locale,
   type Scheme,
@@ -620,6 +621,7 @@ describe.concurrent(
               const keyboard = await keyboardProblems(page, state.id.includes("loading"));
               problems.push(...keyboard.problems);
               problems.push(...(await overflowProblems(page)));
+              problems.push(...(await regionScrollProblems(page)));
               expect(problems, problems.join("\n")).toEqual([]);
             } finally {
               await page.close();

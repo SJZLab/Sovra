@@ -504,7 +504,6 @@ function ProjectSetupFormInner({
       dir={dirFor(locale)}
       style={{
         display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr)",
         gap: "var(--space-4)",
         maxInlineSize: "100%",
       }}
