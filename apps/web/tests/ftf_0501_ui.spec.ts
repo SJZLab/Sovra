@@ -1823,6 +1823,83 @@ test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the resume-erro
   expect(screen.getByTestId("upload-resume-error").getAttribute("role")).toBe("alert");
 });
 
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 2 (independent L2-style re-review of PR #947):
+// finding 2 (F3a-UNPINNED + the wider Arabic-string surface) and finding 6
+// (STICKY-CHECKING-AND-BUTTON-PINS-UNPINNED's Abandon-variant pin).
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r2 finding 2 (F3a-UNPINNED): the Arabic abandon-confirmation title is the exact translation, not left English", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const labelledBy = confirm.getAttribute("aria-labelledby");
+  expect(document.getElementById(labelledBy!)?.textContent).toBe("هل تريد تجاهل هذه المسودة؟");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the Dialog's close button has an exact, bilingual aria-label", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const closeButton = Array.from(confirm.querySelectorAll("button")).find(
+    (b) => b.textContent === "×",
+  );
+  expect(closeButton?.getAttribute("aria-label")).toBe("Cancel");
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirmAr = screen.getByTestId("upload-abandon-confirm");
+  const closeButtonAr = Array.from(confirmAr.querySelectorAll("button")).find(
+    (b) => b.textContent === "×",
+  );
+  expect(closeButtonAr?.getAttribute("aria-label")).toBe("إلغاء");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the resume banner's text and file name are the exact bilingual strings, the name wrapped in <bdi>", () => {
+  seedDraft();
+  renderUI();
+  const banner = screen.getByTestId("upload-resume-banner");
+  expect(banner.textContent).toContain("A previous upload of");
+  expect(banner.textContent).toContain("is still in progress. Choose that same file to resume it.");
+  expect(banner.querySelector("bdi")?.textContent).toBe("data.jsonl");
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  const bannerAr = screen.getByTestId("upload-resume-banner");
+  expect(bannerAr.textContent).toContain("رفع سابق لملف");
+  expect(bannerAr.textContent).toContain("لا يزال قيد التنفيذ. اختر نفس الملف لاستئنافه.");
+  expect(bannerAr.querySelector("bdi")?.textContent).toBe("data.jsonl");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the abandon trigger's accessible action text is the exact bilingual sentence", () => {
+  seedDraft();
+  renderUI();
+  expect(screen.getByTestId("upload-abandon-draft-button").textContent).toBe(
+    "Abandon this draft and start a new upload",
+  );
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  expect(screen.getByTestId("upload-abandon-draft-button").textContent).toBe(
+    "تجاهل هذه المسودة وابدأ رفعًا جديدًا",
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 6 (pinned): the destructive Abandon button is the UX01 Button with variant=danger, not primary", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm-button").getAttribute("data-variant")).toBe(
+    "danger",
+  );
+});
+
 test("fault: a secret, a presigned URL or file bytes ever written to localStorage -> RED", async () => {
   await uploadToReadyToFinalize();
   const dump: string[] = [];

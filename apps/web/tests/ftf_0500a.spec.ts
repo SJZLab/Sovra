@@ -933,6 +933,496 @@ test("FTF-UX02 r2 pre-review r1 finding 7 (pinned): the loading indicator carrie
   expect(screen.getByRole("status").getAttribute("aria-busy")).toBe("true");
 });
 
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 2 (independent L2-style re-review of PR #947):
+// findings 2 (F3a/Arabic-string surface), 4 (F4e + SERVER-DETAIL-ENGLISH-IN-AR +
+// AUTH-RESULT-SILENT-AND-FOCUS-LOST), 5 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK), 6
+// (STICKY-CHECKING-AND-BUTTON-PINS-UNPINNED) and 7 (EVIDENCE-ACCURACY).
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r2 finding 2 (F3a-UNPINNED surface): every new Arabic chrome string is the exact translation, not left English", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [existing] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  // Authorization heading, Check-authorization button and the security-classification
+  // field label -- none had an exact Arabic assertion before this round.
+  expect(screen.getByTestId(`dataset-source-option-${existing.id}`).textContent).toContain("نشط");
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() => expect(screen.getByRole("heading", { name: "تفويض الغرض" })).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-check-authorization-button").textContent).toBe(
+    "فحص التفويض",
+  );
+  const classificationLabel = document.querySelector(
+    'label[for="dataset-source-security-classification"]',
+  );
+  expect(classificationLabel?.textContent).toBe("تصنيف الأمان (حدود الخصوصية)");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: a successful authorization check announces the exact Arabic 'Authorized' text", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => ({ ok: true, json: async () => ({ authorized: true }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-result-authorized").textContent).toBe(
+      "مُفوَّض",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the preview notice and credential-provided text are the exact Arabic translations", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.change(screen.getByTestId("dataset-source-credential-input"), {
+    target: { value: "secret" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-preview-notice").textContent).toContain(
+    "راجع قبل الإنشاء.",
+  );
+  expect(screen.getByTestId("dataset-source-preview-credential").textContent).toBe(
+    "تم تقديم بيانات الاعتماد",
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the selected connection's name in the authorization panel is wrapped in <bdi>", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [existing] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() => {
+    const el = screen.getByTestId("dataset-source-authorization-selected-connection");
+    expect(el.querySelector("bdi")?.textContent).toBe(existing.display_name);
+  });
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 4 (F4e-UNPINNED): a 5xx with no server detail shows the bilingual retry message, not raw 'request failed (N)'", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: false, status: 503, json: async () => ({}) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe(
+      "Something went wrong loading this. You can retry.",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 4 (SERVER-DETAIL-ENGLISH-IN-AR): a not-granted denial is a real Arabic sentence, not raw English server prose", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => ({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          detail: `dataset source connection ${existing.id} is not granted for purpose 'baseline_only'`,
+        }),
+      }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "baseline_only" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() => {
+    const text = screen.getByTestId("dataset-source-authorization-result-denied").textContent!;
+    expect(text).toBe("هذا الاتصال غير مُفوَّض للغرض: baseline_only");
+    expect(text).not.toContain("is not granted");
+  });
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 4 (SERVER-DETAIL-ENGLISH-IN-AR): a 400 validation detail becomes a real Arabic field-required sentence", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [] }),
+      onCreate: () => ({
+        ok: false,
+        status: 400,
+        json: async () => ({ detail: "display_name is required and must be a string" }),
+      }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-create-error").textContent).toBe(
+      "الاسم المعروض مطلوب.",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 4 (SERVER-DETAIL-ENGLISH-IN-AR): an unrecognised detail falls back to a generic Arabic retry message, never raw English", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [] }),
+      onCreate: () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({ detail: "display_name already in use" }),
+      }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+  await waitFor(() => {
+    const text = screen.getByTestId("dataset-source-create-error").textContent!;
+    expect(text).toBe("حدث خطأ غير متوقع. يمكنك إعادة المحاولة.");
+    expect(text).not.toContain("already in use");
+  });
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 4 (SERVER-DETAIL-ENGLISH-IN-AR): English locale is unaffected -- the server's own detail still shows verbatim", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: false, status: 500, json: async () => ({ detail: "internal error" }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe("internal error"),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 5 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): the Authorized result carries role=status", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => ({ ok: true, json: async () => ({ authorized: true }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(
+      screen.getByTestId("dataset-source-authorization-result-authorized").getAttribute("role"),
+    ).toBe("status"),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 5 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): focus returns to 'Check authorization' after it re-enables, never <body>", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => {
+        throw new Error("network down");
+      },
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByTestId("dataset-source-check-authorization-button"),
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 5: focus returns to 'Confirm and create' after a create failure, never <body>", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [] }),
+      onCreate: () => ({ ok: false, status: 409, json: async () => ({ detail: "conflict" }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("dataset-source-confirm-button")),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 5: focus returns to the new 'Retry' button when the retried fetch fails again, never <body>", async () => {
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      calls += 1;
+      return Promise.reject(new Error("still down"));
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-list-retry-button")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-list-retry-button"));
+  await waitFor(() => expect(calls).toBe(2));
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("dataset-source-list-retry-button")),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 6 (STICKY-CHECKING-AND-BUTTON-PINS-UNPINNED): a non-403 authorize failure leaves 'Check authorization' re-enabled, never stuck", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => [existing] }),
+      onAuthorize: () => ({ ok: false, status: 500, json: async () => ({ detail: "boom" }) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-section")).toBeTruthy(),
+  );
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-error")).toBeTruthy(),
+  );
+  expect(
+    (screen.getByTestId("dataset-source-check-authorization-button") as HTMLButtonElement).disabled,
+  ).toBe(false);
+  expect(screen.queryByTestId("dataset-source-authorization-result-authorized")).toBeNull();
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 6 (pinned): 'Confirm and create' and 'Check authorization' render the real UX01 Button, not a native <button>", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [existing] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "x" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "confidential" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  await waitFor(() => expect(screen.getByTestId("dataset-source-preview")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-confirm-button").hasAttribute("data-variant")).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() =>
+    expect(
+      screen.getByTestId("dataset-source-check-authorization-button").hasAttribute("data-variant"),
+    ).toBe(true),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 5 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK, DOM order pin): the authorization panel's label has a block style, same as the others", async () => {
+  const existing = connection({ allowed_purposes: ["training"] });
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [existing] }) }));
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`dataset-source-option-${existing.id}`)).toBeTruthy(),
+  );
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${existing.id}`));
+  await waitFor(() => {
+    const label = document.querySelector('label[for="dataset-source-purpose-to-check"]');
+    expect((label as HTMLElement | null)?.style.display).toBe("block");
+  });
+});
+
 test("FTF-UX02 r2 pre-review r1 finding 5 (LABELS-ABOVE-FIELDS misclaimed): the Credential label is not duplicated as '(optional) (optional)'", async () => {
   vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
   render(

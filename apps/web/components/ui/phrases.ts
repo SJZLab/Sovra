@@ -130,6 +130,40 @@ export const PHRASES = {
   authorizedResult: { en: "Authorized", ar: "مُفوَّض" },
   connectionStatusActive: { en: "Active", ar: "نشط" },
   connectionStatusRevoked: { en: "Revoked", ar: "مُلغى" },
+
+  // FTF-UX02 round-2 pre-review round 2 (SERVER-DETAIL-ENGLISH-IN-AR): the backend's own `detail`
+  // field is free-form English prose (dataset_source_connection_routes.py raises `str(exc)` or an
+  // f-string, never a fixed code), not something safe to echo verbatim in Arabic. These phrases
+  // back a frontend pattern-match translation of the known shapes that route actually returns;
+  // anything unrecognised falls back to `detailUnexpectedRetryable` rather than raw English.
+  detailProjectNotFound: { en: "The project could not be found.", ar: "تعذر العثور على المشروع." },
+  detailConnectionNotFound: {
+    en: "The connection could not be found.",
+    ar: "تعذر العثور على الاتصال.",
+  },
+  detailSecretManagerUnavailable: {
+    en: "Credential storage is not configured. Contact an administrator.",
+    ar: "لم يتم تكوين تخزين بيانات الاعتماد. تواصل مع المسؤول.",
+  },
+  detailConnectionNotActive: {
+    en: "This connection is no longer active, so no purpose can be authorized.",
+    ar: "هذا الاتصال غير نشط، لذا لا يمكن تفويض أي غرض.",
+  },
+  // "{purpose}" is replaced with the raw closed-vocabulary purpose value (e.g. "training") --
+  // never user-entered text, so no further escaping/<bdi> is needed around it.
+  detailPurposeNotGranted: {
+    en: "This connection is not granted for purpose: {purpose}",
+    ar: "هذا الاتصال غير مُفوَّض للغرض: {purpose}",
+  },
+  // "{field}" is replaced with an already-translated field-label phrase.
+  detailFieldRequiredTemplate: {
+    en: "{field} is required.",
+    ar: "{field} مطلوب.",
+  },
+  detailUnexpectedRetryable: {
+    en: "An unexpected error occurred. You can retry.",
+    ar: "حدث خطأ غير متوقع. يمكنك إعادة المحاولة.",
+  },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {

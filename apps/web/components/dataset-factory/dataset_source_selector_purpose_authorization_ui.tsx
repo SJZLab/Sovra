@@ -153,20 +153,55 @@ export function datasetSourceAuthorizeUrl(
   return `${datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId)}/${connectionId}/authorize`;
 }
 
+type PhraseKey = Parameters<typeof phrase>[0];
+
+// FTF-UX02 round-2 pre-review round 2 (SERVER-DETAIL-ENGLISH-IN-AR): `dataset_source_connection_
+// routes.py` raises `str(exc)`/an f-string for these four cases -- real English prose with
+// embedded dynamic values (a connection id, a purpose, an allowed-purposes list), never a fixed
+// code this frontend could echo as-is. Pattern-matching the stable PREFIX of each known shape
+// (never the dynamic suffix) lets English locale keep showing the server's own text unchanged
+// (already correct there) while Arabic gets a real translation instead of raw English prose.
+const FIELD_LABEL_PHRASE: Partial<Record<string, PhraseKey>> = {
+  source_type: "sourceTypeLabel",
+  display_name: "displayNameLabel",
+  allowed_purposes: "allowedPurposesLegend",
+  security_classification: "securityClassificationLabel",
+  credential: "credentialLabel",
+};
+
+function translateServerDetailToArabic(detail: string): string {
+  if (detail === "project_not_found") return phrase("detailProjectNotFound", "ar");
+  if (detail === "not_found") return phrase("detailConnectionNotFound", "ar");
+  if (detail.includes("no secret-manager backend configuration")) {
+    return phrase("detailSecretManagerUnavailable", "ar");
+  }
+  if (/ is not active \(connection_status=/.test(detail)) {
+    return phrase("detailConnectionNotActive", "ar");
+  }
+  const purposeMatch = detail.match(/is not granted for purpose '([^']+)'/);
+  if (purposeMatch) {
+    return phrase("detailPurposeNotGranted", "ar").replace("{purpose}", purposeMatch[1]!);
+  }
+  const requiredMatch = detail.match(/^(\w+) (?:is required and must be|must be)/);
+  const labelKey = requiredMatch ? FIELD_LABEL_PHRASE[requiredMatch[1]!] : undefined;
+  if (labelKey) {
+    return phrase("detailFieldRequiredTemplate", "ar").replace("{field}", phrase(labelKey, "ar"));
+  }
+  return phrase("detailUnexpectedRetryable", "ar");
+}
+
 async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return body.detail;
+      return locale === "ar" ? translateServerDetailToArabic(body.detail) : body.detail;
     }
   } catch {
     // fall through to the generic message below
   }
   // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a 5xx (or any failure with
   // no server-supplied `detail`) used to render the raw, untranslated `request failed (${status})`
-  // -- never in Arabic, and with no retry affordance. The server's own stable `detail` codes are
-  // shown verbatim above (same precedent as every other FTF-05xx closed-vocabulary surface); only
-  // this no-detail fallback needs translating.
+  // -- never in Arabic, and with no retry affordance.
   return phrase("requestFailedRetryable", locale);
 }
 
@@ -229,8 +264,55 @@ function DatasetSourceSelectorInner({
   const [authorizeState, setAuthorizeState] = useState<AuthorizeState>("idle");
   const [authorizeMessage, setAuthorizeMessage] = useState<string | null>(null);
 
-  async function refreshConnections() {
+  // FTF-UX02 round-2 pre-review round 2 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): "Check authorization"/
+  // "Confirm and create"/"Retry" each disable themselves while their request is in flight, and a
+  // browser blurs an element the instant it becomes `disabled` -- re-enabling it afterward never
+  // gives focus back on its own, so it fell through to `<body>` with nothing announced. Each ref
+  // below tracks "was this the busy state a moment ago" so the matching effect can restore focus
+  // to the real control (or the only sensible place left) exactly once, right after it is safe to
+  // focus again -- never before the DOM has actually dropped `disabled` (same two-step shape as
+  // the sibling FTF-0501-UI `pendingAbandon`/`needsFocusOnIdle` fix for the same bug class).
+  const wasCheckingRef = useRef(false);
+  const wasCreatingRef = useRef(false);
+  const pendingRetryFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (wasCheckingRef.current && authorizeState !== "checking") {
+      document
+        .querySelector<HTMLElement>('[data-testid="dataset-source-check-authorization-button"]')
+        ?.focus();
+    }
+    wasCheckingRef.current = authorizeState === "checking";
+  }, [authorizeState]);
+
+  useEffect(() => {
+    if (wasCreatingRef.current && !creating && createError) {
+      // On success the preview section unmounts instead (handled by resetForm), so this only
+      // ever fires on the real failure path -- never stealing focus from the fresh form.
+      document.querySelector<HTMLElement>('[data-testid="dataset-source-confirm-button"]')?.focus();
+    }
+    wasCreatingRef.current = creating;
+  }, [creating, createError]);
+
+  // Set true ONLY in a genuine retry failure branch below (never on the transient `setListError
+  // (null)` at the top of a retry, which would otherwise race this same ref if it were instead
+  // keyed off "listError just became falsy") -- so this effect only ever fires on a real repeat
+  // failure, landing focus on the newly (re)mounted Retry button rather than `<body>`.
+  useEffect(() => {
+    if (pendingRetryFocusRef.current && listError) {
+      pendingRetryFocusRef.current = false;
+      document
+        .querySelector<HTMLElement>('[data-testid="dataset-source-list-retry-button"]')
+        ?.focus();
+    }
+  }, [listError]);
+
+  async function refreshConnections(options?: { focusRetryOnFailure?: boolean }) {
     setListError(null);
+    const failed = (message: string) => {
+      setListError(message);
+      if (options?.focusRetryOnFailure) pendingRetryFocusRef.current = true;
+    };
     try {
       const response = await fetch(
         datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId),
@@ -240,7 +322,7 @@ function DatasetSourceSelectorInner({
       );
       if (!aliveRef.current) return;
       if (!response.ok) {
-        setListError(await readErrorDetail(response, locale));
+        failed(await readErrorDetail(response, locale));
         return;
       }
       const body = await response.json().catch(() => null);
@@ -250,7 +332,7 @@ function DatasetSourceSelectorInner({
       // outright (`connections?.find is not a function`) or spin the loading state forever -- a
       // malformed 2xx is never success (Law 17), so it becomes a typed, retryable, announced error.
       if (!Array.isArray(body)) {
-        setListError(phrase("responseMalformedRetryable", locale));
+        failed(phrase("responseMalformedRetryable", locale));
         return;
       }
       setConnections(body);
@@ -258,7 +340,7 @@ function DatasetSourceSelectorInner({
       if (!aliveRef.current) return;
       // A thrown fetch (offline, DNS failure, a dropped connection) used to leave the loading
       // state showing forever with an unhandled rejection and nothing announced to assistive tech.
-      setListError(networkErrorMessage(caught, locale));
+      failed(networkErrorMessage(caught, locale));
     }
   }
 
@@ -416,7 +498,7 @@ function DatasetSourceSelectorInner({
             <Button
               variant="secondary"
               data-testid="dataset-source-list-retry-button"
-              onClick={() => void refreshConnections()}
+              onClick={() => void refreshConnections({ focusRetryOnFailure: true })}
             >
               {phrase("retry", locale)}
             </Button>
@@ -615,7 +697,13 @@ function DatasetSourceSelectorInner({
           <p data-testid="dataset-source-authorization-selected-connection">
             <bdi>{selectedConnection.display_name}</bdi>
           </p>
-          <label htmlFor="dataset-source-purpose-to-check">
+          {/* FTF-UX02 round-2 pre-review round 2 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK): this
+              label was missed when the other four got the same block-layout fix last round --
+              real layout (not DOM order) still put it beside, not above, its select. */}
+          <label
+            htmlFor="dataset-source-purpose-to-check"
+            style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+          >
             {phrase("purposeToCheckLabel", locale)}
           </label>
           <select
@@ -639,7 +727,10 @@ function DatasetSourceSelectorInner({
             {phrase("checkAuthorizationButton", locale)}
           </Button>
           {authorizeState === "authorized" && (
-            <p data-testid="dataset-source-authorization-result-authorized">
+            // FTF-UX02 round-2 pre-review round 2 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): a
+            // successful check had no role/aria-live anywhere, so a screen-reader user who just
+            // triggered it heard nothing at all -- "status", not "alert" (this is good news).
+            <p role="status" data-testid="dataset-source-authorization-result-authorized">
               {phrase("authorizedResult", locale)}
             </p>
           )}

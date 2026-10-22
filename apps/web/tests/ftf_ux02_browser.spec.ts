@@ -407,6 +407,12 @@ describe("[UX02-BROWSER] real-Chromium §72.5 evidence", () => {
     const state = STATES.find((s) => s.id === "0500A populated")!;
     const page = await openState(state, "en", "light");
     try {
+      // Reveals the authorization panel's own "Purpose to authorize" label/select too, so the
+      // round-2 pre-review's fifth, previously-missed pair is measured in the same real layout.
+      await page.getByTestId(`dataset-source-option-${CONNECTION}`).click();
+      await page.waitForSelector('[data-testid="dataset-source-purpose-to-check-select"]', {
+        state: "visible",
+      });
       for (const width of [1280, 390]) {
         await page.setViewportSize({ width, height: 900 });
         const problems = await page.evaluate(() => {
@@ -417,6 +423,10 @@ describe("[UX02-BROWSER] real-Chromium §72.5 evidence", () => {
             [
               'label[for="dataset-source-security-classification"]',
               "dataset-source-security-classification-select",
+            ],
+            [
+              'label[for="dataset-source-purpose-to-check"]',
+              "dataset-source-purpose-to-check-select",
             ],
           ];
           const bad: string[] = [];
