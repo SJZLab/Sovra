@@ -25213,3 +25213,4 @@ different session.
 - **Returned:** FTF-UX03 r2 -> r3 (0g): wrap long names (04A03/04A04/04A22) with RED harness fixtures; pin role=alert (04A18, 04A21) and failed-submit focus (04A03); canonical checklist and corrected submission.
 - **Certified:** FTF-UX03 (#956, merge 369decc2), round 3; FTF-UX01 requalified.
 - **Certified:** FTF-1505-F1 (#958, merge 24f1672f), round 3; FTF-1505 requalified.
+- **Returned:** FTF-R006-P1b r1 -> r2 (0c): verify scope before any Argilla call (cross-tenant), serialize revoke/sync, pin Law 17 outage paths, converge concurrent sync, column-limited UPDATE + trigger, real-Argilla CI job + R002 + gate step.
