@@ -53,8 +53,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import shutil
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -93,6 +97,7 @@ from app.reviews.argilla_identity_store import (  # noqa: E402
     ArgillaIdentityError,
     ReviewerIdentityRecord,
     ReviewerIdentityRevokedError,
+    ReviewScopeRecord,
     _username_for,
     ensure_review_scope,
     ensure_reviewer_identity,
@@ -139,6 +144,45 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _resolve_bao_binary() -> str:
+    """tests/integration/test_ftf_0500_dataset_source_connection.py's own established
+    pattern: a `bao` (or `vault`-API-compatible) binary on PATH, or SOVRA_BAO_BINARY
+    pointing at one directly -- built from source by the CI job (no container-registry
+    egress from this repo's interactive dev sandbox; see this file's own docstring)."""
+    explicit = os.environ.get("SOVRA_BAO_BINARY")
+    if explicit:
+        return explicit
+    found = shutil.which("bao")
+    if found:
+        return found
+    print(
+        "BLOCKED_EXTERNAL: no 'bao' binary on PATH and SOVRA_BAO_BINARY is not set -- "
+        "cannot run the real OpenBao integration proof.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+BAO_ADDRESS = "http://127.0.0.1:18501"
+BAO_ROOT_TOKEN = f"sovra-ci-test-{uuid.uuid4().hex}"
+
+
+def _wait_for_bao_health(timeout_seconds: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(  # noqa: S310
+                f"{BAO_ADDRESS}/v1/sys/health", timeout=1.0
+            ) as response:
+                if response.status in (200, 429, 472, 473, 501, 503):
+                    return
+        except (urllib.error.URLError, OSError) as exc:
+            last_error = exc
+        time.sleep(0.2)
+    raise RuntimeError(f"OpenBao dev server never became healthy: {last_error}")
+
+
 def _app_role_url(migration_url: str, app_password: str) -> str:
     parts = urlsplit(migration_url)
     netloc = f"{APP_ROLE_NAME}:{app_password}@{parts.hostname}"
@@ -172,6 +216,12 @@ class World:
     binding2: uuid.UUID
     openbao: OpenBaoConfig
     fake_server: FakeArgillaServer
+    scope1: ReviewScopeRecord | None = None
+    scope2: ReviewScopeRecord | None = None
+    issuer: str | None = None
+    subject: str | None = None
+    identity: ReviewerIdentityRecord | None = None
+    real_api_key: str | None = None
 
     def new_project(self) -> uuid.UUID:
         """A fresh project in org1/workspace1, for a race test that needs a
@@ -344,7 +394,7 @@ def section_scope(world: World) -> None:
         "org2's project gets a different real workspace than org1's",
         scope2.argilla_workspace_id != scope1.argilla_workspace_id,
     )
-    world._scope1, world._scope2 = scope1, scope2  # type: ignore[attr-defined]
+    world.scope1, world.scope2 = scope1, scope2
 
 
 def section_races(world: World) -> None:
@@ -443,7 +493,8 @@ def section_edge_cases(world: World) -> None:
 
 def section_identity_and_membership(world: World) -> None:
     client = world.fake_server.client()
-    scope1 = world._scope1  # type: ignore[attr-defined]
+    assert world.scope1 is not None
+    scope1 = world.scope1
     issuer, subject = "https://issuer.example", f"subject-{uuid.uuid4().hex[:8]}"
 
     identity = ensure_reviewer_identity(
@@ -614,18 +665,20 @@ def section_identity_and_membership(world: World) -> None:
         not in world.fake_server.memberships,
     )
 
-    world._issuer, world._subject, world._identity, world._real_api_key = (
+    world.issuer, world.subject, world.identity, world.real_api_key = (
         issuer,
         subject,
         identity,
         real_api_key,
-    )  # type: ignore[attr-defined]
+    )
 
 
 def section_revoke(world: World) -> None:
     client = world.fake_server.client()
-    scope1 = world._scope1  # type: ignore[attr-defined]
-    issuer, subject, identity = world._issuer, world._subject, world._identity  # type: ignore[attr-defined]
+    assert world.scope1 is not None
+    scope1 = world.scope1
+    assert world.issuer is not None and world.subject is not None and world.identity is not None
+    issuer, subject, identity = world.issuer, world.subject, world.identity
 
     # Re-grant membership so revoke has something real to remove.
     sync_workspace_membership(
@@ -712,7 +765,7 @@ def section_revoke(world: World) -> None:
 
 def section_rls_and_secrecy(world: World) -> None:
     # Cross-tenant RLS: org2's own tenant context must never see org1's scope/identity rows.
-    with Session(world.factory().bind) as raw:  # type: ignore[arg-type]
+    with Session(world.factory().bind) as raw:
         raw.execute(
             text("SELECT set_config('app.current_organization_id', :org, true)"),
             {"org": str(world.org2)},
@@ -733,7 +786,7 @@ def section_rls_and_secrecy(world: World) -> None:
 
     # Unauthorized-principal write: sovra_app cannot insert a row for a foreign organization_id
     # under its own bound tenant context (WITH CHECK, not merely USING).
-    with Session(world.factory().bind) as raw:  # type: ignore[arg-type]
+    with Session(world.factory().bind) as raw:
         raw.execute(
             text("SELECT set_config('app.current_organization_id', :org, true)"),
             {"org": str(world.org2)},
@@ -761,7 +814,7 @@ def section_rls_and_secrecy(world: World) -> None:
             raw.rollback()
 
     # No raw DELETE grant at all.
-    with Session(world.factory().bind) as raw:  # type: ignore[arg-type]
+    with Session(world.factory().bind) as raw:
         raw.execute(
             text("SELECT set_config('app.current_organization_id', :org, true)"),
             {"org": str(world.org1)},
@@ -779,7 +832,8 @@ def section_rls_and_secrecy(world: World) -> None:
             raw.rollback()
 
     # No API key, anywhere in the database, ever (proof bullet 4).
-    real_api_key = world._real_api_key  # type: ignore[attr-defined]
+    assert world.real_api_key is not None
+    real_api_key = world.real_api_key
     with Session(world.owner) as owner_session:
         for table, columns in (
             ("argilla_review_scopes", ("argilla_workspace_id", "argilla_workspace_name")),
@@ -801,7 +855,7 @@ def section_rls_and_secrecy(world: World) -> None:
 def main() -> None:
     migration_url = _required_env("SOVRA_DATABASE_URL")
     app_password = _required_env("SOVRA_APP_DB_PASSWORD")
-    openbao = OpenBaoConfig.from_env(os.environ, require_tls=False)
+    bao_binary = _resolve_bao_binary()
 
     for args, label in (
         (["upgrade", "head"], "alembic upgrade head"),
@@ -817,9 +871,25 @@ def main() -> None:
             _finish()
     heads = _alembic(["heads"], migration_url)
     check(f"exactly one Alembic head: {heads.stdout!r}", heads.stdout.count("(head)") == 1)
+    if FAILURES:
+        _finish()
 
+    bao_process = subprocess.Popen(
+        [
+            bao_binary,
+            "server",
+            "-dev",
+            f"-dev-listen-address={BAO_ADDRESS.removeprefix('http://')}",
+            f"-dev-root-token-id={BAO_ROOT_TOKEN}",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
     fake_server = FakeArgillaServer()
     try:
+        _wait_for_bao_health()
+        openbao = OpenBaoConfig(address=BAO_ADDRESS, token=BAO_ROOT_TOKEN)
         world = _seed(migration_url, app_password, openbao, fake_server)
         section_health(world)
         section_scope(world)
@@ -830,6 +900,12 @@ def main() -> None:
         section_rls_and_secrecy(world)
     finally:
         fake_server.shutdown()
+        bao_process.terminate()
+        try:
+            bao_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover -- defensive cleanup only
+            bao_process.kill()
+            bao_process.wait(timeout=10)
     _finish()
 
 
