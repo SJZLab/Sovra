@@ -64,7 +64,8 @@
 
 import { useEffect, useState } from "react";
 
-import { dirFor, type Locale, phrase } from "../ui/phrases";
+import { Button, EmptyState, Field, PendingView } from "../ui";
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
@@ -326,44 +327,73 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
   const selectedConnection =
     connections?.find((connection) => connection.id === selectedConnectionId) ?? null;
 
+  function connectionStatusLabel(status: string): string {
+    if (status === "active") return phrase("connectionStatusActive", locale);
+    if (status === "revoked") return phrase("connectionStatusRevoked", locale);
+    return status;
+  }
+
   return (
-    <div data-testid="dataset-source-selector" dir={dirFor(locale)}>
+    <div data-testid="dataset-source-selector" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <section data-testid="dataset-source-list-section">
-        <h2>Dataset source connections</h2>
-        {listError && <p data-testid="dataset-source-list-error">{listError}</p>}
+        <h2>{phrase("datasetSourceHeading", locale)}</h2>
+        {listError && (
+          <p role="alert" data-testid="dataset-source-list-error">
+            {listError}
+          </p>
+        )}
+        {connections === null && !listError && (
+          <PendingView
+            phase="busy"
+            label={phrase("datasetSourceLoading", locale)}
+            locale={locale}
+          />
+        )}
         {connections !== null && connections.length === 0 && !listError && (
-          <section
-            data-testid="dataset-source-empty-state"
-            aria-label={phrase("noConnectionsTitle", locale)}
-          >
-            <h3>{phrase("noConnectionsTitle", locale)}</h3>
-            <p>{phrase("noConnectionsWhy", locale)}</p>
-          </section>
+          <div data-testid="dataset-source-empty-state">
+            <EmptyState
+              title={phrase("noConnectionsTitle", locale)}
+              why={phrase("noConnectionsWhy", locale)}
+              action={
+                <Button
+                  data-testid="dataset-source-empty-state-action"
+                  onClick={() => document.getElementById("dataset-source-display-name")?.focus()}
+                >
+                  {phrase("newConnectionHeading", locale)}
+                </Button>
+              }
+            />
+          </div>
         )}
         <ul data-testid="dataset-source-connection-list">
           {(connections ?? []).map((connection) => (
             <li key={connection.id}>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 data-testid={`dataset-source-option-${connection.id}`}
                 aria-pressed={selectedConnectionId === connection.id}
                 onClick={() => handleSelectConnection(connection)}
               >
                 {connection.display_name} ({connection.source_type},{" "}
-                {connection.security_classification}, {connection.connection_status})
-              </button>
+                {connection.security_classification},{" "}
+                {connectionStatusLabel(connection.connection_status)})
+              </Button>
             </li>
           ))}
         </ul>
       </section>
 
       <section data-testid="dataset-source-new-connection-section">
-        <h2>New connection</h2>
-        {createError && <p data-testid="dataset-source-create-error">{createError}</p>}
+        <h2>{phrase("newConnectionHeading", locale)}</h2>
+        {createError && (
+          <p role="alert" data-testid="dataset-source-create-error">
+            {createError}
+          </p>
+        )}
 
         {formStep === "form" && (
           <form onSubmit={handleReview} data-testid="dataset-source-form">
-            <label htmlFor="dataset-source-type">Source type</label>
+            <label htmlFor="dataset-source-type">{phrase("sourceTypeLabel", locale)}</label>
             <select
               id="dataset-source-type"
               data-testid="dataset-source-type-select"
@@ -377,26 +407,30 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </select>
 
-            <label htmlFor="dataset-source-display-name">Display name</label>
-            <input
+            <Field
               id="dataset-source-display-name"
               data-testid="dataset-source-display-name-input"
+              label={phrase("displayNameLabel", locale)}
+              requirement="required"
+              locale={locale}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               required
             />
 
-            <label htmlFor="dataset-source-credential">Credential (optional)</label>
-            <input
+            <Field
               id="dataset-source-credential"
               data-testid="dataset-source-credential-input"
+              label={phrase("credentialLabel", locale)}
+              requirement="optional"
+              locale={locale}
               type="password"
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
             />
 
             <fieldset data-testid="dataset-source-purposes-fieldset">
-              <legend>Allowed purposes</legend>
+              <legend>{phrase("allowedPurposesLegend", locale)}</legend>
               {DATASET_SOURCE_PURPOSES.map((purpose) => (
                 <label key={purpose}>
                   <input
@@ -411,7 +445,7 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
             </fieldset>
 
             <label htmlFor="dataset-source-security-classification">
-              Security classification (privacy boundary)
+              {phrase("securityClassificationLabel", locale)}
             </label>
             <select
               id="dataset-source-security-classification"
@@ -423,7 +457,7 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
                 )
               }
             >
-              <option value="">Select...</option>
+              <option value="">{phrase("selectPlaceholder", locale)}</option>
               {DATASET_SOURCE_SECURITY_CLASSIFICATIONS.map((classification) => (
                 <option key={classification} value={classification}>
                   {classification}
@@ -431,97 +465,103 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </select>
 
-            <button
+            <Button
               type="submit"
               data-testid="dataset-source-review-button"
               disabled={!formIsReadyForReview}
             >
-              Review
-            </button>
+              {phrase("reviewButton", locale)}
+            </Button>
           </form>
         )}
 
         {formStep === "preview" && (
           <div data-testid="dataset-source-preview">
-            <p data-testid="dataset-source-preview-notice">
-              Review before creating. This previews exactly what will be submitted -- it is not a
-              preview of the external source's own records or byte counts, which no connector in
-              this repository can validate yet.
-            </p>
+            <p data-testid="dataset-source-preview-notice">{phrase("previewNotice", locale)}</p>
             <dl>
-              <dt>Source type</dt>
+              <dt>{phrase("previewSourceTypeLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-source-type">{sourceType}</dd>
-              <dt>Display name</dt>
-              <dd data-testid="dataset-source-preview-display-name">{displayName}</dd>
-              <dt>Credentials scope</dt>
-              <dd data-testid="dataset-source-preview-credential">
-                {credential ? "credential provided" : "no credential provided"}
+              <dt>{phrase("previewDisplayNameLabel", locale)}</dt>
+              <dd data-testid="dataset-source-preview-display-name">
+                <bdi>{displayName}</bdi>
               </dd>
-              <dt>Allowed purposes</dt>
+              <dt>{phrase("previewCredentialScopeLabel", locale)}</dt>
+              <dd data-testid="dataset-source-preview-credential">
+                {credential
+                  ? phrase("credentialProvided", locale)
+                  : phrase("credentialNotProvided", locale)}
+              </dd>
+              <dt>{phrase("previewPurposesLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-purposes">
                 {Array.from(purposes).join(", ")}
               </dd>
-              <dt>Privacy boundary</dt>
+              <dt>{phrase("previewPrivacyBoundaryLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-security-classification">
                 {securityClassification}
               </dd>
             </dl>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               data-testid="dataset-source-back-button"
               onClick={handleBackToEdit}
               disabled={creating}
             >
-              Back
-            </button>
-            <button
-              type="button"
+              {phrase("backButton", locale)}
+            </Button>
+            <Button
               data-testid="dataset-source-confirm-button"
               onClick={handleConfirmCreate}
               disabled={creating}
             >
-              Confirm and create
-            </button>
+              {phrase("confirmCreateButton", locale)}
+            </Button>
           </div>
         )}
       </section>
 
       {selectedConnection && (
         <section data-testid="dataset-source-authorization-section">
-          <h2>Purpose authorization</h2>
+          <h2>{phrase("authorizationHeading", locale)}</h2>
           <p data-testid="dataset-source-authorization-selected-connection">
-            {selectedConnection.display_name}
+            <bdi>{selectedConnection.display_name}</bdi>
           </p>
-          <label htmlFor="dataset-source-purpose-to-check">Purpose to authorize</label>
+          <label htmlFor="dataset-source-purpose-to-check">
+            {phrase("purposeToCheckLabel", locale)}
+          </label>
           <select
             id="dataset-source-purpose-to-check"
             data-testid="dataset-source-purpose-to-check-select"
             value={purposeToCheck}
             onChange={(event) => setPurposeToCheck(event.target.value as DatasetSourcePurpose | "")}
           >
-            <option value="">Select...</option>
+            <option value="">{phrase("selectPlaceholder", locale)}</option>
             {DATASET_SOURCE_PURPOSES.map((purpose) => (
               <option key={purpose} value={purpose}>
                 {purpose}
               </option>
             ))}
           </select>
-          <button
-            type="button"
+          <Button
             data-testid="dataset-source-check-authorization-button"
             onClick={handleCheckAuthorization}
             disabled={!purposeToCheck || authorizeState === "checking"}
           >
-            Check authorization
-          </button>
+            {phrase("checkAuthorizationButton", locale)}
+          </Button>
           {authorizeState === "authorized" && (
-            <p data-testid="dataset-source-authorization-result-authorized">Authorized</p>
+            <p data-testid="dataset-source-authorization-result-authorized">
+              {phrase("authorizedResult", locale)}
+            </p>
           )}
           {authorizeState === "denied" && (
-            <p data-testid="dataset-source-authorization-result-denied">{authorizeMessage}</p>
+            <p role="alert" data-testid="dataset-source-authorization-result-denied">
+              {authorizeMessage}
+            </p>
           )}
           {authorizeState === "idle" && authorizeMessage && (
-            <p data-testid="dataset-source-authorization-error">{authorizeMessage}</p>
+            <p role="alert" data-testid="dataset-source-authorization-error">
+              {authorizeMessage}
+            </p>
           )}
         </section>
       )}

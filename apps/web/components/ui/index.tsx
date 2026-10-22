@@ -2,6 +2,7 @@ export * from "./Banner";
 export * from "./Breadcrumbs";
 export * from "./Button";
 export * from "./DataTable";
+export * from "./Dialog";
 export * from "./EmptyState";
 export * from "./ErrorSummary";
 export * from "./Field";

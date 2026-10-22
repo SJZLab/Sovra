@@ -76,6 +76,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button, Dialog } from "../ui";
 import { dirFor, type Locale, phrase } from "../ui/phrases";
 
 // Redeclared from the server's own closed vocabularies (no shared TS/Python
@@ -750,6 +751,7 @@ function UploadInner({
   const aliveRef = useRef(true);
   const busyRef = useRef(false);
   const originRef = useRef<string | null>(storageOrigin ?? null);
+  const abandonTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -1204,8 +1206,8 @@ function UploadInner({
       {phase === "resumable" && resumableDraft && (
         <section data-testid="upload-resume-banner">
           <p data-testid="upload-resume-text">
-            A previous upload of &quot;{resumableDraft.fileName}&quot; is still in progress. Choose
-            that same file to resume it.
+            {phrase("resumeBannerBeforeName", locale)} &quot;
+            <bdi>{resumableDraft.fileName}</bdi>&quot; {phrase("resumeBannerAfterName", locale)}
           </p>
           {errorMessage && (
             <p role="alert" data-testid="upload-resume-error">
@@ -1220,15 +1222,25 @@ function UploadInner({
               if (picked) void exclusive(() => resumeFromDraft(picked));
             }}
           />
-          {confirmingAbandon ? (
-            <div
-              role="alertdialog"
-              aria-label="Confirm abandon"
-              data-testid="upload-abandon-confirm"
-            >
-              <p>{phrase("abandonConfirmBody", locale)}</p>
-              <button
-                type="button"
+          <Dialog
+            open={confirmingAbandon}
+            onOpenChange={setConfirmingAbandon}
+            title={phrase("abandonConfirmTitle", locale)}
+            description={phrase("abandonConfirmBody", locale)}
+            locale={locale}
+            data-testid="upload-abandon-confirm"
+            restoreFocusTo={abandonTriggerRef.current}
+          >
+            <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+              <Button
+                variant="secondary"
+                data-testid="upload-abandon-cancel-button"
+                onClick={() => setConfirmingAbandon(false)}
+              >
+                {phrase("keepDraft", locale)}
+              </Button>
+              <Button
+                variant="danger"
                 data-testid="upload-abandon-confirm-button"
                 onClick={() => {
                   setConfirmingAbandon(false);
@@ -1236,24 +1248,26 @@ function UploadInner({
                 }}
               >
                 {phrase("abandonDraft", locale)}
-              </button>
-              <button
-                type="button"
-                data-testid="upload-abandon-cancel-button"
-                onClick={() => setConfirmingAbandon(false)}
-              >
-                {phrase("keepDraft", locale)}
-              </button>
+              </Button>
             </div>
-          ) : (
-            <button
-              type="button"
-              data-testid="upload-abandon-draft-button"
-              onClick={() => setConfirmingAbandon(true)}
-            >
-              Abandon this draft and start a new upload
-            </button>
-          )}
+          </Dialog>
+          {/* Stays mounted while the dialog is open (the overlay already blocks interacting with
+              it -- never `disabled` either: disabling a FOCUSED control blurs it synchronously,
+              a browser behaviour, before any capture of it could run). `abandonTriggerRef`
+              captures this exact DOM node at click time and hands it to `Dialog` as
+              `restoreFocusTo` -- Radix's own default close-focus target only works when the
+              opener is its own `Dialog.Trigger`; confirmed empirically (real Chromium,
+              ftf_ux02_browser.spec.ts) that without this, focus lands on `<body>` on close. */}
+          <Button
+            variant="secondary"
+            data-testid="upload-abandon-draft-button"
+            onClick={(event) => {
+              abandonTriggerRef.current = event.currentTarget;
+              setConfirmingAbandon(true);
+            }}
+          >
+            {phrase("abandonDraftAction", locale)}
+          </Button>
         </section>
       )}
 

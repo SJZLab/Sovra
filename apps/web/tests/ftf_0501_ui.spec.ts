@@ -1672,6 +1672,76 @@ test("abandoning a draft clears it and returns to a fresh upload form, with no n
   expect(fetchCalls().length).toBe(0);
 });
 
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, finding 1 (CONFIRM-FOCUS-LOST) and finding 5
+// (CONFIRM-PROMISES-DISCARD): the abandon confirmation is now the shared
+// UX01 `Dialog` (Radix focus-scope primitives), not a plain unmanaged <div>.
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 finding 1: opening the abandon confirmation moves focus inside it (real focus trap, not a static div)", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  expect(confirm.getAttribute("role")).toBe("alertdialog");
+  // A plain <div role="alertdialog"> never receives focus on its own; the old
+  // implementation left `document.activeElement` on the trigger button that
+  // was just hidden. The real focus-trap primitive moves focus inside.
+  expect(confirm.contains(document.activeElement)).toBe(true);
+});
+
+test("FTF-UX02 r2 finding 1: the confirmation names the trigger via aria-labelledby/aria-describedby, not a hardcoded aria-label", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const labelledBy = confirm.getAttribute("aria-labelledby");
+  // `aria-describedby` may legally be a space-separated list of id references
+  // (ARIA spec; Radix itself appends its own internal one) -- check that at
+  // least one resolves to the real consequence text, not that there is only one.
+  const describedByIds = (confirm.getAttribute("aria-describedby") ?? "").split(/\s+/);
+  expect(labelledBy).toBeTruthy();
+  expect(describedByIds.length).toBeGreaterThan(0);
+  expect(document.getElementById(labelledBy!)?.textContent).toBe("Abandon this draft?");
+  const describedTexts = describedByIds.map((id) => document.getElementById(id)?.textContent);
+  expect(describedTexts.some((t) => t?.includes("This browser forgets your progress"))).toBe(true);
+});
+
+test("FTF-UX02 r2 finding 1: Escape keeps the draft (same effect as Keep draft), never the same effect as confirming abandon", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  fireEvent.keyDown(confirm, { key: "Escape" });
+  expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+  // Still resumable: Escape must not have run the destructive `resetToIdle` path.
+  expect(screen.getByTestId("upload-resume-file-input")).toBeTruthy();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 r2 finding 5: the confirmation no longer claims the upload itself is discarded (no abort route exists for it)", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const body = screen.getByTestId("upload-abandon-confirm").textContent ?? "";
+  // The prior wording ("The partly uploaded file is discarded") is a claim this UI cannot
+  // keep -- apps/api/app/datasets/direct_object_storage_upload_routes.py exposes no abort
+  // route the browser could call, so confirming never contacts the server (asserted below);
+  // the honest, rewritten copy describes only the local, client-side effect.
+  expect(body).not.toMatch(/discarded/i);
+  expect(body).toContain("This browser forgets your progress");
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 r2: the abandon trigger button text is bilingual, not a hardcoded English string", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  const trigger = screen.getByTestId("upload-abandon-draft-button");
+  expect(trigger.textContent).toMatch(/[؀-ۿ]/);
+});
+
 test("fault: a secret, a presigned URL or file bytes ever written to localStorage -> RED", async () => {
   await uploadToReadyToFinalize();
   const dump: string[] = [];

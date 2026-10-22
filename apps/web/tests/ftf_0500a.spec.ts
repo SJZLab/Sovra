@@ -99,6 +99,67 @@ test("URL helpers point at the real FTF-0500 API contract", () => {
   );
 });
 
+test("FTF-UX02 r2 severity-2 (required): a loading state is shown while the connection list is in flight", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => undefined)), // never resolves: still loading
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  // Before this round, nothing at all was shown while `connections === null`
+  // (no loading indicator, no empty state, no list) -- a dead screen.
+  expect(screen.getByRole("status")).toBeTruthy();
+  expect(screen.queryByTestId("dataset-source-empty-state")).toBeNull();
+  expect(screen.queryByTestId("dataset-source-connection-list")?.children.length ?? 0).toBe(0);
+});
+
+test("FTF-UX02 r2 severity-2 (required): a list-fetch error is announced (role=alert), not a silent paragraph", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: false, status: 500, json: async () => ({ detail: "internal error" }) }),
+    }),
+  );
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+
+  const alertEl = await screen.findByRole("alert");
+  expect(alertEl.textContent).toBe("internal error");
+});
+
+test("FTF-UX02 r2: the new-connection chrome (heading, labels, buttons) is bilingual, not hardcoded English", async () => {
+  vi.stubGlobal("fetch", mockFetch({ list: () => ({ ok: true, json: async () => [] }) }));
+
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+
+  await waitFor(() => expect(screen.getByTestId("dataset-source-form")).toBeTruthy());
+  const root = screen.getByTestId("dataset-source-selector");
+  expect(root.getAttribute("lang")).toBe("ar");
+  expect(root.getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("dataset-source-review-button").textContent).toMatch(/[؀-ۿ]/);
+  expect(screen.getByLabelText(/الاسم المعروض/).tagName).toBe("INPUT");
+});
+
 test("existing connections render from the real backend list, none pre-selected", async () => {
   vi.stubGlobal(
     "fetch",
