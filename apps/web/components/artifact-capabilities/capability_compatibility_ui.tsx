@@ -34,9 +34,32 @@
  * UNWIRED to a page and to a training start until those exist. Today the
  * frozen route can only return `unknown` for the three tested dimensions, so
  * Train is disabled for every real response.
+ *
+ * FTF-UX05 (2026-10-22): audit finding H1 (severity 1) -- "Check compatibility"
+ * relabelled to "Checking…" with no `aria-busy` (cross-cutting finding X7).
+ * The button now carries `aria-busy` while loading. An optional `locale` prop
+ * renders its own label in Arabic (finding X4).
+ *
+ * FTF-UX05 round 2 (2026-10-22, L2 return): the L2 review found the container's `lang`/`dir`
+ * covered large amounts of hardcoded-English UI copy -- the heading, every `dt` label, the
+ * blockers list's own connecting words, the Train button, the error dictionary. Every string this
+ * component itself authors now routes through `phrase()` with a real `ar` translation (see
+ * `ui/phrases.ts`'s FTF-0309 block), so `lang="ar"` is now honest for that copy. Values this
+ * component does not author -- the model name, and the server's own frozen-contract enum literals
+ * (`access`, `capability`, `availability`, a dimension's `state`/`reason`) -- are data, not UI
+ * copy: a dimension's own reason code in particular is server vocabulary this component has no
+ * authority to translate (the frozen `ModelCapabilityUnknown` shape carries it verbatim), so these
+ * stay untranslated and are wrapped in `<bdi>` rather than given a language tag (same convention
+ * `candidate_selection_ui_no_auto_selection.tsx` already established). The dimension row's own
+ * `data-testid={`dimension-${label}`}` keeps its existing English-keyed scheme unchanged (an
+ * internal identifier, not visible copy) while its *visible* heading text is now translated.
+ * Default `locale="en"` rendering, every `getByRole`/`getByText` query in the certified suite, and
+ * every existing `data-testid` are byte-identical to round 1.
  */
 
 import { useEffect, useRef, useState } from "react";
+
+import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
 export interface CapabilityDimension {
@@ -82,6 +105,7 @@ export interface CapabilityCompatibilityUIProps {
   modelName: string;
   /** Called only by an explicit click on an enabled Train button. */
   onTrain?: (modelName: string) => void;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -107,35 +131,35 @@ export function capabilitiesUrl(
   );
 }
 
-const NOT_FOUND_MESSAGE = "The connection, artifact or project was not found.";
-const GATEWAY_UNAVAILABLE_MESSAGE =
-  "The gateway could not be reached, so compatibility could not be determined. No recommendation is made.";
-const ERROR_MESSAGES: Record<string, string> = {
-  not_found: NOT_FOUND_MESSAGE,
-  gateway_unavailable: GATEWAY_UNAVAILABLE_MESSAGE,
-};
-
-async function readErrorDetail(response: Response): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return ERROR_MESSAGES[body.detail] ?? body.detail;
+      if (body.detail === "not_found") return phrase("compatNotFoundMessage", locale);
+      if (body.detail === "gateway_unavailable") {
+        return phrase("compatGatewayUnavailableMessage", locale);
+      }
+      // An unrecognized code is raw backend data (its language is the backend's choice, not this
+      // component's) and is returned verbatim, never mistranslated.
+      return body.detail;
     }
   } catch {
     // fall through to the generic message below
   }
-  if (response.status === 503) return GATEWAY_UNAVAILABLE_MESSAGE;
-  if (response.status === 404) return NOT_FOUND_MESSAGE;
-  return `request failed (${response.status})`;
+  if (response.status === 503) return phrase("compatGatewayUnavailableMessage", locale);
+  if (response.status === 404) return phrase("compatNotFoundMessage", locale);
+  return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
-function networkErrorMessage(caught: unknown): string {
+function networkErrorMessage(caught: unknown, locale: Locale): string {
   const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
+  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
 }
 
-function shown(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "not recorded";
+function shown(value: unknown, locale: Locale): string {
+  if (value === null || value === undefined || value === "") {
+    return phrase("notRecordedText", locale);
+  }
   return String(value);
 }
 
@@ -233,34 +257,71 @@ function isCapabilities(body: unknown): body is ModelCapabilities {
   );
 }
 
+/** The three frozen dimensions, each keyed by a stable, English, testid-safe identifier (never
+ * translated -- it is this component's own internal key, not visible copy) plus the phrase key for
+ * its visible label. */
+const DIMENSIONS = [
+  { key: "Method support", dim: "method_support", labelKey: "dimensionMethodSupport" },
+  { key: "Tested VRAM", dim: "min_gpu_vram_gb", labelKey: "dimensionTestedVram" },
+  { key: "Chat template", dim: "chat_template", labelKey: "dimensionChatTemplate" },
+] as const satisfies ReadonlyArray<{
+  key: string;
+  dim: "method_support" | "min_gpu_vram_gb" | "chat_template";
+  labelKey: keyof typeof PHRASES;
+}>;
+
 /** Every reason Train is disabled; an empty list is the only way to enable it. */
-export function trainBlockers(c: ModelCapabilities): string[] {
+export function trainBlockers(c: ModelCapabilities, locale: Locale = "en"): string[] {
   const blockers: string[] = [];
-  if (!c.trainable) blockers.push(`Not trainable: ${shown(c.capability_reason ?? c.capability)}`);
-  if (c.access !== "granted") blockers.push(`Gateway access is ${shown(c.access)}`);
-  if (c.artifact.availability !== "ready") {
-    blockers.push(`Trainable artifact is ${shown(c.artifact.availability)}, not ready`);
+  if (!c.trainable) {
+    blockers.push(
+      `${phrase("compatNotTrainablePrefix", locale)} ${shown(c.capability_reason ?? c.capability, locale)}`,
+    );
   }
-  if (c.artifact.license_approved !== true) blockers.push("Artifact license is not approved");
-  const dimensions: Array<[string, CapabilityDimension]> = [
-    ["Method support", c.method_support],
-    ["Tested VRAM", c.min_gpu_vram_gb],
-    ["Chat template", c.chat_template],
-  ];
-  for (const [label, dim] of dimensions) {
-    blockers.push(`${label} is ${dim.state}: ${shown(dim.reason)}`);
+  if (c.access !== "granted") {
+    blockers.push(`${phrase("compatGatewayAccessIsPrefix", locale)} ${shown(c.access, locale)}`);
+  }
+  if (c.artifact.availability !== "ready") {
+    blockers.push(
+      `${phrase("compatArtifactIsPrefix", locale)} ${shown(c.artifact.availability, locale)}${phrase("compatNotReadySuffix", locale)}`,
+    );
+  }
+  if (c.artifact.license_approved !== true) {
+    blockers.push(phrase("compatLicenseNotApprovedBlocker", locale));
+  }
+  for (const { labelKey, dim } of DIMENSIONS) {
+    const dimension = c[dim];
+    blockers.push(
+      `${phrase(labelKey, locale)} ${phrase("compatIsWord", locale)} ${dimension.state}: ${shown(dimension.reason, locale)}`,
+    );
   }
   return blockers;
 }
 
-/** Shows only what the server returned for this dimension; no date is inferred from elsewhere. */
-function DimensionRow({ label, dim }: { label: string; dim: CapabilityDimension }) {
+/** Shows only what the server returned for this dimension; no date is inferred from elsewhere.
+ * `testIdKey` is the stable English identifier used for `data-testid` (unchanged across locales,
+ * since it is an internal key, not visible copy); `label` is the translated visible heading. */
+function DimensionRow({
+  testIdKey,
+  label,
+  dim,
+  locale,
+}: {
+  testIdKey: string;
+  label: string;
+  dim: CapabilityDimension;
+  locale: Locale;
+}) {
   return (
-    <tr data-testid={`dimension-${label}`}>
+    <tr data-testid={`dimension-${testIdKey}`}>
       <th scope="row">{label}</th>
-      <td>{dim.state}</td>
-      <td>{`reason: ${shown(dim.reason)}`}</td>
-      <td>no evidence date returned by the server</td>
+      <td>
+        <bdi>{dim.state}</bdi>
+      </td>
+      <td>
+        {phrase("compatReasonPrefix", locale)} <bdi>{shown(dim.reason, locale)}</bdi>
+      </td>
+      <td>{phrase("compatNoEvidenceDate", locale)}</td>
     </tr>
   );
 }
@@ -272,6 +333,7 @@ export function CapabilityCompatibilityUI({
   projectId,
   modelName,
   onTrain,
+  locale = "en",
 }: CapabilityCompatibilityUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
   const [result, setResult] = useState<ModelCapabilities | null>(null);
@@ -309,14 +371,14 @@ export function CapabilityCompatibilityUI({
         { method: "GET", credentials: "include" },
       );
       if (!response.ok) {
-        const message = await readErrorDetail(response);
+        const message = await readErrorDetail(response, locale);
         if (!stale()) setError(message);
         return;
       }
       const body: unknown = await response.json();
       if (stale()) return;
       if (!isCapabilities(body)) {
-        setError("malformed capabilities response");
+        setError(phrase("compatMalformedResponse", locale));
         return;
       }
       if (
@@ -324,63 +386,109 @@ export function CapabilityCompatibilityUI({
         body.project_id !== projectId ||
         body.litellm_connection_id !== connectionId
       ) {
-        setError("capabilities response does not match the request");
+        setError(phrase("compatResponseMismatch", locale));
         return;
       }
       setResult(body);
     } catch (caught) {
-      if (!stale()) setError(networkErrorMessage(caught));
+      if (!stale()) setError(networkErrorMessage(caught, locale));
     } finally {
       if (!stale()) setLoading(false);
     }
   }
 
-  const blockers = capabilities ? trainBlockers(capabilities) : [];
+  const blockers = capabilities ? trainBlockers(capabilities, locale) : [];
   const trainEnabled = capabilities !== null && blockers.length === 0 && onTrain !== undefined;
 
   return (
-    <section aria-label="Capability compatibility">
-      <h2>Compatibility: {modelName}</h2>
-      <button type="button" onClick={handleLoad} disabled={loading}>
-        {loading ? "Checking..." : "Check compatibility"}
+    <section
+      // Not routed through phrase(): a certified FTF-0309 test queries this section by this exact
+      // English label even under locale="ar" (`getByLabelText("Capability compatibility")`), so
+      // this one string is pinned English-only by that already-certified behavior.
+      aria-label="Capability compatibility"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+    >
+      <h2>
+        {phrase("compatibilityHeadingPrefix", locale)} <bdi>{modelName}</bdi>
+      </h2>
+      <button type="button" onClick={handleLoad} disabled={loading} aria-busy={loading}>
+        {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
       </button>
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? (
+        <p role="alert" dir={dirFor(locale)}>
+          <bdi>{error}</bdi>
+        </p>
+      ) : null}
       {capabilities ? (
         <div>
           <dl>
-            <dt>Gateway access</dt>
-            <dd>{capabilities.access}</dd>
-            <dt>Capability</dt>
-            <dd>{`${capabilities.capability}${capabilities.capability_detail ? ` (${capabilities.capability_detail})` : ""}`}</dd>
-            <dt>Role</dt>
-            <dd>{shown(capabilities.role)}</dd>
-            <dt>Artifact</dt>
-            <dd>{`${capabilities.artifact.availability}; license ${capabilities.artifact.license_approved ? "approved" : "not approved"}; weights ${shown(capabilities.artifact.weights_digest)}`}</dd>
-            <dt>Discovery checked</dt>
-            <dd>{shown(capabilities.evidence.discovery_checked_at)}</dd>
-            <dt>Tool-call probe</dt>
+            <dt>{phrase("compatGatewayAccess", locale)}</dt>
             <dd>
-              {capabilities.evidence.tool_call_probe_present
-                ? `checked ${shown(capabilities.evidence.tool_call_probe_checked_at)}`
-                : "not run"}
+              <bdi>{capabilities.access}</bdi>
+            </dd>
+            <dt>{phrase("compatCapability", locale)}</dt>
+            <dd>
+              <bdi>
+                {capabilities.capability}
+                {capabilities.capability_detail ? ` (${capabilities.capability_detail})` : ""}
+              </bdi>
+            </dd>
+            <dt>{phrase("compatRole", locale)}</dt>
+            <dd>
+              <bdi>{shown(capabilities.role, locale)}</bdi>
+            </dd>
+            <dt>{phrase("compatArtifact", locale)}</dt>
+            <dd>
+              <bdi>{capabilities.artifact.availability}</bdi>;{" "}
+              {phrase("compatLicensePrefix", locale)}{" "}
+              {capabilities.artifact.license_approved
+                ? phrase("compatApproved", locale)
+                : phrase("compatNotApproved", locale)}
+              ; {phrase("compatWeightsPrefix", locale)}{" "}
+              <bdi>{shown(capabilities.artifact.weights_digest, locale)}</bdi>
+            </dd>
+            <dt>{phrase("compatDiscoveryChecked", locale)}</dt>
+            {/* Not wrapped in <bdi> (unlike other data values in this component): a certified
+                FTF-0309 test queries this `dd`'s own direct text node
+                (`getByText(..., { selector: "dd" })`), and a timestamp's digits/punctuation have
+                no bidi direction to isolate anyway. */}
+            <dd>{shown(capabilities.evidence.discovery_checked_at, locale)}</dd>
+            <dt>{phrase("compatToolCallProbe", locale)}</dt>
+            <dd>
+              {capabilities.evidence.tool_call_probe_present ? (
+                <>
+                  {phrase("compatCheckedPrefix", locale)}{" "}
+                  <bdi>{shown(capabilities.evidence.tool_call_probe_checked_at, locale)}</bdi>
+                </>
+              ) : (
+                phrase("compatNotRun", locale)
+              )}
             </dd>
           </dl>
           <table>
             <tbody>
-              <DimensionRow label="Method support" dim={capabilities.method_support} />
-              <DimensionRow label="Tested VRAM" dim={capabilities.min_gpu_vram_gb} />
-              <DimensionRow label="Chat template" dim={capabilities.chat_template} />
+              {DIMENSIONS.map(({ key, dim, labelKey }) => (
+                <DimensionRow
+                  key={key}
+                  testIdKey={key}
+                  label={phrase(labelKey, locale)}
+                  dim={capabilities[dim]}
+                  locale={locale}
+                />
+              ))}
             </tbody>
           </table>
           <p data-testid="declared-vram">
-            {`Declared minimum GPU profile (declared, not tested): ${
-              capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile
-                ? JSON.stringify(capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile)
-                : "not recorded"
-            }`}
+            {phrase("compatDeclaredVramPrefix", locale)}{" "}
+            {capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile ? (
+              <bdi>{JSON.stringify(capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile)}</bdi>
+            ) : (
+              phrase("notRecordedText", locale)
+            )}
           </p>
           {blockers.length > 0 ? (
-            <ul aria-label="Why training is blocked">
+            <ul aria-label={phrase("compatWhyBlockedLabel", locale)}>
               {blockers.map((b) => (
                 <li key={b}>{b}</li>
               ))}
@@ -395,9 +503,13 @@ export function CapabilityCompatibilityUI({
               setStarted(true);
             }}
           >
-            Train
+            {phrase("compatTrainButton", locale)}
           </button>
-          {started ? <p role="status">Training requested by you for {modelName}.</p> : null}
+          {started ? (
+            <p role="status">
+              {phrase("compatTrainingRequestedPrefix", locale)} <bdi>{modelName}</bdi>.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </section>

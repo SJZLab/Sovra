@@ -510,3 +510,144 @@ test("the GET mapping request sends credentials", async () => {
   await loadMapping(mappingBody(0, null));
   expect(calls("GET", MAP_URL)[0]?.[1].credentials).toBe("include");
 });
+
+// FTF-UX05 (2026-10-22): audit finding H1/H7 (severity 2) -- the three independently triggered
+// loads carry a visible notice; finding X4 (bilingual, partial).
+
+test("UX05: a visible notice names the three separately-loaded sections", () => {
+  renderUI();
+  expect(screen.getByTestId("mapping-three-steps-notice").textContent).toMatch(/load separately/i);
+});
+
+test("UX05: locale='ar' sets dir=rtl and renders the notice in Arabic", () => {
+  render(
+    createElement(ModelToArtifactMappingUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  expect(screen.getByTestId("model-to-artifact-mapping-ui").getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("model-to-artifact-mapping-ui").getAttribute("lang")).toBe("ar");
+  expect(screen.getByTestId("mapping-three-steps-notice").textContent).toContain(
+    "يتم تحميل الربط الحالي",
+  );
+});
+
+// ---- round 2 (L2 return): full bilingual pass, not just the notice ----
+
+function renderUIAr(modelName = ALIAS) {
+  return render(
+    createElement(ModelToArtifactMappingUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      modelName,
+      locale: "ar",
+    }),
+  );
+}
+
+test("UX05 round 2: locale='ar' translates every button, status line and dt label, unmapped state", async () => {
+  renderUIAr();
+  expect(screen.getByTestId("load-mapping-button").textContent).toBe("تحميل الربط");
+  expect(screen.getByTestId("load-artifacts-button").textContent).toBe("تحميل المصنفات");
+  expect(screen.getByTestId("load-changes-button").textContent).toBe("تحميل سجل التغييرات");
+  expect(screen.getByTestId("map-button").textContent).toBe("ربط المصنف");
+  expect(screen.getByTestId("unmap-button").textContent).toBe("إزالة الربط");
+  expect(screen.getByTestId("no-artifact-selected").textContent).toBe("لم يتم تحديد مصنف بعد.");
+
+  enqueue("GET", MAP_URL, ok(mappingBody(0, null)));
+  fireEvent.click(screen.getByTestId("load-mapping-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+  expect(screen.getByTestId("mapping-state-label").textContent).toBe(
+    "غير مرتبط: لا يوجد مصنف تدريب محدد لهذا الاسم",
+  );
+  expect(screen.getByTestId("mapping-catalog-version").textContent).toContain("إصدار الكتالوج:");
+});
+
+test("UX05 round 2: locale='ar' translates the mapped state and ArtifactDetails dt labels", async () => {
+  renderUIAr();
+  enqueue("GET", MAP_URL, ok(mappingBody(3, ART_READY)));
+  fireEvent.click(screen.getByTestId("load-mapping-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+  expect(screen.getByTestId("mapping-state-label").textContent).toBe("مرتبط بمصنف قابل للتدريب");
+  const dl = screen.getByTestId("mapped-artifact-details");
+  const dts = Array.from(dl.querySelectorAll("dt")).map((dt) => dt.textContent);
+  expect(dts).toEqual([
+    "المصنف",
+    "المصدر",
+    "عائلة النموذج",
+    "المراجعة المثبَّتة",
+    "بصمة الأوزان",
+    "الترخيص",
+    "الوثوق بالتعليمات البرمجية البعيدة",
+    "الحزم المطلوبة",
+    "أدنى مواصفات المعالج الرسومي",
+    "الحالة",
+  ]);
+  expect(screen.getByTestId("mapped-artifact-trust-remote-code").textContent).toBe("غير مسموح");
+  expect(screen.getByTestId("mapped-artifact-license").textContent).toContain(
+    "تمت الموافقة من قبل",
+  );
+});
+
+test("UX05 round 2: locale='ar' translates the confirm-change dialog and the write-error for a known code", async () => {
+  renderUIAr();
+  enqueue("GET", MAP_URL, ok(mappingBody(2, ART_READY)));
+  fireEvent.click(screen.getByTestId("load-mapping-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+  enqueue("GET", artifactsUrl(API_BASE, ORG_ID), ok(ARTIFACT_LIST));
+  fireEvent.click(screen.getByTestId("load-artifacts-button"));
+  await waitFor(() => expect(screen.getByTestId(`artifact-row-${ART_OTHER}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_OTHER}`));
+  fireEvent.click(screen.getByTestId("map-button"));
+
+  expect(screen.getByTestId("confirm-change-text").textContent).toContain("يُلغي التأهيل المرتبط");
+  expect(screen.getByTestId("confirm-change-button").textContent).toBe("تأكيد التغيير");
+  expect(screen.getByTestId("cancel-change-button").textContent).toBe("إلغاء");
+
+  enqueue("POST", MAP_URL, fail(503, "gateway_unavailable"));
+  fireEvent.click(screen.getByTestId("confirm-change-button"));
+  await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+  expect(screen.getByTestId("write-error").textContent).toBe(
+    "تعذّر الوصول إلى البوابة، فلم يتم التحقق من الاسم؛ لم يتم تغيير أي شيء.",
+  );
+});
+
+test("UX05 round 2: locale='ar' translates the write notice after a real catalog-version move", async () => {
+  renderUIAr();
+  enqueue("GET", MAP_URL, ok(mappingBody(0, null)));
+  fireEvent.click(screen.getByTestId("load-mapping-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+  enqueue("GET", artifactsUrl(API_BASE, ORG_ID), ok(ARTIFACT_LIST));
+  fireEvent.click(screen.getByTestId("load-artifacts-button"));
+  await waitFor(() => expect(screen.getByTestId(`artifact-row-${ART_READY}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_READY}`));
+
+  enqueue("POST", MAP_URL, ok({ ...mappingBody(1, ART_READY), changed: true }));
+  fireEvent.click(screen.getByTestId("map-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-notice")).toBeTruthy());
+  const notice = screen.getByTestId("mapping-notice").textContent ?? "";
+  expect(notice).toContain("تغيّر الربط: إصدار الكتالوج");
+  expect(notice).toContain("0 -> 1");
+  expect(notice).toContain("لا تنطبق أدلة التأهيل المسجَّلة مقابل الإصدار 0 بعد الآن");
+});
+
+test("UX05 round 2: an unrecognized backend error code is data (shown verbatim, no claimed lang) even under locale='ar'", async () => {
+  renderUIAr();
+  enqueue("GET", MAP_URL, ok(mappingBody(0, null)));
+  fireEvent.click(screen.getByTestId("load-mapping-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+  enqueue("GET", artifactsUrl(API_BASE, ORG_ID), ok(ARTIFACT_LIST));
+  fireEvent.click(screen.getByTestId("load-artifacts-button"));
+  await waitFor(() => expect(screen.getByTestId(`artifact-row-${ART_READY}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_READY}`));
+  enqueue("POST", MAP_URL, fail(403, "role_not_authorized"));
+  fireEvent.click(screen.getByTestId("map-button"));
+  await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+  // "role_not_authorized" is not in the translated dictionary -- it is backend data, shown verbatim.
+  expect(screen.getByTestId("write-error").textContent).toBe("role_not_authorized");
+});

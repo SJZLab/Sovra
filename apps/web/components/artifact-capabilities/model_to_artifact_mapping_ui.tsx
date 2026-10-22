@@ -43,9 +43,32 @@
  * this repository has no Next.js `app/` page tree yet (FTF-H029), so this
  * component is DOM-tested with Vitest + React Testing Library + jsdom and a
  * mocked `fetch`; it is UNWIRED to a page until that mount exists.
+ *
+ * FTF-UX05 (2026-10-22): audit finding (H1/H7, severity 2) -- the mapping,
+ * the available artifacts and the change history are three independently
+ * triggered loads with no indication up front that three separate actions
+ * are needed to see the full picture. A visible notice now says so; it is
+ * purely informational, changes no existing control, and the certified
+ * three-button load flow is unchanged. An optional `locale` prop renders
+ * the new notice (and the existing confirm text's own `lang`/`dir`) in
+ * Arabic (finding X4).
+ *
+ * FTF-UX05 round 2 (2026-10-22, L2 return): the L2 review found the container's `lang`/`dir`
+ * covered large amounts of hardcoded-English UI copy -- every button, every status line, every
+ * `dt` label in `ArtifactDetails`, every authored error message -- that stayed English regardless
+ * of `locale`. Every string this component itself authors now routes through `phrase()` with a
+ * real `ar` translation (see `ui/phrases.ts`'s FTF-0308 block), so `lang="ar"` is now honest for
+ * that copy. Values this component does not author -- the alias/model name, artifact names, source
+ * URIs, digests, actor ids, timestamps, the server's own enum literals (`status`, `availability`)
+ * -- are data, not UI copy, and are wrapped in `<bdi>` rather than given a language tag (same
+ * convention `candidate_selection_ui_no_auto_selection.tsx` already established). A `detail` string
+ * surfaced raw from the live backend for an unrecognized error code is the same kind of data.
+ * Default `locale="en"` rendering is byte-identical to round 1.
  */
 
 import { useState } from "react";
+
+import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface MappedArtifact {
   id: string;
@@ -96,6 +119,7 @@ export interface ModelToArtifactMappingUIProps {
   organizationId: string;
   connectionId: string;
   modelName: string;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -132,38 +156,40 @@ export function artifactsUrl(apiBaseUrl: string, organizationId: string): string
   return `${trimBase(apiBaseUrl)}/api/v1/organizations/${organizationId}/artifacts`;
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
-  not_found: "The connection or artifact was not found.",
-  connection_revoked: "The gateway connection is revoked; nothing was changed.",
-  model_not_accessible:
-    "The gateway does not currently list this model alias; nothing was changed.",
-  artifact_not_ready: "The artifact is not ready; nothing was changed.",
-  catalog_version_conflict:
-    "The mapping changed since it was loaded; reload it and review before retrying.",
-  gateway_unavailable:
-    "The gateway could not be reached, so the alias could not be verified; nothing was changed.",
-  invalid_model_name: "The model name is not valid.",
-};
+const ERROR_PHRASE_KEYS = {
+  not_found: "mappingErrorNotFound",
+  connection_revoked: "mappingErrorConnectionRevoked",
+  model_not_accessible: "mappingErrorModelNotAccessible",
+  artifact_not_ready: "mappingErrorArtifactNotReady",
+  catalog_version_conflict: "mappingErrorCatalogVersionConflict",
+  gateway_unavailable: "mappingErrorGatewayUnavailable",
+  invalid_model_name: "mappingErrorInvalidModelName",
+} as const satisfies Record<string, keyof typeof PHRASES>;
 
-async function readErrorDetail(response: Response): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return ERROR_MESSAGES[body.detail] ?? body.detail;
+      const key = ERROR_PHRASE_KEYS[body.detail as keyof typeof ERROR_PHRASE_KEYS];
+      // An unrecognized code is raw backend data (its language is the backend's choice, not this
+      // component's) and is returned verbatim, never mistranslated.
+      return key ? phrase(key, locale) : body.detail;
     }
   } catch {
     // fall through to the generic message below
   }
-  return `request failed (${response.status})`;
+  return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
-function networkErrorMessage(caught: unknown): string {
+function networkErrorMessage(caught: unknown, locale: Locale): string {
   const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
+  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
 }
 
-function shown(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "not recorded";
+function shown(value: unknown, locale: Locale): string {
+  if (value === null || value === undefined || value === "") {
+    return phrase("notRecordedText", locale);
+  }
   return String(value);
 }
 
@@ -181,6 +207,7 @@ export function ModelToArtifactMappingUI({
   organizationId,
   connectionId,
   modelName,
+  locale = "en",
 }: ModelToArtifactMappingUIProps) {
   const [mapping, setMapping] = useState<TrainingArtifactMapping | null>(null);
   const [mappingError, setMappingError] = useState<string | null>(null);
@@ -211,18 +238,18 @@ export function ModelToArtifactMappingUI({
         },
       );
       if (!response.ok) {
-        setMappingError(await readErrorDetail(response));
+        setMappingError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isMapping(body)) {
-        setMappingError("malformed mapping response");
+        setMappingError(phrase("mappingMalformedMapping", locale));
         return;
       }
       setMapping(body);
       setPending(null);
     } catch (caught) {
-      setMappingError(networkErrorMessage(caught));
+      setMappingError(networkErrorMessage(caught, locale));
     } finally {
       setLoadingMapping(false);
     }
@@ -236,17 +263,17 @@ export function ModelToArtifactMappingUI({
         credentials: "include",
       });
       if (!response.ok) {
-        setArtifactsError(await readErrorDetail(response));
+        setArtifactsError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!Array.isArray(body)) {
-        setArtifactsError("malformed artifact listing response");
+        setArtifactsError(phrase("mappingMalformedArtifactListing", locale));
         return;
       }
       setArtifacts(body as MappedArtifact[]);
     } catch (caught) {
-      setArtifactsError(networkErrorMessage(caught));
+      setArtifactsError(networkErrorMessage(caught, locale));
     }
   }
 
@@ -258,23 +285,23 @@ export function ModelToArtifactMappingUI({
         { method: "GET", credentials: "include" },
       );
       if (!response.ok) {
-        setChangesError(await readErrorDetail(response));
+        setChangesError(await readErrorDetail(response, locale));
         return;
       }
       const body = await response.json();
       if (!body || !Array.isArray(body.changes)) {
-        setChangesError("malformed change history response");
+        setChangesError(phrase("mappingMalformedChangeHistory", locale));
         return;
       }
       setChanges(body.changes as MappingChange[]);
     } catch (caught) {
-      setChangesError(networkErrorMessage(caught));
+      setChangesError(networkErrorMessage(caught, locale));
     }
   }
 
   async function submit(artifactId: string | null) {
     if (!mapping) {
-      setWriteError("load the current mapping first");
+      setWriteError(phrase("mappingLoadFirst", locale));
       return;
     }
     setWriting(true);
@@ -295,12 +322,12 @@ export function ModelToArtifactMappingUI({
       );
       if (!response.ok) {
         // The view is left exactly as it was: a failed write changes nothing.
-        setWriteError(await readErrorDetail(response));
+        setWriteError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isMapping(body) || typeof (body as MappingResult).changed !== "boolean") {
-        setWriteError("malformed mapping response");
+        setWriteError(phrase("mappingMalformedMapping", locale));
         return;
       }
       const result = body as MappingResult;
@@ -310,13 +337,13 @@ export function ModelToArtifactMappingUI({
       setSelectedArtifactId(null);
       setNotice(
         result.changed
-          ? `Mapping changed: catalog version ${previousVersion} -> ${result.catalog_version}. ` +
-              `Qualification evidence recorded against version ${previousVersion} no longer applies.`
-          : "No change: this alias already has that mapping.",
+          ? `${phrase("mappingNoticeChangedPrefix", locale)} ${previousVersion} -> ${result.catalog_version}. ` +
+              phrase("mappingNoticeChangedSuffix", locale, { prev: previousVersion })
+          : phrase("mappingNoticeNoChange", locale),
       );
     } catch (caught) {
       // Nothing is shown as mapped unless the route genuinely answered.
-      setWriteError(networkErrorMessage(caught));
+      setWriteError(networkErrorMessage(caught, locale));
     } finally {
       setWriting(false);
     }
@@ -341,9 +368,14 @@ export function ModelToArtifactMappingUI({
   return (
     <div
       data-testid="model-to-artifact-mapping-ui"
-      aria-label={`Training artifact for ${modelName}`}
+      aria-label={phrase("mappingAriaLabel", locale, { model: modelName })}
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
     >
-      <h2 data-testid="mapping-model-name">{modelName}</h2>
+      <h2 data-testid="mapping-model-name">
+        <bdi>{modelName}</bdi>
+      </h2>
+      <p data-testid="mapping-three-steps-notice">{phrase("mappingThreeStepsNotice", locale)}</p>
 
       <section data-testid="mapping-current">
         <button
@@ -352,43 +384,56 @@ export function ModelToArtifactMappingUI({
           disabled={loadingMapping}
           onClick={handleLoadMapping}
         >
-          Load mapping
+          {phrase("mappingLoadMapping", locale)}
         </button>
         {mappingError && (
           <p role="alert" data-testid="mapping-error">
-            {mappingError}
+            <bdi>{mappingError}</bdi>
           </p>
         )}
         {mapping && (
           <div data-testid="mapping-state">
             <p data-testid="mapping-state-label">
               {mapping.mapping_state === "mapped"
-                ? "Mapped to a trainable artifact"
-                : "Not mapped: this alias has no explicit training artifact"}
+                ? phrase("mappingStateMapped", locale)
+                : phrase("mappingStateUnmapped", locale)}
             </p>
-            <p data-testid="mapping-catalog-version">Catalog version: {mapping.catalog_version}</p>
+            <p data-testid="mapping-catalog-version">
+              {phrase("mappingCatalogVersionPrefix", locale)} {mapping.catalog_version}
+            </p>
             <p data-testid="mapping-last-verified">
-              Last verified accessible: {shown(mapping.last_verified_accessible_at)}
+              {phrase("mappingLastVerifiedPrefix", locale)}{" "}
+              <bdi>{shown(mapping.last_verified_accessible_at, locale)}</bdi>
             </p>
-            <p data-testid="mapping-last-changed">Last changed: {shown(mapping.last_changed_at)}</p>
-            {mapping.artifact && <ArtifactDetails artifact={mapping.artifact} prefix="mapped" />}
+            <p data-testid="mapping-last-changed">
+              {phrase("mappingLastChangedPrefix", locale)}{" "}
+              <bdi>{shown(mapping.last_changed_at, locale)}</bdi>
+            </p>
+            {mapping.artifact && (
+              <ArtifactDetails artifact={mapping.artifact} prefix="mapped" locale={locale} />
+            )}
           </div>
         )}
       </section>
 
       <section data-testid="mapping-picker">
         <button type="button" data-testid="load-artifacts-button" onClick={handleLoadArtifacts}>
-          Load artifacts
+          {phrase("mappingLoadArtifacts", locale)}
         </button>
         {artifactsError && (
           <p role="alert" data-testid="artifacts-error">
-            {artifactsError}
+            <bdi>{artifactsError}</bdi>
           </p>
         )}
         <ul data-testid="artifact-list">
           {artifacts.map((artifact) => (
             <li key={artifact.id} data-testid={`artifact-row-${artifact.id}`}>
-              <span>{artifact.display_name}</span> <span>({artifact.status})</span>
+              <span>
+                <bdi>{artifact.display_name}</bdi>
+              </span>{" "}
+              <span>
+                (<bdi>{artifact.status}</bdi>)
+              </span>
               <button
                 type="button"
                 data-testid={`artifact-select-button-${artifact.id}`}
@@ -396,21 +441,27 @@ export function ModelToArtifactMappingUI({
                 disabled={artifact.status !== "ready"}
                 onClick={() => setSelectedArtifactId(artifact.id)}
               >
-                {selectedArtifactId === artifact.id ? "Selected" : "Select"}
+                {selectedArtifactId === artifact.id
+                  ? phrase("selected", locale)
+                  : phrase("select", locale)}
               </button>
               {artifact.status !== "ready" && (
                 <span data-testid={`artifact-not-ready-${artifact.id}`}>
-                  not ready: cannot be mapped
+                  {phrase("mappingArtifactNotReady", locale)}
                 </span>
               )}
             </li>
           ))}
         </ul>
-        {!selectedArtifactId && <p data-testid="no-artifact-selected">No artifact selected yet.</p>}
-        {selectedArtifact && <ArtifactDetails artifact={selectedArtifact} prefix="selected" />}
+        {!selectedArtifactId && (
+          <p data-testid="no-artifact-selected">{phrase("mappingNoArtifactSelected", locale)}</p>
+        )}
+        {selectedArtifact && (
+          <ArtifactDetails artifact={selectedArtifact} prefix="selected" locale={locale} />
+        )}
 
         <button type="button" data-testid="map-button" disabled={!canMap} onClick={requestMap}>
-          Map artifact
+          {phrase("mappingMapButton", locale)}
         </button>
         <button
           type="button"
@@ -418,15 +469,18 @@ export function ModelToArtifactMappingUI({
           disabled={!isMapped || writing}
           onClick={() => setPending("unmap")}
         >
-          Remove mapping
+          {phrase("mappingRemoveButton", locale)}
         </button>
 
         {pending && mapping && (
           <div role="alertdialog" data-testid="confirm-change">
             <p data-testid="confirm-change-text">
-              {pending === "unmap" ? "Removing this mapping" : "Changing this mapping"} invalidates
-              related qualification: evidence recorded against catalog version{" "}
-              {mapping.catalog_version} will no longer apply.
+              {pending === "unmap"
+                ? phrase("mappingConfirmRemoving", locale)
+                : phrase("mappingConfirmChanging", locale)}{" "}
+              {phrase("mappingConfirmInvalidatesSuffix", locale, {
+                version: mapping.catalog_version,
+              })}
             </p>
             <button
               type="button"
@@ -434,21 +488,21 @@ export function ModelToArtifactMappingUI({
               disabled={writing}
               onClick={() => void submit(pending === "unmap" ? null : selectedArtifactId)}
             >
-              Confirm change
+              {phrase("mappingConfirmButton", locale)}
             </button>
             <button
               type="button"
               data-testid="cancel-change-button"
               onClick={() => setPending(null)}
             >
-              Cancel
+              {phrase("cancel", locale)}
             </button>
           </div>
         )}
 
         {writeError && (
           <p role="alert" data-testid="write-error">
-            {writeError}
+            <bdi>{writeError}</bdi>
           </p>
         )}
         {notice && (
@@ -460,21 +514,25 @@ export function ModelToArtifactMappingUI({
 
       <section data-testid="mapping-history">
         <button type="button" data-testid="load-changes-button" onClick={handleLoadChanges}>
-          Load change history
+          {phrase("mappingLoadChangeHistory", locale)}
         </button>
         {changesError && (
           <p role="alert" data-testid="changes-error">
-            {changesError}
+            <bdi>{changesError}</bdi>
           </p>
         )}
-        {changes && changes.length === 0 && <p data-testid="changes-empty">No changes recorded.</p>}
+        {changes && changes.length === 0 && (
+          <p data-testid="changes-empty">{phrase("mappingNoChangesRecorded", locale)}</p>
+        )}
         {changes && changes.length > 0 && (
           <ul data-testid="changes-list">
             {changes.map((change) => (
               <li key={change.id} data-testid={`change-row-${change.id}`}>
                 v{change.previous_catalog_version} -&gt; v{change.new_catalog_version}:{" "}
-                {shown(change.previous_trainable_artifact_id)} -&gt;{" "}
-                {shown(change.new_trainable_artifact_id)} by {change.actor} at {change.created_at}
+                <bdi>{shown(change.previous_trainable_artifact_id, locale)}</bdi> -&gt;{" "}
+                <bdi>{shown(change.new_trainable_artifact_id, locale)}</bdi>{" "}
+                {phrase("byPrefix", locale)} <bdi>{change.actor}</bdi> {phrase("atPrefix", locale)}{" "}
+                <bdi>{change.created_at}</bdi>
               </li>
             ))}
           </ul>
@@ -484,47 +542,75 @@ export function ModelToArtifactMappingUI({
   );
 }
 
-function ArtifactDetails({ artifact, prefix }: { artifact: MappedArtifact; prefix: string }) {
+function ArtifactDetails({
+  artifact,
+  prefix,
+  locale,
+}: {
+  artifact: MappedArtifact;
+  prefix: string;
+  locale: Locale;
+}) {
   const packages = artifact.required_python_packages ?? [];
   return (
     <dl data-testid={`${prefix}-artifact-details`}>
-      <dt>Artifact</dt>
-      <dd data-testid={`${prefix}-artifact-name`}>{artifact.display_name}</dd>
-      <dt>Source</dt>
+      <dt>{phrase("artifactDetailArtifact", locale)}</dt>
+      <dd data-testid={`${prefix}-artifact-name`}>
+        <bdi>{artifact.display_name}</bdi>
+      </dd>
+      <dt>{phrase("artifactDetailSource", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-source`}>
-        {artifact.source_type}: {artifact.source_uri}
+        <bdi>
+          {artifact.source_type}: {artifact.source_uri}
+        </bdi>
       </dd>
-      <dt>Model family</dt>
-      <dd data-testid={`${prefix}-artifact-family`}>{shown(artifact.model_family)}</dd>
-      <dt>Pinned revision</dt>
-      <dd data-testid={`${prefix}-artifact-revision`}>{shown(artifact.base_model_revision)}</dd>
-      <dt>Weights digest</dt>
-      <dd data-testid={`${prefix}-artifact-digest`}>{shown(artifact.weights_digest)}</dd>
-      <dt>License</dt>
+      <dt>{phrase("artifactDetailModelFamily", locale)}</dt>
+      <dd data-testid={`${prefix}-artifact-family`}>
+        <bdi>{shown(artifact.model_family, locale)}</bdi>
+      </dd>
+      <dt>{phrase("artifactDetailPinnedRevision", locale)}</dt>
+      <dd data-testid={`${prefix}-artifact-revision`}>
+        <bdi>{shown(artifact.base_model_revision, locale)}</bdi>
+      </dd>
+      <dt>{phrase("artifactDetailWeightsDigest", locale)}</dt>
+      <dd data-testid={`${prefix}-artifact-digest`}>
+        <bdi>{shown(artifact.weights_digest, locale)}</bdi>
+      </dd>
+      <dt>{phrase("artifactDetailLicense", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-license`}>
-        {shown(artifact.license_id)}; accepted by {shown(artifact.license_accepted_by)} at{" "}
-        {shown(artifact.license_accepted_at)}
+        <bdi>{shown(artifact.license_id, locale)}</bdi>;{" "}
+        {phrase("artifactLicenseAcceptedByPrefix", locale)}{" "}
+        <bdi>{shown(artifact.license_accepted_by, locale)}</bdi> {phrase("atPrefix", locale)}{" "}
+        <bdi>{shown(artifact.license_accepted_at, locale)}</bdi>
       </dd>
-      <dt>Trust remote code</dt>
+      <dt>{phrase("artifactDetailTrustRemoteCode", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-trust-remote-code`}>
         {artifact.trust_remote_code_allowed === undefined
-          ? "not recorded"
+          ? phrase("notRecordedText", locale)
           : artifact.trust_remote_code_allowed
-            ? "allowed"
-            : "not allowed"}
+            ? phrase("allowedText", locale)
+            : phrase("notAllowedText", locale)}
       </dd>
-      <dt>Required packages</dt>
+      <dt>{phrase("artifactDetailRequiredPackages", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-packages`}>
-        {packages.length > 0 ? packages.join(", ") : "none recorded"}
+        {packages.length > 0 ? (
+          <bdi>{packages.join(", ")}</bdi>
+        ) : (
+          phrase("noneRecordedText", locale)
+        )}
       </dd>
-      <dt>Minimum GPU profile</dt>
+      <dt>{phrase("artifactDetailMinimumGpuProfile", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-gpu`}>
-        {artifact.minimum_gpu_profile && Object.keys(artifact.minimum_gpu_profile).length > 0
-          ? JSON.stringify(artifact.minimum_gpu_profile)
-          : "not recorded"}
+        {artifact.minimum_gpu_profile && Object.keys(artifact.minimum_gpu_profile).length > 0 ? (
+          <bdi>{JSON.stringify(artifact.minimum_gpu_profile)}</bdi>
+        ) : (
+          phrase("notRecordedText", locale)
+        )}
       </dd>
-      <dt>Status</dt>
-      <dd data-testid={`${prefix}-artifact-status`}>{artifact.status}</dd>
+      <dt>{phrase("artifactDetailStatus", locale)}</dt>
+      <dd data-testid={`${prefix}-artifact-status`}>
+        <bdi>{artifact.status}</bdi>
+      </dd>
     </dl>
   );
 }
