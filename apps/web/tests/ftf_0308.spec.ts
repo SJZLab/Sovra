@@ -651,3 +651,128 @@ test("UX05 round 2: an unrecognized backend error code is data (shown verbatim, 
   // "role_not_authorized" is not in the translated dictionary -- it is backend data, shown verbatim.
   expect(screen.getByTestId("write-error").textContent).toBe("role_not_authorized");
 });
+
+// -- UX05 round 2 (second L2 return, PR #972) -----------------------------------------------
+
+test("UX05 r2 (L2 return): opening the confirm (map) moves focus into the dialog, onto its Cancel button", async () => {
+  renderUI();
+  await loadMapping(mappingBody(2, ART_READY));
+  await loadArtifacts();
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_OTHER}`));
+  const trigger = screen.getByTestId("map-button");
+  fireEvent.click(trigger);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("cancel-change-button")),
+  );
+});
+
+test("UX05 r2 (L2 return): Cancel on the map confirm returns focus to the map-button trigger", async () => {
+  renderUI();
+  await loadMapping(mappingBody(2, ART_READY));
+  await loadArtifacts();
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_OTHER}`));
+  const trigger = screen.getByTestId("map-button");
+  fireEvent.click(trigger);
+  await screen.findByTestId("cancel-change-button");
+  fireEvent.click(screen.getByTestId("cancel-change-button"));
+  expect(screen.queryByTestId("confirm-change")).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+test("UX05 r2 (L2 return): opening the confirm (unmap) moves focus in, and Cancel returns it to the unmap-button trigger (not map-button)", async () => {
+  renderUI();
+  await loadMapping(mappingBody(4, ART_READY));
+  const trigger = screen.getByTestId("unmap-button");
+  fireEvent.click(trigger);
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("cancel-change-button")),
+  );
+  fireEvent.click(screen.getByTestId("cancel-change-button"));
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+test("UX05 r2 (L2 return): Escape inside the confirm dialog cancels and returns focus to the trigger, same as Cancel", async () => {
+  renderUI();
+  await loadMapping(mappingBody(2, ART_READY));
+  await loadArtifacts();
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_OTHER}`));
+  const trigger = screen.getByTestId("map-button");
+  fireEvent.click(trigger);
+  const dialog = await screen.findByTestId("confirm-change");
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByTestId("confirm-change")).toBeNull();
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+test("UX05 r2 (L2 return): a successful map/unmap closes the dialog without dropping focus to <body>", async () => {
+  renderUI();
+  await loadMapping(mappingBody(2, ART_READY));
+  await loadArtifacts();
+  fireEvent.click(screen.getByTestId(`artifact-select-button-${ART_OTHER}`));
+  fireEvent.click(screen.getByTestId("map-button"));
+  await screen.findByTestId("confirm-change-button");
+  enqueue("POST", MAP_URL, ok({ ...mappingBody(3, ART_OTHER), changed: true }));
+  fireEvent.click(screen.getByTestId("confirm-change-button"));
+  await waitFor(() => expect(screen.getByTestId("mapping-notice")).toBeTruthy());
+  expect(document.activeElement).not.toBe(document.body);
+  expect(document.activeElement).toBe(screen.getByTestId("mapping-state"));
+});
+
+test("UX05 r2 (L2 return): an artifact with a malformed required_python_packages (a string, not an array) is rejected, never crashes the component", async () => {
+  renderUI();
+  await loadMapping(mappingBody(0, null));
+  enqueue(
+    "GET",
+    artifactsUrl(API_BASE, ORG_ID),
+    ok([
+      { ...artifact(ART_READY, "Llama-3-8B", "ready"), required_python_packages: "torch==2.4.0" },
+    ]),
+  );
+  fireEvent.click(screen.getByTestId("load-artifacts-button"));
+  await waitFor(() => expect(screen.getByTestId("artifacts-error")).toBeTruthy());
+  // The component is still mounted (no crash/unmount) -- the trigger is still there.
+  expect(screen.getByTestId("load-artifacts-button")).toBeTruthy();
+  expect(screen.queryByTestId(`artifact-row-${ART_READY}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a change-history item missing a required field is rejected, not rendered", async () => {
+  renderUI();
+  await loadMapping(mappingBody(1, ART_READY));
+  enqueue(
+    "GET",
+    mappingChangesUrl(API_BASE, ORG_ID, CONN_ID, ALIAS),
+    ok({ changes: [{ id: "c1" }] }),
+  );
+  fireEvent.click(screen.getByTestId("load-changes-button"));
+  await waitFor(() => expect(screen.getByTestId("changes-error")).toBeTruthy());
+  expect(screen.queryByTestId("change-row-c1")).toBeNull();
+});
+
+test("UX05 r2 (L2 return): every real button renders through the shared Button component at the minimum target size", async () => {
+  renderUI();
+  await loadMapping(mappingBody(2, ART_READY));
+  await loadArtifacts();
+  for (const testId of [
+    "load-mapping-button",
+    "load-artifacts-button",
+    `artifact-select-button-${ART_READY}`,
+    "map-button",
+    "unmap-button",
+    "load-changes-button",
+  ]) {
+    const el = screen.getByTestId(testId) as HTMLElement;
+    expect(el.style.minBlockSize).toBe("var(--target-min)");
+    expect(el.style.minInlineSize).toBe("var(--target-min)");
+  }
+});
+
+test("UX05 r2 (L2 return): a long weights digest / source URI is wrapped, not left to overflow", async () => {
+  renderUI();
+  await loadMapping(mappingBody(1, ART_READY));
+  expect((screen.getByTestId("mapped-artifact-digest") as HTMLElement).style.overflowWrap).toBe(
+    "anywhere",
+  );
+  expect((screen.getByTestId("mapped-artifact-source") as HTMLElement).style.overflowWrap).toBe(
+    "anywhere",
+  );
+});
