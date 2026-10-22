@@ -3137,6 +3137,60 @@ def test_f2_r3_escaped_open_with_no_closing_escape_fails_closed() -> None:
         )
 
 
+# --- FTF-0904-F2 round 3 point 2 (pre-review round 2 finding): an escaped-open value that
+# closes on a BARE (unescaped) quote still fails closed --------------------------------------
+# The first fail-closed fix (above) only let the closing delimiter be a backslash-run-then-quote
+# or end of line/string; a value that opened escaped but is truncated right at an unescaped quote
+# (an outer logfmt wrapper's own closing quote: `msg="...code=\"V"`, or any value whose own
+# content transitions to a bare quote with no closing backslash at all) still fell through to
+# end-of-line, over-redacting or under-redacting past the real boundary. The closing backslash
+# run is now `\*+` (zero or more, possessive) instead of `\+` (one or more): the content loop's
+# own backslash-alternative already excludes ANY backslash run immediately followed by a quote
+# from content, so there is still only one terminator-eligible position per value, whatever
+# number of backslashes (including zero) precede it -- not a new ambiguity, just the same
+# possessive match widened by one case.
+def test_f2_r3_escaped_open_closes_on_a_bare_quote() -> None:
+    for name in _F2R3_SAFE_NAMES:
+        for q in _F2_QUOTES:
+            for sep in ("=", ": "):
+                # the value's own closing quote has no backslash before it at all
+                text = f"{name}{sep}\\{q}{_F1_VALUE}{q} tail_ok"
+                out = lr.redact_text(text)
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-bare-close {text!r}: leaked {out!r}",
+                    "Zq7Lm2" not in out,
+                )
+                check(
+                    "FTF-0904-F2",
+                    f"r3 escaped-open-bare-close {text!r}: tail lost {out!r}",
+                    out.endswith(" tail_ok"),
+                )
+    for text in (
+        'level=info msg="{\\"code\\": \\"' + _F1_VALUE + '"',
+        'msg="callback?state=\\"' + _F1_VALUE + '" ok=1',
+    ):
+        out = lr.redact_text(text)
+        check(
+            "FTF-0904-F2",
+            f"r3 escaped-open-bare-close {text!r}: leaked {out!r}",
+            "Zq7Lm2" not in out,
+        )
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check(
+            "FTF-0904-F2",
+            f"r3 escaped-open-bare-close {text!r}: logging-path leak {found}",
+            not found,
+        )
+    check(
+        "FTF-0904-F2",
+        "r3 escaped-open-bare-close tail kept",
+        "ok=1" in lr.redact_text('msg="callback?state=\\"' + _F1_VALUE + '" ok=1'),
+    )
+
+
 # --- FTF-0904-F2 round 3 point 3: V10/V11 -- no length bound on a quoted value ---------------
 # An earlier, now-superseded design would have bounded quoted-secret content to 4096 (double
 # quote) or 256 (single quote) characters; above that bound the real closing quote, and
@@ -3827,39 +3881,39 @@ FAULTS += [
         1,
     ),
     (
-        "F2-unterminated double quote not redacted to end of line (round 3: anchored to the "
-        "whole _QUOTED_SECRET block -- its two bare-quote alternatives are no longer the first "
-        "lines of the definition, the two escaped-open alternatives now precede them)",
+        "F2-unterminated double quote not redacted to end of line (round 3: anchored to "
+        "the whole _QUOTED_SECRET block -- its two bare-quote alternatives are no longer "
+        "the first lines of the definition, the two escaped-open alternatives now precede them)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         1,
     ),
     (
-        "F2-single-quoted values dropped (round 3: anchored to the whole _QUOTED_SECRET block, "
-        "see above)",
+        "F2-single-quoted values dropped (round 3: anchored to the whole _QUOTED_SECRET "
+        "block, see above)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         ")\n",
         1,
@@ -3877,19 +3931,19 @@ FAULTS += [
         1,
     ),
     (
-        "F2-r2 even backslash run before the close still treated as escaping it (query-param "
-        "path; round 3: anchored to the whole _QUOTED_SECRET block, see above)",
+        "F2-r2 even backslash run before the close still treated as escaping it "
+        "(query-param path; round 3: anchored to the whole _QUOTED_SECRET block, see above)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|\\\\++[^\\r\\n]?)*+\'?"""\n'
         ")\n",
@@ -3938,9 +3992,9 @@ FAULTS += [
     (
         "F2-r3p2 _QUOTED_SECRET loses its escaped-open alternatives entirely",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
@@ -3951,60 +4005,60 @@ FAULTS += [
         1,
     ),
     (
-        "F2-r3p3 V6: bare single-quote branch's closing quote made non-optional "
-        "(an unterminated value no longer matches at all, skipping redaction)",
+        "F2-r3p3 V6: bare single-quote branch's closing quote made non-optional (an "
+        "unterminated value no longer matches at all, skipping redaction)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'"""\n'
         ")\n",
         1,
     ),
     (
-        "F2-r3p3 V10: double-quote branch content re-bounded to 4096 chars "
-        "(reproduces the historical bound this round's pin forbids, query-param path)",
+        "F2-r3p3 V10: double-quote branch content re-bounded to 4096 chars (reproduces "
+        "the historical bound this round's pin forbids, query-param path)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n]){0,4096}+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         1,
     ),
     (
-        "F2-r3p3 V11: single-quote branch content re-bounded to 256 chars "
-        "(reproduces the historical bound this round's pin forbids, query-param path)",
+        "F2-r3p3 V11: single-quote branch content re-bounded to 256 chars (reproduces the "
+        "historical bound this round's pin forbids, query-param path)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
-        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])'
-        '{0,256}+\'?"""\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]'
+        '|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n]){0,256}+\'?"""\n'
         ")\n",
         1,
     ),
@@ -4017,19 +4071,19 @@ FAULTS += [
     ),
     (
         "F2-r3p5 (pre-review finding) escaped-open double-quote alternative loses its "
-        "fail-closed-to-end-of-line ending (an escaped-open value with no later escaped close "
-        "stops matching at all, skipping redaction, instead of running to end of line)",
+        "fail-closed-to-end-of-line ending (an escaped-open value with no later escaped "
+        "close stops matching at all, skipping redaction, instead of running to end of line)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
         '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+\\\\+"\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
@@ -4039,15 +4093,54 @@ FAULTS += [
         "F2-r3p5 (pre-review finding) escaped-open single-quote alternative loses its "
         "fail-closed-to-end-of-line ending (same class, the single-quote branch)",
         "_QUOTED_SECRET = re.compile(\n"
-        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
         "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
-        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        '    r"""|(?<!\\\\)\\\\++\'(?:[^\'\\\\\\r\\n]++|\\\\++(?!\'))*+\\\\+\'"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p6 (pre-review round 2 finding) escaped-open double-quote alternative's "
+        "closing backslash run required at least one backslash (bare-quote close no longer "
+        "matches, falling through to end-of-line and over/under-redacting past the real "
+        "boundary)",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",
         "_QUOTED_SECRET = re.compile(\n"
         '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\+"|(?=[\\r\\n])|\\Z)\'\n'
-        '    r"""|(?<!\\\\)\\\\++\'(?:[^\'\\\\\\r\\n]++|\\\\++(?!\'))*+\\\\+\'"""\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        1,
+    ),
+    (
+        "F2-r3p6 (pre-review round 2 finding) escaped-open single-quote alternative, same class",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\*+\'|(?=[\\r\\n])|\\Z)"""\n'
+        '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
+        ")\n",
+        "_QUOTED_SECRET = re.compile(\n"
+        '    r\'(?<!\\\\)\\\\++"(?:[^"\\\\\\r\\n]++|\\\\++(?!"))*+(?:\\\\*+"|(?=[\\r\\n])|\\Z)\'\n'
+        "    r\"\"\"|(?<!\\\\)\\\\++'(?:[^'\\\\\\r\\n]++|\\\\++(?!'))*+"
+        '(?:\\\\+\'|(?=[\\r\\n])|\\Z)"""\n'
         '    r\'|"(?:[^"\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"?\'\n'
         '    r"""|\'(?:[^\'\\\\\\r\\n]|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'?"""\n'
         ")\n",

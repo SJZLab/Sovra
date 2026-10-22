@@ -325,19 +325,26 @@ _QUERY_ASSIGN = re.compile(
 # escaped-open branch exactly: a possessive backslash run (one start per run, `(?<!\\)`) then the
 # opening quote, content that is either plain chars or a backslash run NOT immediately followed by
 # the SAME quote char (so a `\"` pair inside the content is reserved for the terminator, never
-# content), then the closing backslash run and quote -- OR, if no such closing escape exists,
-# end of line/string (fail closed, the same `(?:X|(?=[\r\n])|\Z)` shape round 3's own
-# `_QUOTED_VALUE` fix above already uses). Pre-review (L2) reproduced the leak without this: an
-# escaped-open value truncated mid-line or at end of input (a cut-off log line: `{\"state\": \"V`,
-# no later `\"`) made the WHOLE alternative fail to match at all, so `_QUOTED_SECRET.match`
-# returned None, `_QueryParamRule.sub` skipped the match entirely (key included), and the value
-# printed raw -- this round's own new code, not a pre-existing gap. The two bare-quote
-# alternatives (kept last, adjacent, and byte-for-byte unchanged from round 2) are the fallback for
-# a value whose opening quote is NOT escaped; they cannot match a backslash as their first
-# character either -- the same disclosed limitation `_QUOTED_VALUE` already has.
+# content), then the closing delimiter: a backslash run then quote, OR -- round 3's second
+# pre-review round reproduced this -- a BARE quote with no backslash at all (a value that opened
+# escaped but is truncated right at an unescaped quote, e.g. an outer logfmt wrapper's own closing
+# quote: `msg="...code=\"V"`; `\\*+` is zero-or-more, so this is just the already-possessive `\\+"`
+# widened by one case, not a new ambiguity -- the content loop's own backslash-alternative already
+# excludes ANY backslash run immediately followed by a quote from content, so there is still only
+# one terminator-eligible position, however many backslashes precede it, including zero) -- OR, if
+# neither exists, end of line/string (fail closed, the same `(?:X|(?=[\r\n])|\Z)` shape round 3's
+# own `_QUOTED_VALUE` fix above already uses). Pre-review round 1 found the "no closing escape
+# anywhere" case (`{\"state\": \"V`, cut off, nothing after); round 2 found the "closes on a bare
+# quote" case above (round 1's own fix only matched `\\+`, one-or-more, so a bare quote with zero
+# preceding backslashes still fell through to end-of-line/string, swallowing real trailing content
+# that followed the bare quote on the same line). Both are this round's own new code regressing,
+# not the pre-existing `_QUOTED_VALUE` gap disclosed below. The two bare-quote alternatives (kept
+# last, adjacent, and byte-for-byte unchanged from round 2) are the fallback for a value whose
+# opening quote is NOT escaped; they cannot match a backslash as their first character either --
+# the same disclosed limitation `_QUOTED_VALUE` already has.
 _QUOTED_SECRET = re.compile(
-    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+(?:\\+"|(?=[\r\n])|\Z)'
-    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\+'|(?=[\r\n])|\Z)"""
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+(?:\\*+"|(?=[\r\n])|\Z)'
+    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\*+'|(?=[\r\n])|\Z)"""
     r'|"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
     r"""|'(?:[^'\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'?"""
 )
