@@ -840,6 +840,200 @@ describe("[UX04-RV] review round 1: adoption, stale callbacks, roles, notices", 
   });
 });
 
+describe("[UX04-RV2] review round 2", () => {
+  function Host2() {
+    const [p, setP] = useState<ProjectRecord | null>(null);
+    return createElement(
+      "div",
+      null,
+      createElement(ProjectSetupForm, { ...formProps({ project: p }), onSaved: setP }),
+      createElement("button", { "data-testid": "go-new", onClick: () => setP(null) }, "new"),
+    );
+  }
+  test("a host that returns to 'no project' after adopting gets a fresh create form (POST, not a PATCH of the created one)", async () => {
+    fetchMock()
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, null), 201))
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, null), 201));
+    render(createElement(Host2));
+    type("project-name-input", "first");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Project created"));
+    click("go-new");
+    expect(input("project-name-input").value).toBe("");
+    expect(tid("project-setup-form").querySelector("h2")!.textContent).toBe("Create project");
+    type("project-name-input", "second");
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    expect(fetchMock().mock.calls[1]![1].method).toBe("POST");
+  });
+
+  test("an older record echoed back by the host never reverts the form or the version it sends", async () => {
+    const p1 = project({ row_version: 1 });
+    fetchMock()
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, p1)))
+      .mockImplementationOnce(async (_u: string, init: RequestInit) =>
+        ok(echo(init, { ...p1, row_version: 2 })),
+      );
+    const view = renderForm({ project: p1 });
+    type("project-name-input", "v2-name");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Changes saved"));
+    type("project-name-input", "v3-name");
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(tid("project-submit-button")).toBeTruthy());
+    view.rerender(
+      createElement(
+        ProjectSetupForm,
+        formProps({ project: project({ row_version: 2, name: "v2-name" }) }),
+      ),
+    );
+    expect(input("project-name-input").value).toBe("v3-name");
+  });
+
+  test("the form's saved notice goes away when a field is edited", async () => {
+    const p = project();
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, p)));
+    renderForm({ project: p });
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Changes saved"));
+    type("project-description-input", "more");
+    expect(screen.queryByTestId("project-saved-notice")).toBeNull();
+  });
+
+  test("a late second budget load never overwrites what the user typed", async () => {
+    const resolvers: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return Promise.resolve(ok([]));
+        if (url === BUD && init?.method === undefined) return new Promise((r) => resolvers.push(r));
+        throw new Error("unexpected");
+      }),
+    );
+    render(createElement(RequirementsPanel, panelProps()));
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+    await act(async () => resolvers[0]!(ok(policy({ row_version: 3 }))));
+    await waitFor(() => expect(text("budget-row-version")).toBe("3"));
+    type("budget-total-amount-input", "2000");
+    click("budget-policy-submit-button");
+    expect(input("budget-total-amount-input").value).toBe("2000");
+  });
+
+  test("the textarea marks itself invalid and required for assistive technology", () => {
+    renderForm();
+    type("project-type-select", "agentic_product");
+    click("project-submit-button");
+    const ta = tid("agent-objective-input");
+    expect(ta.getAttribute("aria-invalid")).toBe("true");
+    expect(ta.getAttribute("aria-required")).toBe("true");
+  });
+
+  test("Arabic: each state says its own thing (exact strings)", async () => {
+    const p = project({
+      ui_state: {
+        name: "d",
+        projectType: "agentic_product",
+        description: "",
+        agentObjective: "x",
+        securityProfile: "standard",
+      },
+    });
+    renderForm({ project: p, locale: "ar" });
+    expect(text("project-type-locked-reason")).toBe("لا يمكن تغيير نوع المشروع بعد إنشائه.");
+    expect(text("setup-incomplete-notice")).toContain("الإعداد غير مكتمل");
+    click("project-restore-draft-button");
+    expect(text("project-draft-restored-notice")).toBe(
+      "تمت استعادة المسودة في النموذج. لا يُحفظ شيء إلى أن تحفظ التغييرات.",
+    );
+    cleanup();
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok({ ...p, ui_state: JSON.parse(init.body as string).ui_state }),
+    );
+    renderForm({ project: project(), locale: "ar" });
+    click("project-save-draft-button");
+    await waitFor(() => expect(text("project-draft-saved-notice")).toBe("تم حفظ المسودة"));
+    cleanup();
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, null), 201),
+    );
+    renderForm({ locale: "ar" });
+    type("project-name-input", "n");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("تم إنشاء المشروع"));
+    cleanup();
+    renderForm({
+      project: project({ status: "archived", archived_at: "2026-01-01T00:00:00Z" }),
+      locale: "ar",
+    });
+    expect(text("project-archived-notice")).toContain("هذا المشروع مؤرشف ولم يعد قابلًا للتعديل.");
+  });
+
+  test("Arabic panel: saved vs created, currency lock, consistent, empty state (exact strings)", async () => {
+    const existing = policy({ row_version: 3 });
+    renderPanel(
+      {
+        requirements: () => ok([requirement()]),
+        budgetGet: () => ok(existing),
+        write: () => ok(policy({ row_version: 4 })),
+      },
+      { locale: "ar" },
+    );
+    await waitFor(() => expect(text("budget-row-version")).toBe("3"));
+    expect(text("budget-currency-locked-reason")).toBe("تُثبَّت العملة بمجرد إنشاء السياسة.");
+    expect(tid("requirement-list").textContent).toContain("متسق");
+    click("budget-policy-submit-button");
+    await waitFor(() => expect(text("budget-policy-saved-notice")).toBe("تم حفظ سياسة الميزانية"));
+    cleanup();
+    renderPanel(
+      {
+        write: () =>
+          ok(policy({ row_version: 1, total_amount: "10.0000", available_amount: "10.0000" }), 201),
+      },
+      { locale: "ar" },
+    );
+    await waitFor(() => expect(tid("budget-policy-missing-notice")).toBeTruthy());
+    type("budget-total-amount-input", "10");
+    click("budget-scope-training");
+    click("budget-policy-submit-button");
+    await waitFor(() =>
+      expect(text("budget-policy-saved-notice")).toBe("تم إنشاء سياسة الميزانية"),
+    );
+    cleanup();
+    renderPanel({}, { locale: "ar" });
+    await waitFor(() => expect(tid("requirements-empty")).toBeTruthy());
+    expect(text("requirements-empty")).toContain("لم يتم تعريف أي أدوات لهذا المشروع بعد");
+  });
+
+  test("no two catalogue entries share the same Arabic or English text (a swapped entry is caught)", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const seen = new Map<string, string>();
+      for (const [key, entry] of Object.entries(MANDATE_WORDS)) {
+        const text_ = entry[lang];
+        const prior = seen.get(text_);
+        // intentionally shared short words only
+        if (
+          prior &&
+          ![
+            "reload",
+            "retry",
+            "submitCreate",
+            "formTitleCreate",
+            "submitSave",
+            "budgetSave",
+            "formTitleEdit",
+            "securityHeading",
+            "profileLabel",
+          ].includes(key) &&
+          text_.length > 12
+        )
+          throw new Error(`${lang}: ${key} duplicates ${prior}`);
+        seen.set(text_, key);
+      }
+    }
+  });
+});
+
 describe("[UX04-E] project form: typed errors keep state and never become success (UI CHECKLIST d, e)", () => {
   const CASES: [string, () => unknown, string][] = [
     [
@@ -1425,7 +1619,7 @@ describe("[UX04-L] project form: English and Arabic (RTL)", () => {
     click("project-submit-button");
     await waitFor(() => expect(screen.getByTestId("project-form-error")).toBeTruthy());
     expect(text("project-form-error")).toContain(
-      "تغيّر المشروع منذ فتحته، أو أنه مؤرشف. أعد التحميل لرؤية النسخة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
+      "تغيّر المشروع منذ فتحته، أو أنه مؤرشف. أعد تحميل الصفحة لرؤية النسخة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
     );
     expect(text("project-form-error")).toContain("تم الاحتفاظ بما أدخلته.");
     expect(tid("project-form-error").querySelector('[role="alert"]')!.getAttribute("lang")).toBe(
@@ -2730,7 +2924,7 @@ describe("[UX04-L2] requirements panel: English and Arabic (RTL)", () => {
     click("budget-policy-submit-button");
     await waitFor(() => expect(tid("budget-policy-error")).toBeTruthy());
     expect(text("budget-policy-error")).toContain(
-      "تغيّرت سياسة الميزانية منذ فتحتها، أو أنها موجودة بالفعل. أعد التحميل لرؤية السياسة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
+      "تغيّرت سياسة الميزانية منذ فتحتها، أو أنها موجودة بالفعل. أعد تحميل الصفحة لرؤية السياسة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
     );
     expect(tid("budget-policy-error").querySelector('[role="alert"]')!.getAttribute("lang")).toBe(
       "ar",

@@ -270,13 +270,16 @@ export function ProjectSetupForm(props: ProjectSetupFormProps) {
   // form even when the caller adopts it through `onSaved` and hands it back as `project`: remounting
   // would drop the "Project created" notice and keyboard focus.
   const createdId = useRef<string | null>(null);
-  const idPart =
-    props.project === null || props.project === undefined
-      ? "new"
-      : props.project.id === createdId.current
-        ? "new"
-        : props.project.id;
-  const identity = `${props.organizationId}|${props.workspaceId}|${idPart}`;
+  const generation = useRef(0);
+  const adopted = !!props.project && props.project.id === createdId.current;
+  if (!props.project && createdId.current !== null) {
+    // The host went back to "no project" after adopting ours: that is a fresh create form, so
+    // a new instance (never a PATCH of the project the previous instance created).
+    createdId.current = null;
+    generation.current += 1;
+  }
+  const idPart = props.project && !adopted ? props.project.id : "new";
+  const identity = `${props.organizationId}|${props.workspaceId}|${idPart}|${generation.current}`;
   const { onSaved } = props;
   return (
     <ProjectSetupFormInner
@@ -336,7 +339,8 @@ function ProjectSetupFormInner({
   useEffect(() => {
     if (!project || project.row_version === seenVersion.current) return;
     seenVersion.current = project.row_version;
-    if (project.row_version === ownVersion.current) return;
+    // Only a record NEWER than everything this form has saved is a reload; an older echo is ignored.
+    if (project.row_version <= (ownVersion.current ?? 0)) return;
     setName(project.name);
     setProjectType(project.project_type);
     setDescription(project.description ?? "");

@@ -180,8 +180,8 @@ const WORDS = {
     ar: "لم يعد هذا المشروع موجودًا، أو ليست لديك صلاحية الوصول إليه. ارجع إلى قائمة المشاريع واختر مشروعًا آخر.",
   },
   projectConflict: {
-    en: "The project changed since you opened it, or it is archived. Reload to see the current version; your entries stay in the form until you do.",
-    ar: "تغيّر المشروع منذ فتحته، أو أنه مؤرشف. أعد التحميل لرؤية النسخة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
+    en: "The project changed since you opened it, or it is archived. Reload the page to see the current version; your entries stay in the form until you do.",
+    ar: "تغيّر المشروع منذ فتحته، أو أنه مؤرشف. أعد تحميل الصفحة لرؤية النسخة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
   },
   projectInvalid: {
     en: "The server did not accept some values. Check the name, objective and description, and that the security profile is not less strict than your organization's default, then try again.",
@@ -192,8 +192,8 @@ const WORDS = {
     ar: "لم يتم العثور على المشروع، أو ليست لديك صلاحية الوصول إليه. ارجع إلى قائمة المشاريع واختر مشروعًا آخر.",
   },
   budgetConflict: {
-    en: "The budget policy changed since you opened it, or already exists. Reload to see the current policy; your entries stay in the form until you do.",
-    ar: "تغيّرت سياسة الميزانية منذ فتحتها، أو أنها موجودة بالفعل. أعد التحميل لرؤية السياسة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
+    en: "The budget policy changed since you opened it, or already exists. Reload the page to see the current policy; your entries stay in the form until you do.",
+    ar: "تغيّرت سياسة الميزانية منذ فتحتها، أو أنها موجودة بالفعل. أعد تحميل الصفحة لرؤية السياسة الحالية؛ تبقى مدخلاتك في النموذج إلى أن تفعل ذلك.",
   },
   budgetInvalid: {
     en: "The server did not accept some values. Check that the total is positive, is not below the reserved amount, and that at least one scope is chosen, then try again.",

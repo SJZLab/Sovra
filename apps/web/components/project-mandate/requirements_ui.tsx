@@ -382,7 +382,10 @@ function RequirementsPanelInner({
     setRequirements({ state: "ready", data: rows });
   }
 
-  function seedForm(policy: BudgetPolicyRecord): void {
+  // The first load fills an untouched form; a late or repeated load never overwrites typing.
+  const edited = useRef(false);
+  function seedForm(policy: BudgetPolicyRecord, force = false): void {
+    if (!force && edited.current) return;
     setTotalAmount(policy.total_amount);
     setCurrency(policy.currency);
     setScopes(new Set(policy.scopes as BudgetScope[]));
@@ -454,6 +457,7 @@ function RequirementsPanelInner({
   }
 
   function toggleScope(scope: BudgetScope): void {
+    edited.current = true;
     setSaveNotice(null);
     setScopes((previous) => {
       const next = new Set(previous);
@@ -520,7 +524,8 @@ function RequirementsPanelInner({
       return;
     }
     setBudget({ state: "ready", policy: reply });
-    seedForm(reply);
+    edited.current = false;
+    seedForm(reply, true);
     setSubmitAttempted(false);
     setTouched({ total: false });
     setSaveNotice(creating ? "created" : "saved");
@@ -734,6 +739,7 @@ function RequirementsPanelInner({
               value={totalAmount}
               readOnly={saving}
               onChange={(event) => {
+                edited.current = true;
                 setTotalAmount(event.target.value);
                 setSaveNotice(null);
               }}
@@ -751,6 +757,7 @@ function RequirementsPanelInner({
               options={BUDGET_CURRENCIES.map((code) => ({ value: code, label: code }))}
               onChange={(event) => {
                 if (saving) return;
+                edited.current = true;
                 setCurrency(event.target.value);
                 setSaveNotice(null);
               }}
