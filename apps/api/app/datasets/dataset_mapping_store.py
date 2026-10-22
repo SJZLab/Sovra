@@ -49,7 +49,8 @@ import hmac
 import json
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
@@ -63,6 +64,7 @@ from workers.data.dataset_mapping_review import (
     JSONL_PREVIEW_CONTENT_TYPES,
     MappingPreviewResult,
     MappingPreviewUnavailableError,
+    ProbeResult,
 )
 from workers.data.import_common import (
     ImportMapping,
@@ -76,13 +78,14 @@ from workers.data.import_common import (
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.organization_workspace_schema import Base
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
-from app.datasets.dataset_mapping_service import preview_dataset_mapping
+from app.datasets.dataset_mapping_service import preview_dataset_mapping, probe_dataset_source
 from app.datasets.dataset_object_source import DatasetObjectStorage, DatasetSourceInconsistentError
 from app.datasets.dataset_quality_store import ADMIN_ROLES
 from app.datasets.dataset_source_connection_crud import (
     DatasetSourceAuthorizationError,
     DatasetSourceConnectionNotFoundError,
     authorize_dataset_source_purpose,
+    get_dataset_source_connection,
 )
 from app.datasets.dataset_upload_store import (
     Dataset,
@@ -96,6 +99,7 @@ from app.db.tenant_context import TenantContext
 __all__ = [
     "CODES",
     "PROPOSER_ROLES",
+    "REVEAL_CLASSIFICATIONS",
     "TRANSFORM_VERSION",
     "DatasetMapping",
     "MappingActor",
@@ -103,6 +107,7 @@ __all__ = [
     "ResolvedMapping",
     "approve_dataset_mapping",
     "canonical_sha256",
+    "dataset_visibility",
     "check_critical_mapping",
     "get_dataset_mapping",
     "ignored_keys_sha256",
@@ -112,11 +117,22 @@ __all__ = [
     "propose_dataset_mapping",
     "reject_dataset_mapping",
     "resolve_approved_mapping",
+    "review_preview",
+    "review_probe",
 ]
 
 TRANSFORM_VERSION: Final = "h011.1"
 PROPOSER_ROLES: Final = ADMIN_ROLES | frozenset({"ml_engineer"})
 MAX_LIST_LIMIT: Final = 200
+# Section 67.2 "masked unless the user has preview permission": admins always; an ml_engineer only
+# on a connection classified public or internal.
+REVEAL_CLASSIFICATIONS: Final = frozenset({"public", "internal"})
+_PROBE_BLOCKS: Final = frozenset({"csv", "json"})
+# The verdicts a read-only probe or preview may show (`blocked` is a refusal: `_verdict_refusal`).
+_SHOWN_STATES: Final = frozenset({"completed", "failed"})
+# The probe's server-built slot per importer: a tabular source is read by column index, an object
+# source by key. The caller never supplies a slot.
+_PROBE_SLOTS: Final = {csv_importer.IMPORTER_NAME: {"index": 0}}
 _RESOURCE: Final = "dataset_mapping"
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _CRITICAL_ROW_CODES: Final = ("rejected:unmapped_role", "rejected:unmapped_message_key")
@@ -535,30 +551,12 @@ def _authorized_dataset(
     )
 
 
-def _finished_preview(
-    session: Session,
-    context: TenantContext,
-    *,
-    project_id: uuid.UUID,
-    dataset_id: uuid.UUID,
-    include_held_out: bool,
-    storage: DatasetObjectStorage,
-    mapping: ImportMapping,
-    reveal: bool,
-) -> MappingPreviewResult:
-    """The real preview, or the code of why it is not one (Law 17: an outage, a changed object or
-    an aborted run is never a result)."""
+@contextmanager
+def _storage_refusals() -> Iterator[None]:
+    """Maps what a real read of a dataset can raise to the store's stable codes (Law 17: an outage,
+    a changed object or a refused grant is never a result)."""
     try:
-        result = preview_dataset_mapping(
-            session,
-            context,
-            project_id=project_id,
-            dataset_id=dataset_id,
-            include_held_out=include_held_out,
-            storage=storage,
-            mapping=mapping,
-            reveal=reveal,
-        )
+        yield
     except MappingPreviewUnavailableError:
         raise MappingStoreError("importer_unavailable") from None
     except MappingUnsupportedError:
@@ -572,6 +570,32 @@ def _finished_preview(
         raise MappingStoreError("purpose_not_authorized") from None
     except DatasetSourceInconsistentError:
         raise MappingStoreError("source_changed") from None
+
+
+def _finished_preview(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    include_held_out: bool,
+    storage: DatasetObjectStorage,
+    mapping: ImportMapping,
+    reveal: bool,
+) -> MappingPreviewResult:
+    """The real preview, or the code of why it is not one (Law 17: an outage, a changed object or
+    an aborted run is never a result)."""
+    with _storage_refusals():
+        result = preview_dataset_mapping(
+            session,
+            context,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            include_held_out=include_held_out,
+            storage=storage,
+            mapping=mapping,
+            reveal=reveal,
+        )
     if result.state == "blocked":
         raise MappingStoreError("source_unavailable")
     if result.failure_code == "source_changed":
@@ -956,3 +980,139 @@ def resolve_approved_mapping(
         str(prior.approved_purpose),
         reused=True,
     )
+
+
+# ------------------------------------------------------------------ review (read-only)
+
+
+def dataset_visibility(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    role: str,
+) -> tuple[bool, bool]:
+    """`(include_held_out, reveal)` for `role` on this dataset. Held-out datasets are visible to
+    admin roles only; values are revealed to admin roles, and to an ml_engineer only when the
+    dataset's connection is classified public or internal. A dataset the role cannot see is
+    `dataset_not_found`, identical to a missing or foreign one. Reads, writes nothing."""
+    _require_ids(project_id, dataset_id)
+    _clean(role, 64)
+    include_held_out = role in ADMIN_ROLES
+    try:
+        dataset = get_dataset(
+            session,
+            context,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            include_held_out=include_held_out,
+        )
+        upload = get_upload_session(session, context, project_id, dataset.upload_session_id)
+        connection = get_dataset_source_connection(
+            session, context, project_id, upload.dataset_source_connection_id
+        )
+    except (DatasetNotFoundError, UploadSessionNotFoundError):
+        raise MappingStoreError("dataset_not_found") from None
+    except DatasetSourceConnectionNotFoundError:
+        raise MappingStoreError("purpose_not_authorized") from None
+    reveal = role in ADMIN_ROLES or (
+        role == "ml_engineer" and connection.security_classification in REVEAL_CLASSIFICATIONS
+    )
+    return include_held_out, reveal
+
+
+def _verdict_refusal(state: str, failure_code: str | None) -> str | None:
+    """The code of why a read-only verdict is not a result to show (Law 17): the store was
+    unreachable, the object changed under the read, or the state is none this release knows. A
+    `failed` verdict with any other code is shown as it is: the caller sees why it failed."""
+    if state == "blocked":
+        return "source_unavailable"
+    if failure_code == "source_changed":
+        return "source_changed"
+    if state not in _SHOWN_STATES:
+        return "preview_incomplete"
+    return None
+
+
+def review_preview(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    mapping_document: object,
+    role: str,
+    storage: DatasetObjectStorage,
+) -> tuple[MappingPreviewResult, bool]:
+    """A read-only preview of `mapping_document` for `role`, and whether values were revealed. The
+    same grammar and critical checks as a proposal; the result is returned as the preview service
+    produced it, including a `failed` verdict (Law 17), and an unreachable store is
+    `source_unavailable`. Nothing is written."""
+    include_held_out, reveal = dataset_visibility(
+        session, context, project_id=project_id, dataset_id=dataset_id, role=role
+    )
+    mapping = _parse_document(mapping_document)
+    check_critical_mapping(mapping)
+    with _storage_refusals():
+        result = preview_dataset_mapping(
+            session,
+            context,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            include_held_out=include_held_out,
+            storage=storage,
+            mapping=mapping,
+            reveal=reveal,
+        )
+    refusal = _verdict_refusal(result.state, result.failure_code)
+    if refusal is not None:
+        raise MappingStoreError(refusal)
+    return result, reveal
+
+
+def review_probe(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    dataset_id: uuid.UUID,
+    format_options: object,
+    role: str,
+    storage: DatasetObjectStorage,
+) -> tuple[ProbeResult, bool]:
+    """Headers and raw rows of the dataset for `role`, read with the caller's `format_options`
+    (the `csv` / `json` blocks of the mapping grammar) and a server-built probe mapping: the
+    caller never supplies a slot. Returns the probe and whether values were revealed. Nothing is
+    written."""
+    if type(format_options) is not dict or not _PROBE_BLOCKS.issuperset(format_options):
+        raise MappingStoreError("mapping_invalid")
+    include_held_out, reveal = dataset_visibility(
+        session, context, project_id=project_id, dataset_id=dataset_id, role=role
+    )
+    _dataset, _connection_id, _snapshot, importer = _authorized_dataset(
+        session,
+        context,
+        project_id=project_id,
+        dataset_id=dataset_id,
+        include_held_out=include_held_out,
+    )
+    slot: dict[str, object] = dict(_PROBE_SLOTS.get(importer, {"key": "probe"}))
+    probe_mapping = _parse_document(
+        {"shape": "prompt_completion", "prompt": slot, "completion": slot, **format_options}
+    )
+    with _storage_refusals():
+        probe = probe_dataset_source(
+            session,
+            context,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            include_held_out=include_held_out,
+            storage=storage,
+            probe_mapping=probe_mapping,
+            reveal=reveal,
+        )
+    refusal = _verdict_refusal(probe.state, probe.failure_code)
+    if refusal is not None:
+        raise MappingStoreError(refusal)
+    return probe, reveal

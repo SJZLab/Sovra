@@ -332,6 +332,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-H011-P2 negative-test proof (dataset mapping persistence, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011_p2.py
+      - name: FTF-H011-P3 negative-test proof (dataset mapping routes and contract, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
@@ -3683,6 +3685,49 @@ jobs:
       - name: Prove the dataset mapping store against PostgreSQL 16
         run: uv run python3 tests/integration/test_ftf_h011_p2_dataset_mappings.py
 
+  dataset-mapping-routes-integration:
+    # FTF-H011-P3: the dataset mapping routes (apps/api/app/datasets/dataset_mapping_routes.py,
+    # migration 0036 dataset_mapping_requests) on a real uvicorn server over PostgreSQL 16 as the
+    # restricted sovra_app role and the live SeaweedFS S3 API, with datasets uploaded through the
+    # real FTF-0501 routes: upgrade/downgrade/upgrade with one head; ENABLE+FORCE RLS and a
+    # non-allow-all tenant policy; SELECT/INSERT only; raw sovra_app SQL refused; probe, preview,
+    # propose, get, list, approve and reject over real Arabic JSONL / windows-1256 CSV / JSON
+    # container datasets with an independent DB check of the approver, purpose, mapping digest, stored
+    # Idempotency-Key and rationale; unmapped critical roles / tool ids, evaluation-only and narrowed
+    # grants; masking by role and connection classification; foreign and hidden held-out datasets;
+    # 12 concurrent identical proposals, 8 identical approvals and approve-vs-reject; a same-size
+    # overwrite (source_changed) and an unreachable store (storage_unavailable); no object key, bucket
+    # or credential in any response -- tests/integration/test_ftf_h011_routes_postgres_s3.py.
+    # The test boots the compose `s3` service itself when nothing answers.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' dataset-mapping-routes-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh011p3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh011p3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh011p3
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the dataset mapping routes against PostgreSQL 16 and SeaweedFS
+        run: uv run python3 tests/integration/test_ftf_h011_routes_postgres_s3.py
+
   model-import-integration:
     # FTF-H010-P1: real Postgres evidence for the model import fields +
     # import-validation jobs slice (migration 0027): upgrade/downgrade/upgrade,
@@ -4078,6 +4123,7 @@ jobs:
       - dataset-import-source-integration
       - dataset-mapping-preview-integration
       - dataset-mapping-store-integration
+      - dataset-mapping-routes-integration
       - csv-import-integration
       - jsonl-import-integration
       - json-import-integration
