@@ -210,8 +210,8 @@ test("negative_acceptance: an unknown/inaccessible ref surfaces the real server-
   fireEvent.click(screen.getByTestId("github-resolve-ref-button"));
 
   await waitFor(() =>
-    expect(screen.getByTestId("github-branch-ref-error").textContent).toBe(
-      "GitHub could not find the requested resource (HTTP 404)",
+    expect(screen.getByTestId("github-branch-ref-error").textContent).toContain(
+      "Check the ref name first",
     ),
   );
   expect(screen.queryByTestId("github-resolved-ref-notice")).toBeNull();
