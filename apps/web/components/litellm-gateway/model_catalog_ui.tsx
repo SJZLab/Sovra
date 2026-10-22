@@ -103,10 +103,49 @@
  *   dialog's `aria-labelledby` now points at a real, visible `<h2>` title
  *   using the `runProbeConfirmTitle` phrase round 1 defined but never wired
  *   up.
+ *
+ * FTF-UX05 round 2 (2026-10-22, second L2 return, PR #972): fixes four defects an independent
+ * review of the merged round-1+round-2 code found by reproducing each directly.
+ *
+ * - UNTRANSLATED-FALLBACK: `readErrorDetail`'s own generic fallback (`request failed (…)`) was
+ *   hardcoded English with no `locale` parameter at all -- every one of its three call sites
+ *   (project/catalog/probe load) rendered this raw English sentence even under `locale="ar"`. It
+ *   now takes `locale` and routes through the same `requestFailedTemplate` phrase every sibling
+ *   component in this area already uses.
+ * - LAW17-SILENT-MALFORMED-SUCCESS: a 200 with an unexpected shape (an empty `{}`, `entries` present
+ *   but not an array, a `model_groups.entries` that is not an object, an entry missing a required
+ *   field) was accepted as real data -- `Object.entries(catalog.model_groups.entries)` throws on a
+ *   non-object, which crashes the render with no error boundary and unmounts this component and
+ *   everything above it; short of that, a `{}` response silently rendered as "no entries, no model
+ *   groups" rather than surfacing as an error (Law 17: unknown/malformed state must stay visible as
+ *   failed, never converted to a quiet empty success). `isCatalogSnapshot`/`isCatalogEntry` give the
+ *   catalog response the same strict, additionalProperties-aware parse `isCapabilities` already
+ *   uses in the sibling FTF-0309 component; `isProjectSummary` and `isProbeUsage` do the same for
+ *   the other two live responses this component accepts. A failed parse is the same
+ *   `catalogMalformed*` error this component already shows for other shape failures -- never a
+ *   change of behaviour for a well-formed response.
+ * - NO-TARGET-SIZE: every native `<button>`/`<select>` had no minimum target size (WCAG 2.2 §2.5.8,
+ *   §72.5's automated target-size check) -- buttons now render through the shared `Button` component
+ *   (the §72.1-fixed component, not a new style), and the three filter/probe-kind `<select>`s each
+ *   get the same `minBlockSize: var(--target-min)` convention `mandate_editor_and_conflict_
+ *   resolution_ui.tsx`'s own `<select>`s already use.
+ * - NO-EMPTY-STATE / NO-LOADING-INDICATOR: a successful load with zero entries rendered a bare empty
+ *   `<ul>` with no explanation; `loadingProjects`/`loadingCatalog` had no visible indicator besides
+ *   the trigger button's own `aria-busy`. Added `EmptyState` (with a reload action) for the
+ *   zero-entries case, and `Pending` for both loads, matching the convention
+ *   `candidate_selection_ui_no_auto_selection.tsx` already established. The three request-level
+ *   error paragraphs (`projects-error`/`catalog-error`/`probe-error`) keep their existing
+ *   `role="alert"` markup rather than the `Banner` component: wrapping them in `Banner` moves
+ *   `role="alert"` onto a child element and prepends an icon glyph to the text, breaking the
+ *   already-certified `getAttribute("role")` and exact-`textContent` assertions on these same
+ *   `data-testid`s (confirmed by running the suite both ways).
+ * - OVERFLOW: a long raw `fields`/model-group JSON blob is not wrapped (§72.5's overflow check) --
+ *   both now carry `style={{ overflowWrap: "anywhere" }}`.
  */
 
 import { useRef, useState } from "react";
 
+import { Button, EmptyState, Pending } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface ProjectSummary {
@@ -214,7 +253,7 @@ export function probeUrl(
   return query ? `${base}?${query}` : base;
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
@@ -223,12 +262,77 @@ async function readErrorDetail(response: Response): Promise<string> {
   } catch {
     // fall through to the generic message below
   }
-  return `request failed (${response.status})`;
+  return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
 function networkErrorMessage(caught: unknown, locale: Locale): string {
   const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
   return `${phrase("networkErrorPrefix", locale)} ${reason}`;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isProjectSummary(value: unknown): value is ProjectSummary {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.status === "string"
+  );
+}
+
+function isCatalogEntry(value: unknown): value is CatalogEntry {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    (value.status === "callable" || value.status === "stale" || value.status === "removed") &&
+    (value.metadata_status === "enriched" || value.metadata_status === "limited") &&
+    typeof value.first_seen_at === "string" &&
+    (value.last_seen_callable_at === null || typeof value.last_seen_callable_at === "string") &&
+    isPlainObject(value.fields)
+  );
+}
+
+/** Strict parse of the live catalog response -- an unexpected shape (an empty `{}`, a non-array
+ * `entries`, a non-object `model_groups.entries`) is a typed error, never a silently-accepted
+ * empty result (Law 17) and never a crash from `Object.entries` on something that is not an
+ * object (same discipline `isCapabilities` already uses in the sibling FTF-0309 component). */
+function isCatalogSnapshot(body: unknown): body is CatalogSnapshot {
+  if (!isPlainObject(body)) return false;
+  if (typeof body.connection_status !== "string") return false;
+  if (
+    body.access_state !== "unknown" &&
+    body.access_state !== "healthy" &&
+    body.access_state !== "revoked" &&
+    body.access_state !== "degraded"
+  ) {
+    return false;
+  }
+  if (!(
+    body.last_successful_check_at === null || typeof body.last_successful_check_at === "string"
+  )) {
+    return false;
+  }
+  if (!(body.last_checked_at === null || typeof body.last_checked_at === "string")) return false;
+  if (!(body.alert === null || typeof body.alert === "string")) return false;
+  if (!(body.anomaly === null || isPlainObject(body.anomaly))) return false;
+  if (body.model_groups !== null) {
+    if (!isPlainObject(body.model_groups)) return false;
+    if (typeof body.model_groups.state !== "string") return false;
+    if (!isPlainObject(body.model_groups.entries)) return false;
+  }
+  return Array.isArray(body.entries) && body.entries.every(isCatalogEntry);
+}
+
+function isProbeUsage(value: unknown): value is ProbeUsage {
+  return (
+    isPlainObject(value) &&
+    typeof value.prompt_tokens === "number" &&
+    typeof value.completion_tokens === "number" &&
+    typeof value.total_tokens === "number"
+  );
 }
 
 export function ModelCatalogUI({
@@ -268,11 +372,11 @@ export function ModelCatalogUI({
         credentials: "include",
       });
       if (!response.ok) {
-        setProjectsError(await readErrorDetail(response));
+        setProjectsError(await readErrorDetail(response, locale));
         return;
       }
-      const body: ProjectSummary[] = await response.json();
-      if (!Array.isArray(body)) {
+      const body: unknown = await response.json();
+      if (!Array.isArray(body) || !body.every(isProjectSummary)) {
         setProjectsError(phrase("catalogMalformedProjectListing", locale));
         return;
       }
@@ -309,11 +413,11 @@ export function ModelCatalogUI({
         { method: "GET", credentials: "include" },
       );
       if (!response.ok) {
-        setCatalogError(await readErrorDetail(response));
+        setCatalogError(await readErrorDetail(response, locale));
         return;
       }
-      const body: CatalogSnapshot = await response.json();
-      if (!body || !Array.isArray(body.entries)) {
+      const body: unknown = await response.json();
+      if (!isCatalogSnapshot(body)) {
         setCatalogError(phrase("catalogMalformedCatalog", locale));
         return;
       }
@@ -343,11 +447,15 @@ export function ModelCatalogUI({
         },
       );
       if (!response.ok) {
-        setProbeError(await readErrorDetail(response));
+        setProbeError(await readErrorDetail(response, locale));
         return;
       }
       const body: ProbeResult = await response.json();
-      if (!body || typeof body.state !== "string") {
+      if (
+        !body ||
+        typeof body.state !== "string" ||
+        !(body.usage === null || body.usage === undefined || isProbeUsage(body.usage))
+      ) {
         setProbeError(phrase("catalogMalformedProbe", locale));
         return;
       }
@@ -407,15 +515,17 @@ export function ModelCatalogUI({
       dir={dirFor(locale)}
     >
       <section data-testid="project-selection">
-        <button
-          type="button"
+        <Button
           data-testid="load-projects-button"
           disabled={loadingProjects}
           aria-busy={loadingProjects}
           onClick={handleLoadProjects}
         >
           {phrase("catalogLoadProjects", locale)}
-        </button>
+        </Button>
+        {loadingProjects && (
+          <Pending label={phrase("catalogLoadProjects", locale)} locale={locale} />
+        )}
         {projectsError && (
           <p role="alert" data-testid="projects-error" dir={dirFor(locale)}>
             <bdi>{projectsError}</bdi>
@@ -427,8 +537,7 @@ export function ModelCatalogUI({
               <span>
                 <bdi>{project.name}</bdi>
               </span>
-              <button
-                type="button"
+              <Button
                 data-testid={`project-select-button-${project.id}`}
                 aria-pressed={selectedProjectId === project.id}
                 onClick={() => setSelectedProjectId(project.id)}
@@ -436,7 +545,7 @@ export function ModelCatalogUI({
                 {selectedProjectId === project.id
                   ? phrase("selected", locale)
                   : phrase("select", locale)}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -452,6 +561,7 @@ export function ModelCatalogUI({
             data-testid="status-filter"
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
+            style={{ minBlockSize: "var(--target-min)" }}
           >
             <option value="">{phrase("catalogFilterAll", locale)}</option>
             <option value="callable">{phrase("catalogStatusCallable", locale)}</option>
@@ -465,23 +575,24 @@ export function ModelCatalogUI({
             data-testid="metadata-filter"
             value={metadataFilter}
             onChange={(event) => setMetadataFilter(event.target.value)}
+            style={{ minBlockSize: "var(--target-min)" }}
           >
             <option value="">{phrase("catalogFilterAll", locale)}</option>
             <option value="enriched">{phrase("catalogMetadataEnriched", locale)}</option>
             <option value="limited">{phrase("catalogMetadataLimited", locale)}</option>
           </select>
         </label>
-        <button
-          type="button"
+        <Button
           data-testid="load-catalog-button"
           disabled={!selectedProjectId || loadingCatalog}
           aria-busy={loadingCatalog}
           onClick={handleLoadCatalog}
         >
           {phrase("catalogLoadCatalog", locale)}
-        </button>
+        </Button>
       </section>
 
+      {loadingCatalog && <Pending label={phrase("catalogLoadCatalog", locale)} locale={locale} />}
       {catalogError && (
         <p role="alert" data-testid="catalog-error" dir={dirFor(locale)}>
           <bdi>{catalogError}</bdi>
@@ -519,7 +630,11 @@ export function ModelCatalogUI({
               </p>
               <ul>
                 {Object.entries(catalog.model_groups.entries).map(([groupId, groupFields]) => (
-                  <li key={groupId} data-testid={`model-group-${groupId}`}>
+                  <li
+                    key={groupId}
+                    data-testid={`model-group-${groupId}`}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
                     <bdi>
                       {groupId}: {JSON.stringify(groupFields)}
                     </bdi>
@@ -535,6 +650,7 @@ export function ModelCatalogUI({
               data-testid="probe-kind"
               value={probeKind}
               onChange={(event) => setProbeKind(event.target.value as ProbeKind)}
+              style={{ minBlockSize: "var(--target-min)" }}
             >
               <option value="chat">{phrase("probeKindChat", locale)}</option>
               <option value="streaming">{phrase("probeKindStreaming", locale)}</option>
@@ -550,6 +666,18 @@ export function ModelCatalogUI({
             </p>
           )}
 
+          {catalog.entries.length === 0 && (
+            <EmptyState
+              title={phrase("catalogNoEntriesTitle", locale)}
+              why={phrase("catalogNoEntriesWhy", locale)}
+              action={
+                <Button data-testid="catalog-reload-button" onClick={handleLoadCatalog}>
+                  {phrase("catalogLoadCatalog", locale)}
+                </Button>
+              }
+            />
+          )}
+
           <ul data-testid="catalog-entry-list">
             {catalog.entries.map((entry) => {
               const result = probeResults[entry.id];
@@ -561,11 +689,13 @@ export function ModelCatalogUI({
                   <span data-testid={`entry-metadata-status-${entry.id}`}>
                     <bdi>{entry.metadata_status}</bdi>
                   </span>
-                  <span data-testid={`entry-fields-${entry.id}`}>
+                  <span
+                    data-testid={`entry-fields-${entry.id}`}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
                     <bdi>{JSON.stringify(entry.fields)}</bdi>
                   </span>
-                  <button
-                    type="button"
+                  <Button
                     data-testid={`probe-button-${entry.id}`}
                     disabled={
                       entry.status !== "callable" ||
@@ -578,7 +708,7 @@ export function ModelCatalogUI({
                     onClick={() => openProbeConfirm(entry.id)}
                   >
                     {phrase("confirmRunProbe", locale)}
-                  </button>
+                  </Button>
                   {confirmProbeModelId === entry.id && (
                     <div
                       role="alertdialog"
@@ -603,20 +733,19 @@ export function ModelCatalogUI({
                       >
                         {phrase("runProbeConfirmBody", locale)}
                       </p>
-                      <button
-                        type="button"
+                      <Button
+                        variant="danger"
                         data-testid={`confirm-probe-button-${entry.id}`}
                         onClick={() => confirmProbe(entry.id)}
                       >
                         {phrase("confirmRunProbe", locale)}
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
                         data-testid={`cancel-probe-button-${entry.id}`}
                         onClick={() => cancelProbeConfirm(entry.id)}
                       >
                         {phrase("cancel", locale)}
-                      </button>
+                      </Button>
                     </div>
                   )}
                   {result &&

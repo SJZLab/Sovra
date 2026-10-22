@@ -122,6 +122,11 @@ export const PHRASES = {
     ar: "استجابة كتالوج غير صحيحة",
   },
   catalogMalformedProbe: { en: "malformed probe response", ar: "استجابة فحص غير صحيحة" },
+  catalogNoEntriesTitle: { en: "No catalog entries", ar: "لا توجد عناصر في الكتالوج" },
+  catalogNoEntriesWhy: {
+    en: "This connection and filter combination returned no models. Try different filters or reload.",
+    ar: "لم يُرجع هذا الاتصال مع مجموعة الفلاتر هذه أي نماذج. جرّب فلاترًا مختلفة أو أعد التحميل.",
+  },
 
   // FTF-1301 (cost profile + cost-per-success search).
   costProfileTypeLabel: { en: "Type", ar: "النوع" },
@@ -164,6 +169,16 @@ export const PHRASES = {
     en: "A provider price of exactly zero is never treated as certified-free (a $0 token price is not local-compute-free).",
     ar: "لا يُعامل سعر المزوّد البالغ صفرًا تمامًا على أنه مجاني معتمد أبدًا (سعر رمز بقيمة 0 دولار ليس مجانيًا محليًا).",
   },
+  costProfileMalformedSearchResponse: {
+    en: "malformed cost-per-success search response",
+    ar: "استجابة بحث تكلفة لكل نجاح غير صحيحة",
+  },
+  costProfileNoResultsTitle: { en: "No rates recorded yet", ar: "لم تُسجَّل أسعار بعد" },
+  costProfileNoResultsWhy: {
+    en: "Record a rate above to see it here, or reload if you expected results.",
+    ar: "سجّل سعرًا أعلاه لتراه هنا، أو أعد التحميل إذا كنت تتوقع نتائج.",
+  },
+  costProfileReload: { en: "Reload search", ar: "إعادة تحميل البحث" },
 
   // FTF-0308 (model-to-artifact mapping).
   mappingLoadMapping: { en: "Load mapping", ar: "تحميل الربط" },
