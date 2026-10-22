@@ -510,3 +510,28 @@ test("the GET mapping request sends credentials", async () => {
   await loadMapping(mappingBody(0, null));
   expect(calls("GET", MAP_URL)[0]?.[1].credentials).toBe("include");
 });
+
+// FTF-UX05 (2026-10-22): audit finding H1/H7 (severity 2) -- the three independently triggered
+// loads carry a visible notice; finding X4 (bilingual, partial).
+
+test("UX05: a visible notice names the three separately-loaded sections", () => {
+  renderUI();
+  expect(screen.getByTestId("mapping-three-steps-notice").textContent).toMatch(/load separately/i);
+});
+
+test("UX05: locale='ar' sets dir=rtl and renders the notice in Arabic", () => {
+  render(
+    createElement(ModelToArtifactMappingUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  expect(screen.getByTestId("model-to-artifact-mapping-ui").getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("model-to-artifact-mapping-ui").getAttribute("lang")).toBe("ar");
+  expect(screen.getByTestId("mapping-three-steps-notice").textContent).toContain(
+    "يتم تحميل الربط الحالي",
+  );
+});

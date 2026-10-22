@@ -50,9 +50,26 @@
  * jsdom with a mocked `fetch`), not a full browser E2E -- Law 6 (UI
  * reachability from `/`) stays disclosed BLOCKED on that dependency,
  * same as FTF-04A03/FTF-04A04's own already-disclosed gap.
+ *
+ * FTF-UX05 (2026-10-22): "Run probe" fired a real, paid, external-provider
+ * call with no confirmation step (audit finding #9, severity 3 -- NN/g
+ * "Confirmation Dialogs: confirm before an irreversible action"). Clicking
+ * "Run probe" now opens an inline confirm (`role="alertdialog"`) naming the
+ * real consequence; only its own "Run probe" button calls the live route.
+ * No cost figure is shown here: this component has no wiring to a per-route
+ * rate (FTF-1301 cost profiles are keyed by profile, not by this catalog's
+ * route/model), and Law 11 forbids a fabricated number -- the honest
+ * consequence is stated in words instead. Error text now carries
+ * `role="alert"` (finding X2) and the busy buttons carry `aria-busy`
+ * (finding X7); an optional `locale` prop renders the new confirm text and
+ * the container's own `lang`/`dir` in Arabic (finding X4, partial: only the
+ * copy this round adds or touches is bilingual, same precedent as UX02/UX03
+ * round 1).
  */
 
 import { useState } from "react";
+
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface ProjectSummary {
   id: string;
@@ -113,6 +130,7 @@ export interface ModelCatalogUIProps {
   apiBaseUrl: string;
   organizationId: string;
   connectionId: string;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -175,7 +193,12 @@ function networkErrorMessage(caught: unknown): string {
   return `network error: ${reason}`;
 }
 
-export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: ModelCatalogUIProps) {
+export function ModelCatalogUI({
+  apiBaseUrl,
+  organizationId,
+  connectionId,
+  locale = "en",
+}: ModelCatalogUIProps) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -193,6 +216,10 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
   const [probingModelId, setProbingModelId] = useState<string | null>(null);
   const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
   const [probeError, setProbeError] = useState<string | null>(null);
+  // FTF-UX05 finding #9 (severity 3): a real, paid, irreversible call is never fired from the
+  // first click. `confirmProbeModelId` names the entry a confirm is open for; nothing calls the
+  // live route until its own "Run probe" button inside the confirm is clicked.
+  const [confirmProbeModelId, setConfirmProbeModelId] = useState<string | null>(null);
 
   async function handleLoadProjects() {
     setLoadingProjects(true);
@@ -230,6 +257,7 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
     }
     setLoadingCatalog(true);
     setCatalogError(null);
+    setConfirmProbeModelId(null);
     try {
       const response = await fetch(
         catalogUrl(
@@ -296,17 +324,27 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
   }
 
   return (
-    <div data-testid="model-catalog-ui">
+    <div data-testid="model-catalog-ui" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <section data-testid="project-selection">
         <button
           type="button"
           data-testid="load-projects-button"
           disabled={loadingProjects}
+          aria-busy={loadingProjects}
           onClick={handleLoadProjects}
         >
           Load projects
         </button>
-        {projectsError && <p data-testid="projects-error">{projectsError}</p>}
+        {projectsError && (
+          <p
+            role="alert"
+            data-testid="projects-error"
+            lang={resolveLocale(locale)}
+            dir={dirFor(locale)}
+          >
+            {projectsError}
+          </p>
+        )}
         <ul data-testid="project-list">
           {projects.map((project) => (
             <li key={project.id} data-testid={`project-row-${project.id}`}>
@@ -355,13 +393,23 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
           type="button"
           data-testid="load-catalog-button"
           disabled={!selectedProjectId || loadingCatalog}
+          aria-busy={loadingCatalog}
           onClick={handleLoadCatalog}
         >
           Load catalog
         </button>
       </section>
 
-      {catalogError && <p data-testid="catalog-error">{catalogError}</p>}
+      {catalogError && (
+        <p
+          role="alert"
+          data-testid="catalog-error"
+          lang={resolveLocale(locale)}
+          dir={dirFor(locale)}
+        >
+          {catalogError}
+        </p>
+      )}
 
       {catalog && (
         <section data-testid="catalog-results">
@@ -404,7 +452,16 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
               <option value="structured_output">Structured output</option>
             </select>
           </label>
-          {probeError && <p data-testid="probe-error">{probeError}</p>}
+          {probeError && (
+            <p
+              role="alert"
+              data-testid="probe-error"
+              lang={resolveLocale(locale)}
+              dir={dirFor(locale)}
+            >
+              {probeError}
+            </p>
+          )}
 
           <ul data-testid="catalog-entry-list">
             {catalog.entries.map((entry) => {
@@ -426,12 +483,46 @@ export function ModelCatalogUI({ apiBaseUrl, organizationId, connectionId }: Mod
                       catalog.connection_status === "revoked" ||
                       catalog.access_state === "revoked" ||
                       !selectedProjectId ||
-                      probingModelId !== null
+                      probingModelId !== null ||
+                      confirmProbeModelId !== null
                     }
-                    onClick={() => handleProbe(entry.id)}
+                    onClick={() => setConfirmProbeModelId(entry.id)}
                   >
                     Run probe
                   </button>
+                  {confirmProbeModelId === entry.id && (
+                    <div
+                      role="alertdialog"
+                      aria-labelledby={`confirm-probe-title-${entry.id}`}
+                      data-testid={`confirm-probe-${entry.id}`}
+                      lang={resolveLocale(locale)}
+                      dir={dirFor(locale)}
+                    >
+                      <p
+                        id={`confirm-probe-title-${entry.id}`}
+                        data-testid={`confirm-probe-text-${entry.id}`}
+                      >
+                        {phrase("runProbeConfirmBody", locale)}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid={`confirm-probe-button-${entry.id}`}
+                        onClick={() => {
+                          setConfirmProbeModelId(null);
+                          void handleProbe(entry.id);
+                        }}
+                      >
+                        {phrase("confirmRunProbe", locale)}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid={`cancel-probe-button-${entry.id}`}
+                        onClick={() => setConfirmProbeModelId(null)}
+                      >
+                        {phrase("cancel", locale)}
+                      </button>
+                    </div>
+                  )}
                   {result && (
                     <span data-testid={`probe-result-${entry.id}`}>
                       {result.state} (

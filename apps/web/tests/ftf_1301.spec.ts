@@ -253,3 +253,83 @@ test("clicking Verify POSTs the real verify endpoint, then refreshes", async () 
   expect(url).toBe(costProfileVerifyUrl(API_BASE, ORG_ID, "r-unverified"));
   expect(init.method).toBe("POST");
 });
+
+// FTF-UX05 (2026-10-22): audit finding X2 (severity 2) -- the form error carried no
+// `role="alert"`; audit finding H5 (severity 1-2, recorded decision: NOT changed to a closed
+// list -- see the component's own docstring) -- a non-breaking currency datalist is added
+// instead; finding X4 (bilingual, partial).
+
+test("UX05: the create-form error carries role=alert, and typed-uppercase currency behaviour is unchanged", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    })
+    .mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({ detail: "invalid" }) });
+
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), { target: { value: "x" } });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-currency-input"), { target: { value: "usd" } });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), { target: { value: "x" } });
+  fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  expect(screen.getByTestId("cost-profile-form-error").getAttribute("role")).toBe("alert");
+  // The free-text field is unchanged: typed lowercase is still uppercased client-side.
+  expect((screen.getByTestId("cost-profile-currency-input") as HTMLInputElement).value).toBe("USD");
+});
+
+test("UX05: the currency field offers a suggestion list without constraining typed input", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  const input = screen.getByTestId("cost-profile-currency-input") as HTMLInputElement;
+  expect(input.getAttribute("list")).toBe("cost-profile-currency-suggestions");
+  const datalist = screen.getByTestId("cost-profile-currency-suggestions");
+  expect(datalist.querySelectorAll("option").length).toBeGreaterThanOrEqual(5);
+  // Still free text: an uncommon code the datalist does not suggest is accepted as typed.
+  fireEvent.change(input, { target: { value: "xyz" } });
+  expect(input.value).toBe("XYZ");
+});
+
+test("UX05: locale='ar' sets lang/dir on the panel", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId("cost-profile-panel").getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("cost-profile-panel").getAttribute("lang")).toBe("ar");
+});

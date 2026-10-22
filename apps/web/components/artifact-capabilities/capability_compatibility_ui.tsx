@@ -34,9 +34,16 @@
  * UNWIRED to a page and to a training start until those exist. Today the
  * frozen route can only return `unknown` for the three tested dimensions, so
  * Train is disabled for every real response.
+ *
+ * FTF-UX05 (2026-10-22): audit finding H1 (severity 1) -- "Check compatibility"
+ * relabelled to "Checking…" with no `aria-busy` (cross-cutting finding X7).
+ * The button now carries `aria-busy` while loading. An optional `locale` prop
+ * renders its own label in Arabic (finding X4, partial).
  */
 
 import { useEffect, useRef, useState } from "react";
+
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
 export interface CapabilityDimension {
@@ -82,6 +89,7 @@ export interface CapabilityCompatibilityUIProps {
   modelName: string;
   /** Called only by an explicit click on an enabled Train button. */
   onTrain?: (modelName: string) => void;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -272,6 +280,7 @@ export function CapabilityCompatibilityUI({
   projectId,
   modelName,
   onTrain,
+  locale = "en",
 }: CapabilityCompatibilityUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
   const [result, setResult] = useState<ModelCapabilities | null>(null);
@@ -339,10 +348,14 @@ export function CapabilityCompatibilityUI({
   const trainEnabled = capabilities !== null && blockers.length === 0 && onTrain !== undefined;
 
   return (
-    <section aria-label="Capability compatibility">
+    <section
+      aria-label="Capability compatibility"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+    >
       <h2>Compatibility: {modelName}</h2>
-      <button type="button" onClick={handleLoad} disabled={loading}>
-        {loading ? "Checking..." : "Check compatibility"}
+      <button type="button" onClick={handleLoad} disabled={loading} aria-busy={loading}>
+        {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
       </button>
       {error ? <p role="alert">{error}</p> : null}
       {capabilities ? (

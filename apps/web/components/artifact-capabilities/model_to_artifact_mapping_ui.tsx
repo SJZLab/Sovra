@@ -43,9 +43,21 @@
  * this repository has no Next.js `app/` page tree yet (FTF-H029), so this
  * component is DOM-tested with Vitest + React Testing Library + jsdom and a
  * mocked `fetch`; it is UNWIRED to a page until that mount exists.
+ *
+ * FTF-UX05 (2026-10-22): audit finding (H1/H7, severity 2) -- the mapping,
+ * the available artifacts and the change history are three independently
+ * triggered loads with no indication up front that three separate actions
+ * are needed to see the full picture. A visible notice now says so; it is
+ * purely informational, changes no existing control, and the certified
+ * three-button load flow is unchanged. An optional `locale` prop renders
+ * the new notice (and the existing confirm text's own `lang`/`dir`) in
+ * Arabic (finding X4, partial: same precedent as UX02/UX03 round 1 -- only
+ * the copy this round adds or touches is bilingual).
  */
 
 import { useState } from "react";
+
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface MappedArtifact {
   id: string;
@@ -96,6 +108,7 @@ export interface ModelToArtifactMappingUIProps {
   organizationId: string;
   connectionId: string;
   modelName: string;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -181,6 +194,7 @@ export function ModelToArtifactMappingUI({
   organizationId,
   connectionId,
   modelName,
+  locale = "en",
 }: ModelToArtifactMappingUIProps) {
   const [mapping, setMapping] = useState<TrainingArtifactMapping | null>(null);
   const [mappingError, setMappingError] = useState<string | null>(null);
@@ -342,8 +356,11 @@ export function ModelToArtifactMappingUI({
     <div
       data-testid="model-to-artifact-mapping-ui"
       aria-label={`Training artifact for ${modelName}`}
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
     >
       <h2 data-testid="mapping-model-name">{modelName}</h2>
+      <p data-testid="mapping-three-steps-notice">{phrase("mappingThreeStepsNotice", locale)}</p>
 
       <section data-testid="mapping-current">
         <button

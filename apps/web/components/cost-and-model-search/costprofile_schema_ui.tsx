@@ -22,9 +22,29 @@
  * `project_schema_api_ui.tsx` (FTF-0401) already established. This is a
  * real, DOM-level tested component (Vitest + React Testing Library +
  * jsdom with a mocked `fetch`), not a full browser E2E.
+ *
+ * FTF-UX05 (2026-10-22): audit finding X2 (severity 2) -- the create-form
+ * error rendered as a bare `<p>` with no `role="alert"`; it now carries
+ * `role="alert"` and `lang`/`dir`. Audit finding H5 (severity 1-2) -- the
+ * currency field is free text rather than a closed ISO-4217 list. NOT
+ * changed to a closed `<select>` this round: the certified test
+ * (`ftf_1301.spec.ts`, "submitting the create form POSTs the real payload")
+ * asserts the exact typed-lowercase/sent-uppercase behaviour of the free-text
+ * input, and the parent-slice instruction is to keep every certified
+ * behaviour and API contract unchanged except for selector migration -- a
+ * closed list is a real interaction-model change, not a selector change, so
+ * it is recorded here as a decision rather than done. A non-breaking
+ * `<datalist>` of common ISO-4217 codes is added instead, as guidance only:
+ * the field is still free text and the existing typed-uppercase behaviour is
+ * unchanged. Control plane to decide whether to accept the datalist-only
+ * mitigation or route a proper contract change for a closed list. An
+ * optional `locale` prop renders the loading/error text's own `lang`/`dir`
+ * (finding X4, partial).
  */
 
 import { useEffect, useState } from "react";
+
+import { dirFor, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
 export type RateUnit =
@@ -70,7 +90,23 @@ export interface CostProfilePanelProps {
   organizationId: string;
   projectId: string;
   onCreated?: (profile: CostProfileRecord) => void;
+  locale?: Locale;
 }
+
+/** Common ISO-4217 codes offered as a suggestion only (finding H5, partial mitigation); the
+ * field stays free text so the certified typed-uppercase behaviour is unchanged. */
+const COMMON_CURRENCY_CODES = [
+  "USD",
+  "EUR",
+  "GBP",
+  "SAR",
+  "AED",
+  "JPY",
+  "CNY",
+  "INR",
+  "CAD",
+  "AUD",
+] as const;
 
 function trimBase(apiBaseUrl: string): string {
   return apiBaseUrl.replace(/\/$/, "");
@@ -123,6 +159,7 @@ export function CostProfileSearchPanel({
   organizationId,
   projectId,
   onCreated,
+  locale = "en",
 }: CostProfilePanelProps) {
   const [search, setSearch] = useState<CostPerSuccessSearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +242,7 @@ export function CostProfileSearchPanel({
   }
 
   return (
-    <div data-testid="cost-profile-panel">
+    <div data-testid="cost-profile-panel" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <form onSubmit={handleCreate} data-testid="cost-profile-create-form">
         <label htmlFor="cost-profile-type">Type</label>
         <select
@@ -259,8 +296,17 @@ export function CostProfileSearchPanel({
           value={currency}
           onChange={(event) => setCurrency(event.target.value.toUpperCase())}
           maxLength={3}
+          list="cost-profile-currency-suggestions"
           required
         />
+        <datalist
+          id="cost-profile-currency-suggestions"
+          data-testid="cost-profile-currency-suggestions"
+        >
+          {COMMON_CURRENCY_CODES.map((code) => (
+            <option key={code} value={code} />
+          ))}
+        </datalist>
 
         <label htmlFor="cost-profile-source">Source</label>
         <input
@@ -271,16 +317,34 @@ export function CostProfileSearchPanel({
           required
         />
 
-        {error && <p data-testid="cost-profile-form-error">{error}</p>}
+        {error && (
+          <p
+            role="alert"
+            data-testid="cost-profile-form-error"
+            lang={resolveLocale(locale)}
+            dir={dirFor(locale)}
+          >
+            {error}
+          </p>
+        )}
 
-        <button type="submit" data-testid="cost-profile-submit-button" disabled={saving}>
+        <button
+          type="submit"
+          data-testid="cost-profile-submit-button"
+          disabled={saving}
+          aria-busy={saving}
+        >
           Record rate
         </button>
       </form>
 
       <section data-testid="cost-per-success-search-results">
         <h2>Cost-per-success search</h2>
-        {loading && <p data-testid="cost-profile-loading">Loading...</p>}
+        {loading && (
+          <p role="status" aria-live="polite" data-testid="cost-profile-loading">
+            Loading...
+          </p>
+        )}
 
         <div data-testid="current-cheapest-certified">
           {search?.current_cheapest_certified ? (

@@ -196,6 +196,11 @@ test("acceptance: an explicit probe click POSTs probe_type and renders the real 
     }),
   });
   fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  // FTF-UX05: the first click only opens the confirm; the real paid call fires
+  // only from the confirm's own "Run probe" button.
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  expect(fetch).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
 
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   const [url, init] = fetchMock.mock.calls[2]!;
@@ -224,6 +229,8 @@ test("negative_acceptance: a real 403 (viewer cannot run a paid probe) is surfac
     json: async () => ({ detail: "forbidden" }),
   });
   fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
 
   await waitFor(() => expect(screen.getByTestId("probe-error").textContent).toContain("forbidden"));
   expect(screen.queryByTestId(`probe-result-${MODEL_A}`)).toBeNull();
@@ -356,6 +363,8 @@ test("round 2: the probe sends the selected non-chat kind and renders type, rout
     }),
   });
   fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
   await waitFor(() => expect(screen.getByTestId(`probe-result-${MODEL_A}`)).toBeTruthy());
 
   const [, init] = fetchMock.mock.calls[2]!;
@@ -401,6 +410,8 @@ test("round 2: a model id containing '/' is URL-encoded in the probe request", a
     }),
   });
   fireEvent.click(screen.getByTestId("probe-button-openai/gpt-4o"));
+  await waitFor(() => expect(screen.getByTestId("confirm-probe-openai/gpt-4o")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("confirm-probe-button-openai/gpt-4o"));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
   expect(fetchMock.mock.calls[2]![0]).toContain("/models/openai%2Fgpt-4o/probe");
 });
@@ -420,4 +431,84 @@ test("round 2: access_state=revoked alone (connection still active) disables a c
   fireEvent.click(screen.getByTestId("load-catalog-button"));
   await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
   expect((screen.getByTestId(`probe-button-${MODEL_A}`) as HTMLButtonElement).disabled).toBe(true);
+});
+// end round-2 tests
+
+// FTF-UX05 (2026-10-22): audit finding #9 (severity 3) -- a real, paid, external-provider call
+// must be confirmed, never fired from the first click; findings X2 (error announce), X7 (busy
+// indicator) and X4 (bilingual, partial).
+
+test("UX05: clicking Run probe opens a confirm and makes no network call; Cancel closes it with none either", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect(fetch).toHaveBeenCalledTimes(2);
+
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  const dialog = await screen.findByTestId(`confirm-probe-${MODEL_A}`);
+  expect(dialog.getAttribute("role")).toBe("alertdialog");
+  expect(screen.getByTestId(`confirm-probe-text-${MODEL_A}`).textContent).toMatch(/real request/i);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(screen.queryByTestId(`probe-result-${MODEL_A}`)).toBeNull();
+
+  fireEvent.click(screen.getByTestId(`cancel-probe-button-${MODEL_A}`));
+  expect(screen.queryByTestId(`confirm-probe-${MODEL_A}`)).toBeNull();
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(screen.queryByTestId(`probe-result-${MODEL_A}`)).toBeNull();
+});
+
+test("UX05: error paragraphs carry role=alert", async () => {
+  mockProjectList();
+  renderCatalogUI();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ detail: "x" }) });
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+  expect(screen.getByTestId("projects-error").getAttribute("role")).toBe("alert");
+});
+
+test("UX05: load buttons carry aria-busy while their own request is in flight", async () => {
+  renderCatalogUI();
+  const loadProjectsButton = screen.getByTestId("load-projects-button") as HTMLButtonElement;
+  expect(loadProjectsButton.getAttribute("aria-busy")).toBe("false");
+  let resolveFetch: (value: unknown) => void = () => {};
+  (fetch as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(
+    () => new Promise((resolve) => (resolveFetch = resolve)),
+  );
+  fireEvent.click(loadProjectsButton);
+  await waitFor(() => expect(loadProjectsButton.getAttribute("aria-busy")).toBe("true"));
+  resolveFetch({ ok: true, json: async () => [] });
+  await waitFor(() => expect(loadProjectsButton.getAttribute("aria-busy")).toBe("false"));
+});
+
+test("UX05: locale='ar' renders the confirm dialog in Arabic with dir=rtl, and the container lang/dir follow it", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => [{ id: PROJECT_ID, name: "Acme Tuning Project", status: "active" }],
+  });
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  expect(screen.getByTestId("model-catalog-ui").getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("model-catalog-ui").getAttribute("lang")).toBe("ar");
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId(`project-row-${PROJECT_ID}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`project-select-button-${PROJECT_ID}`));
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  const dialog = await screen.findByTestId(`confirm-probe-${MODEL_A}`);
+  expect(dialog.getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId(`confirm-probe-text-${MODEL_A}`).textContent).toContain(
+    "طلبًا حقيقيًا",
+  );
 });

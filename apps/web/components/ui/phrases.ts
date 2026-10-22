@@ -56,6 +56,21 @@ export const PHRASES = {
   statusQualifiedBare: { en: "Qualified", ar: "مؤهّل" },
   statusUnknown: { en: "Unknown state", ar: "حالة غير معروفة" },
   statusProduction: { en: "Production", ar: "الإنتاج" },
+  // FTF-UX05 (models/capabilities/cost area).
+  runProbeConfirmTitle: { en: "Run a real probe?", ar: "تشغيل فحص حقيقي؟" },
+  runProbeConfirmBody: {
+    en: "This sends a real request to the model provider and may incur cost. It cannot be undone.",
+    ar: "سيُرسل هذا طلبًا حقيقيًا إلى مزوّد النموذج وقد يترتب عليه تكلفة. لا يمكن التراجع عن ذلك.",
+  },
+  confirmRunProbe: { en: "Run probe", ar: "تشغيل الفحص" },
+  mappingThreeStepsNotice: {
+    en: "The current mapping, the available artifacts and the change history each load separately. Use the three buttons below to load each one.",
+    ar: "يتم تحميل الربط الحالي والمصنفات المتاحة وسجل التغييرات كل على حدة. استخدم الأزرار الثلاثة أدناه لتحميل كل منها.",
+  },
+  checkCompatibility: { en: "Check compatibility", ar: "فحص التوافق" },
+  // "..." (three literal periods), byte-for-byte unchanged from the pre-UX05 English text, so the
+  // certified FTF-0309 tests' exact-text queries (`getByText("Checking...")`) keep matching.
+  checkingCompatibility: { en: "Checking...", ar: "جارٍ الفحص..." },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 export function phrase(key: keyof typeof PHRASES, locale: Locale = "en"): string {

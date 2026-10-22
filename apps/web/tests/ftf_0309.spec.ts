@@ -601,3 +601,44 @@ test("FTF-0309-F7 a 200 whose body is still being read when the model switches i
   expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByTestId("declared-vram")).toBeNull();
 });
+
+// FTF-UX05 (2026-10-22): audit finding H1 (severity 1) -- "Checking..." carried no `aria-busy`
+// (cross-cutting X7); finding X4 (bilingual, partial).
+
+test("UX05: the Check compatibility button carries aria-busy while its own request is in flight", async () => {
+  let release: (value: unknown) => void = () => {};
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Promise((resolve) => (release = resolve))),
+  );
+  renderUI();
+  const button = screen.getByRole("button", { name: "Check compatibility" });
+  expect(button.getAttribute("aria-busy")).toBe("false");
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(screen.getByText("Checking...").getAttribute("aria-busy")).toBe("true"),
+  );
+  release({ ok: true, status: 200, json: async () => capabilities() });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Check compatibility" }).getAttribute("aria-busy"),
+    ).toBe("false"),
+  );
+});
+
+test("UX05: locale='ar' sets lang/dir and renders the button label in Arabic", () => {
+  render(
+    createElement(CapabilityCompatibilityUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      projectId: PROJECT_ID,
+      modelName: ALIAS,
+      locale: "ar",
+    }),
+  );
+  const section = screen.getByLabelText("Capability compatibility");
+  expect(section.getAttribute("dir")).toBe("rtl");
+  expect(section.getAttribute("lang")).toBe("ar");
+  expect(screen.getByRole("button", { name: "فحص التوافق" })).toBeTruthy();
+});
