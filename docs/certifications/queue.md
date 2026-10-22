@@ -25209,3 +25209,4 @@ different session.
 - **Returned:** FTF-R006-P1a r4 -> r5 (0m, tests only, Control-plane produced in #941): response-side key-echo pins.
 - **Certified:** FTF-0501-F2 (#936, merge 05545cfc), round 2; FTF-0501 requalified.
 - **Certified:** FTF-H010-P3a (#839, merge 5fd14b86), round 4; S05/S07/S08 allowlisted as reviewed equivalents.
+- **Certified:** FTF-R006-P1a (#941, merge 69d099f8), round 5; verdict by the separate session session_014KfghB3VrkPEodzJAk4oK3. P1b claimable.

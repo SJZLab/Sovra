@@ -2975,6 +2975,40 @@ def test_f2_r2_odd_backslash_run_still_escapes_the_quote() -> None:
                     )
 
 
+# --- FTF-0904-F2 round 3: an unterminated quoted value fails closed ------------------------
+# With escape-aware bodies, an ODD backslash run escapes the last quote on the line, so a value
+# like `password="V\\"` has no closing quote. Round 2 then matched nothing and the generic pair
+# rule printed the secret, which certified FTF-0904 (b5f4739c) redacts. The value now runs to the
+# end of the line. Every generic and F2 name, both quote styles, odd runs 1-5, with no later quote
+# and with a later quote of the OTHER kind only, on redact_text and the logging path.
+_F2R3_LITERALS = (
+    'password="' + _F1_VALUE + '\\"',
+    '{"password": "' + _F1_VALUE + '\\"}',
+    '{"client_secret": "C:\\' + _F1_VALUE + '\\"}',
+)
+
+
+def test_f2_r3_odd_run_without_a_later_quote_fails_closed() -> None:
+    rows = list(_F2R3_LITERALS)
+    for name in _F2R2_SECRET_NAMES + _F2_NAMES:
+        for q in _F2_QUOTES:
+            other = "'" if q == '"' else '"'
+            for sep in ("=", ": "):
+                for n in (1, 3, 5):
+                    bs = "\\" * n
+                    rows.append(f"{name}{sep}{q}{_F1_VALUE}{bs}{q}")
+                    rows.append(f"{name}{sep}{q}{_F1_VALUE}{bs}{q} next {other}x{other}")
+    check("FTF-0904-F2", "r3 fail-closed table is large", len(rows) > 300)
+    for text in rows:
+        out = lr.redact_text(text)
+        check("FTF-0904-F2", f"r3 {text!r}: leaked {out!r}", "Zq7Lm2" not in out)
+    for text in rows[::5]:
+        with _Harness() as h:
+            logging.getLogger("t").error("%s", text)
+            found = leaked([_F1_VALUE], h.outputs())
+        check("FTF-0904-F2", f"r3 {text!r}: logging-path leak {found}", not found)
+
+
 FAULTS: list[tuple[str, str, str, int]] = [
     # --- rules removed one at a time -------------------------------------------------
     ("F01 header rule removed", '    ("header", _HEADER),\n', "", 1),
@@ -3626,10 +3660,27 @@ FAULTS += [
     ),
     (
         "F2-r2 even backslash run before the close still escapes it (key_value/header path)",
-        '    r"""|"(?:[^"\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+"""\n'
-        '    r""""|\'(?:[^\'\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])*+\'"""\n',
-        '    r"""|"(?:[^"\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+"""\n'
-        '    r""""|\'(?:[^\'\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+\'"""\n',
+        '    r"""|"(?:[^"\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])'
+        '*+(?:"|(?=[\\r\\n])|\\Z)"""\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]++|(?:\\\\\\\\)++(?:\\\\[^\\r\\n])?|\\\\[^\\r\\n])'
+        '*+(?:\'|(?=[\\r\\n])|\\Z)"""\n',
+        '    r"""|"(?:[^"\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+(?:"|(?=[\\r\\n])|\\Z)"""\n'
+        '    r"""|\'(?:[^\'\\\\\\r\\n]++|\\\\++[^\\r\\n]?)*+(?:\'|(?=[\\r\\n])|\\Z)"""\n',
+        1,
+    ),
+]
+
+FAULTS += [
+    (
+        "F2-r3 unterminated quoted value no longer fails closed (key_value/header path)",
+        '*+(?:"|(?=[\\r\\n])|\\Z)"""\n    r"""|\'',
+        '*+"""\n    r""""|\'',
+        1,
+    ),
+    (
+        "F2-r3 unterminated single-quoted value no longer fails closed (key_value/header path)",
+        '*+(?:\'|(?=[\\r\\n])|\\Z)"""\n)',
+        '*+\'"""\n)',
         1,
     ),
 ]
