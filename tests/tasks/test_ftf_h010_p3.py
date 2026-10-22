@@ -883,7 +883,7 @@ def group_b(m: Any) -> None:
     ):
         body = text_.encode()
         bad_headers.append((label, struct.pack("<Q", len(body)) + body + good[8 + n :]))
-    dup = '{"a":{"dtype":"F32","shape":[1],"data_offsets":[0,4]},"a":{"dtype":"F32","shape":[1],"data_offsets":[4,8]}}'.encode()
+    dup = b'{"a":{"dtype":"F32","shape":[1],"data_offsets":[0,4]},"a":{"dtype":"F32","shape":[1],"data_offsets":[4,8]}}'
     bad_headers.append(
         (
             "duplicate tensor names (duplicate JSON keys)",
@@ -901,17 +901,31 @@ def group_b(m: Any) -> None:
             "w", weights_files(model__safetensors=struct.pack("<Q", 99_000_000) + b"{" + bytes(64))
         )
         reads: list[int] = []
-        real_read = os.read
+        real_fdopen = os.fdopen
 
-        def spy(fd: int, count: int) -> bytes:
-            reads.append(count)
-            return real_read(fd, count)
+        class Spy:
+            def __init__(self, handle: Any) -> None:
+                self.handle = handle
 
-        os.read = spy
+            def __enter__(self) -> Any:
+                self.handle.__enter__()
+                return self
+
+            def __exit__(self, *exc: Any) -> Any:
+                return self.handle.__exit__(*exc)
+
+            def read(self, count: int = -1) -> bytes:
+                reads.append(count)
+                return self.handle.read(count)
+
+            def fileno(self) -> int:
+                return self.handle.fileno()
+
+        os.fdopen = lambda *a, **k: Spy(real_fdopen(*a, **k))
         try:
             outcome = env.run(FULL, fx)
         finally:
-            os.read = real_read
+            os.fdopen = real_fdopen
         check(
             "B",
             f"B2 an oversize declared length is refused ({outcome_pair(outcome)})",
@@ -919,8 +933,8 @@ def group_b(m: Any) -> None:
         )
         check(
             "B",
-            f"B2 ... without ever reading it (largest read {max(reads, default=0)})",
-            max(reads, default=0) <= (1 << 20) + 1 + 8,
+            f"B2 ... without ever reading it (largest read {max(reads, default=0)}, {len(reads)} reads)",
+            0 < max(reads, default=0) <= (4 << 20) + 1,
         )
 
     # the file changes between two passes
@@ -1021,7 +1035,7 @@ def group_c(m: Any) -> None:
     """Adapters."""
     with Env(m).patched() as env:
         fx = env.adapter_job()
-        outcome = expect_outcome(env, ADAPTER, fx, "C1 success", "succeeded", None)
+        expect_outcome(env, ADAPTER, fx, "C1 success", "succeeded", None)
         versions = [v for v in env.versions() if v.id != fx.parent_id and v.origin == ADAPTER]
         check("C", "C1: one adapter ModelVersion", len(versions) == 1)
         v = versions[0]
@@ -1128,7 +1142,7 @@ def group_c(m: Any) -> None:
         with Env(m).patched() as env:
             if code == "job_invalid":
                 fx = env.adapter_job(**kwargs)
-                got = activity_error(lambda: env.run(ADAPTER, fx))
+                got = activity_error(lambda env=env, fx=fx: env.run(ADAPTER, fx))
                 check("C", f"{label}: error {got}", got == "job_invalid")
                 check(
                     "C",
@@ -1414,7 +1428,7 @@ def group_d(m: Any) -> None:
                     job.claim_epoch = 0
                 s.commit()
                 s.execute(text("PRAGMA ignore_check_constraints = OFF"))
-            got = activity_error(lambda: env.run(FULL, fx))
+            got = activity_error(lambda env=env, fx=fx: env.run(FULL, fx))
             check("D", f"D7 a job in state {state} is fenced out: {got}", got == "fenced_out")
             check(
                 "D", f"D7 {state}: nothing written", env.versions() == [] and env.audit.events == []
@@ -1587,7 +1601,7 @@ def group_f(m: Any) -> None:
             )
             real = {name: getattr(env.m, name) for name in hooks}
 
-            def make(name: str) -> Any:
+            def make(name: str, env: Env, seen: list[tuple[str, int]], real: dict[str, Any]) -> Any:
                 def wrapped(*a: Any, **k: Any) -> Any:
                     seen.append((name, env.open_sessions))
                     return real[name](*a, **k)
@@ -1595,7 +1609,7 @@ def group_f(m: Any) -> None:
                 return wrapped
 
             for name in hooks:
-                setattr(env.m, name, make(name))
+                setattr(env.m, name, make(name, env, seen, real))
             try:
                 env.run(kind, fx)
             finally:
@@ -1718,7 +1732,7 @@ def group_h(m: Any) -> None:
     marker.unlink(missing_ok=True)
     with Env(m).patched() as env:
         fx = env.weights_job("w", weights_files(model__safetensors=payload))
-        outcome = expect_outcome(
+        expect_outcome(
             env,
             FULL,
             fx,
@@ -1761,6 +1775,196 @@ def group_h(m: Any) -> None:
     )
 
 
+def group_j(m: Any) -> None:
+    """Exact comparisons and error paths pinned by the mutation gate."""
+
+    def raw(env: Env, sql: str, **params: Any) -> None:
+        with Session(env.engine) as s:
+            s.execute(text("PRAGMA ignore_check_constraints = ON"))
+            s.execute(text(sql), params)
+            s.commit()
+            s.execute(text("PRAGMA ignore_check_constraints = OFF"))
+
+    # J1: a job whose stored state / origin is a case or whitespace variant is not the exact one
+    for variant in ("Validating", " validating", "validating "):
+        with Env(m).patched() as env:
+            fx = env.weights_job("w", weights_files())
+            raw(env, "UPDATE model_import_jobs SET state = :s", s=variant)
+            got = activity_error(lambda env=env, fx=fx: env.run(FULL, fx))
+            check("J", f"J1 state {variant!r} is fenced out: {got}", got == "fenced_out")
+    for variant in ("Imported_Weights", "imported_weights ", " imported_weights"):
+        with Env(m).patched() as env:
+            fx = env.weights_job("w", weights_files())
+            raw(env, "UPDATE model_import_jobs SET requested_origin = :s", s=variant)
+            got = activity_error(lambda env=env, fx=fx: env.run(FULL, fx))
+            check(
+                "J",
+                f"J2 stored origin {variant!r} is not claimable: {got}",
+                got == "origin_not_claimable",
+            )
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        for variant in ("Imported_Weights", "imported_weights ", " imported_weights"):
+            got = activity_error(
+                lambda env=env, fx=fx, variant=variant: env.m._read_inputs(
+                    env.factory, fx.token, variant
+                )
+            )
+            check(
+                "J",
+                f"J3 a variant origin argument {variant!r} never matches the stored one: {got}",
+                got == "origin_not_claimable",
+            )
+
+    # J4: a stored source_type / parent origin variant is not the exact value
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        raw(env, "UPDATE trainable_artifacts SET source_type = 'Local_Filesystem'")
+        expect_outcome(
+            env,
+            FULL,
+            fx,
+            "J4 source_type variant",
+            "blocked_external",
+            "metadata_files_unavailable",
+        )
+    for variant in ("Imported_Weights", "imported_weights ", " imported_weights"):
+        with Env(m).patched() as env:
+            fx = env.adapter_job()
+            raw(env, "UPDATE model_versions SET origin = :o", o=variant)
+            expect_outcome(
+                env, ADAPTER, fx, f"J5 parent origin {variant!r}", "failed", "base_not_validated"
+            )
+
+    # J6: an unmapped exception is never swallowed and writes nothing
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        real = env.m.verify_or_compute_weights_digest
+
+        def boom(*a: Any, **k: Any) -> Any:
+            raise RuntimeError("unexpected")
+
+        env.m.verify_or_compute_weights_digest = boom
+        try:
+            got = activity_error(lambda: env.run(FULL, fx))
+        finally:
+            env.m.verify_or_compute_weights_digest = real
+        check("J", f"J6 an unmapped exception propagates: {got}", got == "unexpected RuntimeError")
+        check(
+            "J",
+            "J6 and nothing is written",
+            env.versions() == []
+            and env.audit.events == []
+            and env.job(fx.job_id).state == "validating",
+        )
+
+    # J7: a parsed file that vanishes after the manifest is blocked as unreadable
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        real = env.m.resolve_local_artifact
+
+        def vanish(*a: Any, **k: Any) -> Any:
+            result = real(*a, **k)
+            (env.root / "w" / "config.json").unlink()
+            return result
+
+        env.m.resolve_local_artifact = vanish
+        try:
+            outcome = env.run(FULL, fx)
+        finally:
+            env.m.resolve_local_artifact = real
+        check(
+            "J",
+            f"J7 config.json vanishing is blocked, not a crash ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("blocked_external", "artifact_source_unavailable"),
+        )
+
+    # J8: a parsed file of exactly the size bound is still hashed
+    for name, bound, other in (
+        ("config.json", 1 << 20, {**CONFIG, "hidden_size": 5}),
+        ("tokenizer_config.json", 4 << 20, {"eos_token": "x"}),
+    ):
+
+        def padded(value: Any, bound: int = bound) -> bytes:
+            body = json.dumps(value).encode()
+            return body + b" " * (bound - len(body))
+
+        original = CONFIG if name == "config.json" else TOKENIZER_CONFIG
+        with Env(m).patched() as env:
+            fx = env.weights_job("w", weights_files(**{name.replace(".", "__"): padded(original)}))
+            outcome = env.run(FULL, fx)
+            check(
+                "J",
+                f"J8 an exactly-bounded {name} that is unchanged succeeds ({outcome_pair(outcome)})",
+                outcome.state == "succeeded",
+            )
+        with Env(m).patched() as env:
+            fx = env.weights_job("w", weights_files(**{name.replace(".", "__"): padded(original)}))
+            real = env.m.resolve_local_artifact
+
+            def rewrite(
+                *a: Any,
+                name: str = name,
+                other: Any = other,
+                env: Env = env,
+                real: Any = real,
+                padded: Any = padded,
+                **k: Any,
+            ) -> Any:
+                result = real(*a, **k)
+                (env.root / "w" / name).write_bytes(padded(other))
+                return result
+
+            env.m.resolve_local_artifact = rewrite
+            try:
+                outcome = env.run(FULL, fx)
+            finally:
+                env.m.resolve_local_artifact = real
+            check(
+                "J",
+                f"J8 an exactly-bounded {name} rewritten at the same size is caught ({outcome_pair(outcome)})",
+                outcome_pair(outcome) == ("failed", "artifact_changed_during_validation"),
+            )
+
+    # J9: the internal file lookup is exact and a missing entry is a refusal
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        manifest = resolve_local_artifact(env.root, "w")
+        refusal = None
+        try:
+            env.m._read_parsed_file(env.root / "w", manifest, "absent.json", 100)
+        except env.m._Refusal as exc:
+            refusal = exc.code
+        check(
+            "J",
+            f"J9 a name outside the manifest is a refusal: {refusal}",
+            refusal == "required_file_missing",
+        )
+        names = {e.relative_path for e in manifest.entries}
+        check(
+            "J",
+            "J9 the lookup is exact for every name",
+            all(env.m._entry(manifest, n).relative_path == n for n in names),
+        )
+
+    # J10: a base that is not ready (but licensed) is `base_not_validated`, never trusted
+    with Env(m).patched() as env:
+        fx = env.adapter_job(base_kwargs={"status": "registered"})
+        expect_outcome(
+            env, ADAPTER, fx, "J10 base registered but licensed", "failed", "base_not_validated"
+        )
+    with Env(m).patched() as env:
+        fx = env.adapter_job()
+        raw(
+            env,
+            "UPDATE trainable_artifacts SET weights_digest = NULL WHERE id = :i",
+            i=fx.base_artifact_id.hex,
+        )
+        expect_outcome(
+            env, ADAPTER, fx, "J10 base without a resolved digest", "failed", "base_not_validated"
+        )
+
+
 # -- faults ----------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str, int]] = []
@@ -1776,6 +1980,7 @@ def suite(m: Any) -> list[str]:
     group_f(m)
     group_g(m)
     group_h(m)
+    group_j(m)
     return list(_failures)
 
 

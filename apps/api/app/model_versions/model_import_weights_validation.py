@@ -55,6 +55,7 @@ re-resolve), not by a third read.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import uuid
 from collections.abc import Callable
@@ -87,6 +88,7 @@ from app.artifacts.license_acceptance_workflow import (
     assert_license_accepted_for_use,
 )
 from app.artifacts.local_artifact_resolver import (
+    LocalArtifactFileEntry,
     LocalArtifactManifest,
     LocalArtifactResolutionError,
     resolve_local_artifact,
@@ -97,6 +99,7 @@ from app.db.tenant_context import TenantContext, tenant_scoped_session_for
 from app.model_versions.import_artifact_validators import (
     KIND_ADAPTER,
     KIND_WEIGHTS,
+    MAX_SAFETENSORS_HEADER_BYTES,
     ImportArtifactValidationError,
     SafetensorsHeader,
     base_shapes_from_headers,
@@ -140,10 +143,10 @@ CODE_SOURCE_INVALID = "artifact_source_invalid"
 CODE_METADATA_FILES_UNAVAILABLE = "metadata_files_unavailable"
 CODE_CHANGED_DURING_VALIDATION = "artifact_changed_during_validation"
 CODE_BASE_NOT_VALIDATED = "base_not_validated"
+CODE_REQUIRED_FILE_MISSING = "required_file_missing"
 CODE_ADAPTER_BASE_MISMATCH = "adapter_base_mismatch"
 CODE_TOKENIZER_MISMATCH = "tokenizer_mismatch"
 
-_LOCAL_SOURCE = "local_filesystem"
 _CONFIG_FILE = "config.json"
 _TOKENIZER_CONFIG_FILE = "tokenizer_config.json"
 _ADAPTER_CONFIG_FILE = "adapter_config.json"
@@ -164,7 +167,6 @@ _TOKENIZER_FILES = frozenset(
 _CONFIG_MAX_BYTES = 1 << 20
 _TOKENIZER_CONFIG_MAX_BYTES = 4 << 20
 _HEADER_LENGTH_BYTES = 8
-_READ_CHUNK = 1 << 20
 
 
 class _Refusal(Exception):
@@ -213,9 +215,9 @@ def _read_inputs(session_factory: Callable[[], Session], token: ClaimToken, orig
             raise ModelImportActivityError("job_not_found")
         if job.state != "validating" or job.claim_epoch != token.epoch:
             raise ModelImportActivityError("fenced_out")
-        if job.requested_origin != origin or job.trainable_artifact_id is None:
+        if job.requested_origin not in (origin,) or job.trainable_artifact_id is None:
             raise ModelImportActivityError("origin_not_claimable")
-        if origin == ORIGIN_IMPORTED_ADAPTER and job.parent_model_version_id is None:
+        if origin is ORIGIN_IMPORTED_ADAPTER and job.parent_model_version_id is None:
             raise ModelImportActivityError("job_invalid")
         try:
             artifact = get_artifact(session, context, job.trainable_artifact_id)
@@ -223,7 +225,7 @@ def _read_inputs(session_factory: Callable[[], Session], token: ClaimToken, orig
             raise ModelImportActivityError("job_invalid") from None
         session.expunge(artifact)
         parent = None
-        if origin == ORIGIN_IMPORTED_ADAPTER:
+        if origin is ORIGIN_IMPORTED_ADAPTER:
             parent = _read_parent(session, context, token, job)
         return _Inputs(
             created_by=job.created_by,
@@ -252,7 +254,7 @@ def _read_parent(
                 ModelImportJob.organization_id == token.organization_id,
                 ModelImportJob.project_id == token.project_id,
                 ModelImportJob.result_model_version_id == version.id,
-                ModelImportJob.state == STATE_SUCCEEDED,
+                ModelImportJob.state == "succeeded",
             ),
         )
         .scalars()
@@ -325,7 +327,7 @@ def _check_artifact(artifact: TrainableArtifact, *, base: bool) -> None:
 def _resolve_manifest(artifact: TrainableArtifact, approved_root: Path) -> LocalArtifactManifest:
     """Step 3: the FTF-0306 digest gate over real bytes, then the FTF-0304 manifest, which must
     resolve to the very digest just verified (a file rewritten between the two passes)."""
-    if artifact.source_type != _LOCAL_SOURCE:
+    if artifact.source_type != "local_filesystem":
         raise _Refusal(CODE_METADATA_FILES_UNAVAILABLE, STATE_BLOCKED_EXTERNAL)
     mapping: tuple[tuple[type[Exception], str, str], ...] = (
         (DigestMismatchError, CODE_DIGEST_MISMATCH, STATE_FAILED),
@@ -341,9 +343,23 @@ def _resolve_manifest(artifact: TrainableArtifact, approved_root: Path) -> Local
     )
     manifest = _guard(lambda: resolve_local_artifact(approved_root, artifact.source_uri), mapping)
     assert isinstance(manifest, LocalArtifactManifest)
-    if canonical_weights_digest(manifest.manifest_sha256) != artifact.weights_digest:
+    if not _same_hash(canonical_weights_digest(manifest.manifest_sha256), artifact.weights_digest):
         raise _Refusal(CODE_CHANGED_DURING_VALIDATION)
     return manifest
+
+
+def _same_hash(left: object, right: object) -> bool:
+    """Exact comparison of two hash strings (anything that is not a str is not equal)."""
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    return hmac.compare_digest(left.encode(), right.encode())
+
+
+def _entry(manifest: LocalArtifactManifest, name: str) -> LocalArtifactFileEntry:
+    found = {e.relative_path: e for e in manifest.entries}.get(name)
+    if found is None:
+        raise _Refusal(CODE_REQUIRED_FILE_MISSING)
+    return found
 
 
 def _artifact_dir(approved_root: Path, artifact: TrainableArtifact) -> Path:
@@ -361,20 +377,12 @@ def _read_parsed_file(
     """Reads one file once, at most `max_bytes + 1` bytes, and checks it against its manifest
     sha256. A file over the bound is returned truncated so the strict parser refuses it by size
     under its own code (the file is never read in full)."""
-    entry = next(e for e in manifest.entries if e.relative_path == name)
+    entry = _entry(manifest, name)
     refusal: str | None = None
     data = b""
     try:
-        fd = _open_no_follow(directory / name)
-        try:
-            data = b""
-            while len(data) < max_bytes + 1:
-                chunk = os.read(fd, min(_READ_CHUNK, max_bytes + 1 - len(data)))
-                if not chunk:
-                    break
-                data += chunk
-        finally:
-            os.close(fd)
+        with os.fdopen(_open_no_follow(directory / name), "rb") as handle:
+            data = handle.read(max_bytes + 1)
     except OSError:
         refusal = CODE_SOURCE_UNAVAILABLE
     if refusal is not None:
@@ -387,28 +395,22 @@ def _read_parsed_file(
 
 
 def _read_header(directory: Path, manifest: LocalArtifactManifest, name: str) -> SafetensorsHeader:
-    entry = next(e for e in manifest.entries if e.relative_path == name)
+    entry = _entry(manifest, name)
     refusal: str | None = None
     prefix = b""
     size = -1
     try:
-        fd = _open_no_follow(directory / name)
-        try:
-            size = os.fstat(fd).st_size
-            prefix = os.read(fd, _HEADER_LENGTH_BYTES)
+        with os.fdopen(_open_no_follow(directory / name), "rb") as handle:
+            size = os.fstat(handle.fileno()).st_size
+            prefix = handle.read(_HEADER_LENGTH_BYTES)
             length = int.from_bytes(prefix, "little")
-            # An out-of-bounds length is handed to the parser as-is (it refuses by size); only a
-            # plausible length is ever read, so a hostile header cannot force a huge read.
-            if len(prefix) == _HEADER_LENGTH_BYTES and length <= size - _HEADER_LENGTH_BYTES:
-                body = b""
-                while len(body) < length:
-                    chunk = os.read(fd, min(_READ_CHUNK, length - len(body)))
-                    if not chunk:
-                        break
-                    body += chunk
-                prefix += body
-        finally:
-            os.close(fd)
+            # The parser judges the declared length; only a plausible number of bytes is ever
+            # read (never past the file, never past the format's own bound), so a hostile header
+            # cannot force a huge read.
+            body_cap = min(
+                length, max(size - _HEADER_LENGTH_BYTES, 0), MAX_SAFETENSORS_HEADER_BYTES
+            )
+            prefix += handle.read(body_cap)
     except OSError:
         refusal = CODE_SOURCE_UNAVAILABLE
     if refusal is not None:
@@ -485,7 +487,7 @@ def _adapter_pipeline(
 
     if (
         parent is None
-        or parent.origin != ORIGIN_IMPORTED_WEIGHTS
+        or parent.origin not in (ORIGIN_IMPORTED_WEIGHTS,)
         or not parent.import_job_succeeded
         or base_artifact is None
     ):
@@ -505,7 +507,7 @@ def _adapter_pipeline(
     _parse(lambda: check_adapter_base_compatibility(adapter_header, adapter_config, base_shapes))
     base_hashes = _tokenizer_hashes(base_manifest)
     for name, digest in _tokenizer_hashes(manifest).items():
-        if base_hashes.get(name) != digest:
+        if not _same_hash(base_hashes.get(name), digest):
             raise _Refusal(CODE_TOKENIZER_MISMATCH)
     assert artifact.weights_digest is not None
     return _Facts(
@@ -583,10 +585,9 @@ def _artifact_unchanged(
     )
     return (
         current is not None
-        and current.status == "ready"
         and current.license_accepted_at is not None
-        and current.weights_digest == artifact.weights_digest
-        and current.base_model_revision == artifact.base_model_revision
+        and (current.status, current.weights_digest, current.base_model_revision)
+        == ("ready", artifact.weights_digest, artifact.base_model_revision)
     )
 
 
@@ -605,14 +606,14 @@ def _finish(
     model_version_id: uuid.UUID | None = None
     try:
         with tenant_scoped_session_for(session_factory, context) as session:
-            if state == STATE_SUCCEEDED and facts is not None:
-                if session.get_bind().dialect.name == "postgresql":
+            if facts is not None:
+                if session.get_bind().dialect.name.startswith("postgres"):
                     session.execute(
                         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                         {"key": f"model_versions:{token.project_id}"},
                     )
                 if _artifact_unchanged(session, context, inputs.artifact):
-                    adapter = origin == ORIGIN_IMPORTED_ADAPTER
+                    adapter = origin is ORIGIN_IMPORTED_ADAPTER
                     version = ModelVersion(
                         id=uuid.uuid4(),
                         created_at=now,
@@ -707,7 +708,7 @@ def _run(
     facts: _Facts | None = None
     state, code = STATE_SUCCEEDED, None
     try:
-        if origin == ORIGIN_IMPORTED_WEIGHTS:
+        if origin is ORIGIN_IMPORTED_WEIGHTS:
             facts = _weights_pipeline(inputs.artifact, root)
         else:
             assert inputs.parent_model_version_id is not None
