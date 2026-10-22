@@ -542,13 +542,17 @@ def revoke_reviewer_identity(
     this identity still holds on the real Argilla server, then marks the
     identity `revoked`. Idempotent -- revoking an already-revoked identity
     is a no-op, never an error (so a retried or duplicated revoke request
-    can never fail)."""
+    can never fail). There is no explicit "already revoked, return early"
+    branch: an already-revoked identity has no 'active' membership rows
+    left (the first revoke cleared them all), so the membership query
+    below naturally selects nothing, the loop makes zero real Argilla
+    calls, and the final UPDATE's own `AND status <> 'revoked'` guard
+    affects zero rows -- the same outcome an explicit early check would
+    give, with no separate branch to keep in sync with that guard."""
     with tenant_scoped_session(session_factory, organization_id) as session:
         identity = _identity_row(session, organization_id, issuer, subject)
         if identity is None:
             raise ArgillaIdentityError(f"no reviewer identity for organization {organization_id}")
-        if identity.status == "revoked":
-            return
         memberships = execute_tenant_scoped(
             session,
             organization_id,

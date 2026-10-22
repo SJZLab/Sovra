@@ -1099,14 +1099,24 @@ def section_migration_hardening(world: World) -> None:
     with Session(world.factory().bind) as raw:
         _set_tenant(raw, world.org1)
         try:
+            # `revoked_at = NULL` in the SAME statement isolates the terminal-state trigger from
+            # `ck_argilla_reviewer_identities_revoked_at_consistent` (status='revoked' <=>
+            # revoked_at IS NOT NULL): without clearing revoked_at too, a mere
+            # status='active'-only UPDATE would be refused by that unrelated CHECK regardless of
+            # whether the trigger exists at all, masking the one thing this probe exists to prove
+            # (an independent L2 review of this submission's own round found this exact gap).
             raw.execute(
-                text("UPDATE argilla_reviewer_identities SET status = 'active' WHERE id = :id"),
+                text(
+                    "UPDATE argilla_reviewer_identities SET status = 'active', "
+                    "revoked_at = NULL WHERE id = :id"
+                ),
                 {"id": str(identity.id)},
             )
             raw.commit()
             check(
                 "a revoked identity can never be restored to active, even via the allowed "
-                "status column (terminal-state trigger)",
+                "status/revoked_at columns together (terminal-state trigger, isolated from the "
+                "revoked_at-consistency CHECK)",
                 False,
             )
         except DBAPIError as exc:

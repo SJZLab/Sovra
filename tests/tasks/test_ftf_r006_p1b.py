@@ -760,6 +760,26 @@ def test_sync_membership_refuses_stale_or_foreign_scope(env: Env) -> None:
         raises(ArgillaIdentityError, env.sync, Role.ML_ENGINEER, tampered, ident)
         and not env.server.memberships,
     )
+    differently_cased = store.ReviewScopeRecord(
+        id=scope.id,
+        organization_id=env.org,
+        project_id=scope.project_id,
+        component_binding_id=scope.component_binding_id,
+        argilla_workspace_id=scope.argilla_workspace_id.upper(),
+        argilla_workspace_name=scope.argilla_workspace_name,
+    )
+    check(
+        "the real row's own exact lowercase hex workspace id differs from the uppercased "
+        "value, so the comparison is byte-exact",
+        differently_cased.argilla_workspace_id != scope.argilla_workspace_id,
+    )
+    check(
+        "a workspace id that differs only in case from the real row is refused, not silently "
+        "normalized into a match -- the comparison is exact, same discipline this module "
+        "already uses for identity status (never .strip().lower() a value before comparing it)",
+        raises(ArgillaIdentityError, env.sync, Role.ML_ENGINEER, differently_cased, ident)
+        and not env.server.memberships,
+    )
 
 
 @with_env
