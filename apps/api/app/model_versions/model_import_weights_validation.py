@@ -50,8 +50,10 @@ refused `base_not_validated` because no factory-run entity exists yet to prove t
 `model.safetensors.index.json` file is allow-listed and hashed but not interpreted. Every shard is
 read once more (header parsed and the whole file hashed from the same descriptor) after the two
 full-hash passes (FTF-0306 digest and the manifest re-resolve), so the header that is judged is
-the one the digest covers; a file swapped for a FIFO or any non-regular file after the manifest is
-`artifact_changed_during_validation`, never a hang.
+the one the digest covers. A file swapped for a FIFO, a directory or any other non-regular file
+that can be opened is `artifact_changed_during_validation`, never a hang; one that cannot be opened
+at all (deleted, a symlink under O_NOFOLLOW, a socket) is `blocked_external`
+`artifact_source_unavailable`: no version is written either way.
 """
 
 from __future__ import annotations
