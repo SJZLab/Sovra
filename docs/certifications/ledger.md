@@ -12302,3 +12302,12 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   malformed items unmount the component, overflow up to 1495 px, 0308 confirm focus lost, missing empty/loading states,
   English residue under ar, 7 GREEN faults, no browser harness in CI. Faults 26/33 RED. Gates: product_truth 49/49,
   validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:10Z — RETURNED: FTF-UX06 (r1)
+- **FTF-UX06: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #964, merge
+  26424fee86d4f768890f37df733a44d13666ba3b, head 3ef9c45d). Producers session_01BHMq1m2dSmysowCKLwSknh,
+  session_01XvphxpD8rnAPaR6yRyxRrs ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119937341448; gate
+  119909327102 ran vitest and FTF-0602-P1 (step-level). Local 2491/2491; FTF-0602 REQUALIFIED (spec byte-identical). 76
+  real-Chromium probe runs: axe 0, lang/dir, announced errors without unmount, aria-busy loading. Return: overflow up to 729
+  px with max-length names, focus lost to <body> after a failed save, English system text under ar (severity 3 each); no
+  recovery steps, empty state without action, Field unused; 16/24 faults GREEN; no browser harness in CI; §4 evidence
+  absent and contradicted. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
