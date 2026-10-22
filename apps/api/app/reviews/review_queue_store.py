@@ -28,7 +28,8 @@ Three operations:
 - `submit_review_response` -- a reviewer's decision, written to Argilla only with the reviewer's
   own API key (resolved from OpenBao by the identity's `credential_secret_ref`), so the Argilla
   `user_id` of the stored response is the mapped annotator. `expected_version` is checked under
-  `SELECT ... FOR UPDATE` on the item and response rows: a stale version is
+  `SELECT ... FOR UPDATE` on the item row (every write of that item's responses goes through
+  it, so the response row needs no lock of its own): a stale version is
   `review_version_conflict` and nothing is sent to Argilla. After the write the record is read
   back with the provisioning key; the response must be the mapped user's, submitted, and equal to
   what was sent, and its sha256 is stored. Argilla down -> `argilla_unavailable` with the Factory
@@ -933,7 +934,7 @@ def submit_review_response(
             organization_id,
             text(
                 "SELECT id, argilla_response_id, row_version FROM review_responses "
-                "WHERE item_id = :item AND identity_id = :identity FOR UPDATE"
+                "WHERE item_id = :item AND identity_id = :identity"
             ),
             {"item": item_id, "identity": identity_id},
         ).first()

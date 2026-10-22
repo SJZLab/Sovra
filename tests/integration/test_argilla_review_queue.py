@@ -63,7 +63,10 @@ sys.path.insert(0, str(ROOT / "tests" / "integration"))
 import test_ftf_0519_p1_split_manifests as T  # noqa: E402 -- the real-store seeding helpers
 from argilla_test_support import FakeArgillaServer  # noqa: E402
 from packages.integrations.argilla import review_mapping as rm  # noqa: E402
-from packages.litellm_client.secret_manager_integration import OpenBaoConfig  # noqa: E402
+from packages.litellm_client.secret_manager_integration import (  # noqa: E402
+    OpenBaoConfig,
+    build_secret_ref,
+)
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from workers.data import import_common as ic  # noqa: E402
@@ -140,7 +143,7 @@ class LocalVault:
         self.values: dict[str, str] = {}
 
     def store(self, *, config: Any, mount: str, path: str, field: str, value: str) -> str:
-        ref = f"openbao://{mount}/{path}#{field}"
+        ref = build_secret_ref(mount=mount, path=path, field=field)
         self.values[ref] = value
         return ref
 
@@ -203,7 +206,9 @@ class World:
                 component_key="argilla",
                 security_zone_scope="internal",
                 deployment_mode="worker_package",
-                secret_reference=f"openbao://secret/argilla-owner/{self.org}#api_key",
+                secret_reference=build_secret_ref(
+                    mount="secret", path=f"argilla-owner/{self.org}", field="api_key"
+                ),
                 network_policy_identity="argilla-net-policy",
                 compatibility_lock_reference="argilla",
             )

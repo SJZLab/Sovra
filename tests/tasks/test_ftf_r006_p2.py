@@ -771,6 +771,7 @@ class Env:
         self.chunk_override: Callable[[], Iterator[bytes]] | None = None
         self.expected_sha_override: str | None = None
         self.calls: list[str] = []
+        self.statements: list[str] = []
         self.audits: list[dict[str, Any]] = []
         self.secret_refs: dict[str, str] = {}
         self.resolved: list[str] = []
@@ -817,6 +818,7 @@ class Env:
             if organization_id != env.org:
                 raise AssertionError("a statement was scoped to the wrong organization")
             sql = statement.text if hasattr(statement, "text") else str(statement)
+            env.statements.append(sql)
             return session.execute(text(sql.replace(" FOR UPDATE", "")), params or {})
 
         @contextlib.contextmanager
@@ -1606,6 +1608,13 @@ def test_q_idempotent_and_resume() -> None:
             "a replay creates no second item or queue",
             env.sql("SELECT count(*) FROM review_items")[0][0] == 4
             and env.sql("SELECT count(*) FROM review_queues")[0][0] == 1,
+        )
+        env.statements.clear()
+        env.create()
+        check(
+            "Q13",
+            "a replay does not even attempt to insert a queue or items",
+            not any(q.lstrip().startswith("INSERT INTO review_") for q in env.statements),
         )
         check(
             "Q13",
