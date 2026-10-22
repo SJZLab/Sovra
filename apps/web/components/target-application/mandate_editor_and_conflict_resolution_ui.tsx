@@ -97,7 +97,7 @@ import {
   MALFORMED_FAILURE,
   NETWORK_FAILURE,
   failureFromResponse,
-  failureMessage,
+  safeFailureMessage,
   isRecord,
   type Failure,
 } from "./common";
@@ -330,6 +330,10 @@ function isObjectOrNull(value: unknown): boolean {
 export interface ManifestIdentity {
   manifestId: string;
   projectId: string;
+  organizationId: string;
+  /** Known once the manifest has loaded; the snapshot is fixed at creation, so a later reply must
+   * name the same one. Absent on the first load. */
+  snapshotId?: string;
 }
 
 /**
@@ -341,6 +345,15 @@ export function bindManifest(body: unknown, expected: ManifestIdentity): Manifes
   if (!isRecord(body)) return null;
   if (body.id !== expected.manifestId) return null;
   if (body.project_id !== expected.projectId) return null;
+  // The tenant is part of the identity: a manifest of another organization (or one that does not
+  // say) is never shown or saved as this organization's.
+  if (body.organization_id !== expected.organizationId) return null;
+  if (typeof body.target_source_snapshot_id !== "string" || body.target_source_snapshot_id === "") {
+    return null;
+  }
+  if (expected.snapshotId !== undefined && body.target_source_snapshot_id !== expected.snapshotId) {
+    return null;
+  }
   if (typeof body.version !== "number" || !Number.isInteger(body.version)) return null;
   if (
     typeof body.status !== "string" ||
@@ -605,7 +618,7 @@ export function MandateEditorAndConflictResolutionUI({
         const manifestRaw = await readBody(manifestResponse);
         const requirementsRaw = await readBody(requirementsResponse);
         if (cancelled) return;
-        const manifestBody = bindManifest(manifestRaw, { manifestId, projectId });
+        const manifestBody = bindManifest(manifestRaw, { manifestId, projectId, organizationId });
         const requirementsBody = parseRequirements(requirementsRaw);
         if (!manifestBody || !requirementsBody) {
           setLoadFailure(MALFORMED_FAILURE);
@@ -765,7 +778,17 @@ export function MandateEditorAndConflictResolutionUI({
       if (identityRef.current !== started) return;
       // A reply that does not say what was sent (unreadable, another manifest, old columns, a
       // status change) is not a save: the drafts stay and nothing reads "saved".
-      const updated = bindSavedManifest(raw, { manifestId, projectId }, sent, manifest.status);
+      const updated = bindSavedManifest(
+        raw,
+        {
+          manifestId,
+          projectId,
+          organizationId,
+          snapshotId: manifest.target_source_snapshot_id,
+        },
+        sent,
+        manifest.status,
+      );
       if (!updated) {
         setSaveFailure(MALFORMED_FAILURE);
         return;
@@ -824,7 +847,7 @@ export function MandateEditorAndConflictResolutionUI({
       <Shell locale={locale}>
         <div data-testid="mandate-load-error">
           <Banner kind="error" locale={locale}>
-            {failureMessage(loadFailure, locale)}
+            {safeFailureMessage(loadFailure, locale)}
           </Banner>
         </div>
         <div>
@@ -1077,7 +1100,7 @@ export function MandateEditorAndConflictResolutionUI({
           {refreshFailure && (
             <div data-testid="refresh-enforcement-error">
               <Banner kind="error" locale={locale}>
-                {`${failureMessage(refreshFailure, locale)} ${t("refreshStale")}`}
+                {`${safeFailureMessage(refreshFailure, locale)} ${t("refreshStale")}`}
               </Banner>
             </div>
           )}
@@ -1126,7 +1149,7 @@ export function MandateEditorAndConflictResolutionUI({
             {saveFailure && (
               <div data-testid="mandate-save-error">
                 <Banner kind="error" locale={locale}>
-                  {`${failureMessage(saveFailure, locale)} ${t("saveFailedKept")}`}
+                  {`${safeFailureMessage(saveFailure, locale)} ${t("saveFailedKept")}`}
                 </Banner>
               </div>
             )}

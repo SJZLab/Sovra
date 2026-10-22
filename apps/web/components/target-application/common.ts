@@ -105,3 +105,53 @@ export function failureMessage(failure: Failure, locale: Locale | string = "en")
     }
   }
 }
+
+const SAFE_WORDS = {
+  notFound: {
+    en: "This manifest no longer exists, or you do not have access to it. Go back and choose another one.",
+    ar: "لم يعد هذا البيان موجودًا، أو ليست لديك صلاحية الوصول إليه. ارجع واختر بيانًا آخر.",
+  },
+  conflict: {
+    en: "The manifest is not in a state that allows this: it may be locked, changed elsewhere, or missing a required part. Reload to see the current version; your edits stay in the editor until you do.",
+    ar: "البيان ليس في حالة تسمح بذلك: قد يكون مقفلًا أو تم تغييره من مكان آخر أو ينقصه جزء مطلوب. أعد التحميل لرؤية النسخة الحالية؛ تبقى تعديلاتك في المحرر إلى أن تفعل ذلك.",
+  },
+  invalid: {
+    en: "The server rejected some of what was entered. Check the values you changed, then try again.",
+    ar: "رفض الخادم بعض ما تم إدخاله. تحقق من القيم التي غيّرتها ثم حاول مرة أخرى.",
+  },
+  other: {
+    en: "The request failed ({status}). Try again; if it keeps happening, contact your administrator.",
+    ar: "فشل الطلب ({status}). حاول مرة أخرى، وإذا استمرت المشكلة فتواصل مع المسؤول.",
+  },
+} as const satisfies Record<string, CatalogueEntry>;
+
+const safeWord = makeT(SAFE_WORDS);
+
+/**
+ * Like `failureMessage`, but never shows the backend's own `detail`: the manifest routes answer with
+ * internal codes (`not_found`) and English developer sentences (`agent manifest <uuid> is 'locked' --
+ * ...`) that are neither words a user can act on nor Arabic. Each status gets a localized sentence with
+ * the step that can actually succeed; an unknown status gets a generic one with the status number.
+ */
+export function safeFailureMessage(failure: Failure, locale: Locale | string = "en"): string {
+  if (failure.kind !== "http") return failureMessage(failure, locale);
+  switch (failure.status) {
+    case 401:
+    case 403:
+    case 502:
+    case 503:
+    case 504:
+      return failureMessage({ kind: "http", status: failure.status, detail: null }, locale);
+    case 404:
+      return safeWord("notFound", locale);
+    case 409:
+      return safeWord("conflict", locale);
+    case 400:
+    case 422:
+      return safeWord("invalid", locale);
+    default:
+      return failure.status >= 500
+        ? failureMessage({ kind: "http", status: failure.status, detail: null }, locale)
+        : safeWord("other", locale, { status: failure.status });
+  }
+}

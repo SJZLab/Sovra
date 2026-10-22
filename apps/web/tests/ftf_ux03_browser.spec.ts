@@ -151,6 +151,7 @@ function manifest22(over: Record<string, unknown> = {}) {
     id: MANIFEST,
     organization_id: ORG,
     project_id: PROJECT,
+    target_source_snapshot_id: SNAPSHOT,
     version: 1,
     status: "draft",
     agent_name: "support-agent",

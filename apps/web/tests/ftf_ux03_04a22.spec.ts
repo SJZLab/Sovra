@@ -13,7 +13,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import axe from "axe-core";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { failureMessage } from "../components/target-application/common";
+import { failureMessage, safeFailureMessage } from "../components/target-application/common";
 import { manifestUrl } from "../components/target-application/manifest_review_edit_ui_with_per_field_evidence";
 import {
   MANDATE_LIST_FIELDS,
@@ -46,6 +46,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const SNAPSHOT = "44444444-4444-4444-4444-444444444444";
 type Json = Record<string, unknown>;
 
 function manifestBody(overrides: Json = {}): Json {
@@ -53,6 +54,7 @@ function manifestBody(overrides: Json = {}): Json {
     id: MANIFEST,
     organization_id: ORG,
     project_id: PROJECT,
+    target_source_snapshot_id: SNAPSHOT,
     version: 1,
     status: "draft",
     agent_name: "support-agent",
@@ -748,7 +750,10 @@ describe("[UX03-04A22-ERRORS] failures are announced, specific and recoverable",
     );
     mount();
     await waitFor(() => expect(screen.getByTestId("mandate-load-error")).toBeTruthy());
-    expect(screen.getByTestId("mandate-load-error").textContent).toContain("manifest not found");
+    // A 4xx never shows the backend's own words: a localized "no longer exists / no access" sentence.
+    const text = screen.getByTestId("mandate-load-error").textContent!;
+    expect(text).toContain(safeFailureMessage({ kind: "http", status: 404, detail: null }));
+    expect(text).not.toContain("manifest not found");
   });
 
   const BAD_SAVES: [string, () => unknown][] = [
@@ -876,6 +881,12 @@ describe("[UX03-04A22-STRICT] every response field is parsed strictly", () => {
   const MANIFEST_FAULTS: Record<string, [string, unknown][]> = {
     id: [...WRONG, ["another manifest's id", OTHER_MANIFEST]],
     project_id: [...WRONG, ["another project's id", "99999999-9999-9999-9999-999999999999"]],
+    organization_id: [
+      ...WRONG,
+      ["blank", ""],
+      ["another organization's id", "99999999-9999-9999-9999-999999999999"],
+    ],
+    target_source_snapshot_id: [...WRONG.filter(([label]) => label !== "a string"), ["blank", ""]],
     version: [
       ["a string", "1"],
       ["a float", 1.5],
@@ -1018,6 +1029,7 @@ describe("[UX03-04A22-STRICT] every response field is parsed strictly", () => {
       bindManifest(manifestBody({ status: "archived" }), {
         manifestId: MANIFEST,
         projectId: PROJECT,
+        organizationId: ORG,
       }),
     ).toBeNull();
   });
@@ -1026,7 +1038,7 @@ describe("[UX03-04A22-STRICT] every response field is parsed strictly", () => {
 // -- binding (UI CHECKLIST b): one function, a fault per field ----------------------------------
 
 describe("[UX03-04A22-BIND] bindManifest compares every field with what was asked for", () => {
-  const ids = { manifestId: MANIFEST, projectId: PROJECT };
+  const ids = { manifestId: MANIFEST, projectId: PROJECT, organizationId: ORG };
   test("the happy path binds", () => {
     expect(bindManifest(manifestBody(), ids)).not.toBeNull();
     expect(
@@ -1228,7 +1240,7 @@ describe("[UX03-04A22-AXE] structural a11y rules hold in every state", () => {
 // -- UX03 r2 review: a save is bound to what was sent; stale refresh; unreadable bodies; locked while saving
 
 describe("[UX03-04A22-R2-SAVEBIND] a save reply must say what was sent", () => {
-  const ids = { manifestId: MANIFEST, projectId: PROJECT };
+  const ids = { manifestId: MANIFEST, projectId: PROJECT, organizationId: ORG };
   const sent = {
     mandate_json: { business_purpose: "new", tags: ["a", { k: 1, j: 2 }] },
     forbidden_actions_json: { actions: [{ name: "refund", reason: "policy" }] },
@@ -1521,4 +1533,119 @@ describe("[UX03-04A22-R2-SAVELOCK] edits typed while a save is in flight are not
     expect(screen.getByTestId("forbidden-action-name-refund")).toBeTruthy();
     expect(purpose.readOnly).toBe(false);
   });
+});
+
+// -- pre-review round 2: tenant/snapshot binding on the save reply, real backend failure bodies ----
+
+describe("[UX03-04A22-R2] bound organization and snapshot on save; real backend failures", () => {
+  const OTHER_ORG = "99999999-9999-9999-9999-999999999999";
+
+  for (const [label, bad] of [
+    ["organization_id of another organization", { organization_id: OTHER_ORG }],
+    ["organization_id missing", { organization_id: undefined }],
+    [
+      "target_source_snapshot_id of another snapshot",
+      { target_source_snapshot_id: "55555555-0000-0000-0000-000000000000" },
+    ],
+    ["target_source_snapshot_id missing", { target_source_snapshot_id: undefined }],
+  ] as [string, Json][]) {
+    test(`a save reply with ${label} is refused: nothing reads 'saved', the draft stays`, async () => {
+      serve({
+        patch: (body) => {
+          const reply200 = manifestBody({ ...body, ...bad });
+          for (const [k, v] of Object.entries(bad)) if (v === undefined) delete reply200[k];
+          return reply(200, reply200);
+        },
+      });
+      await loaded();
+      const first = document.querySelector("textarea");
+      expect(first).toBeTruthy();
+      fireEvent.change(first as HTMLElement, { target: { value: "changed goal" } });
+      const save = screen.getByTestId("mandate-save-button");
+      fireEvent.click(save);
+      await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+      expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
+      expect((first as HTMLTextAreaElement).value).toBe("changed goal");
+    });
+  }
+
+  // The exact bodies agent_manifest_routes.py answers with.
+  const BACKEND_NOT_FOUND = { detail: "not_found" };
+  const BACKEND_LOCKED = {
+    detail: `agent manifest ${MANIFEST} is 'locked' -- content can only be edited while draft or review_required (this task's own negative_acceptance)`,
+  };
+  const BACKEND_INVALID = { detail: "mandate_json must be a JSON object or null" };
+  const WORDS = {
+    notFound: {
+      en: "This manifest no longer exists, or you do not have access to it. Go back and choose another one.",
+      ar: "لم يعد هذا البيان موجودًا، أو ليست لديك صلاحية الوصول إليه. ارجع واختر بيانًا آخر.",
+    },
+    conflict: {
+      en: "The manifest is not in a state that allows this: it may be locked, changed elsewhere, or missing a required part. Reload to see the current version; your edits stay in the editor until you do.",
+      ar: "البيان ليس في حالة تسمح بذلك: قد يكون مقفلًا أو تم تغييره من مكان آخر أو ينقصه جزء مطلوب. أعد التحميل لرؤية النسخة الحالية؛ تبقى تعديلاتك في المحرر إلى أن تفعل ذلك.",
+    },
+    invalid: {
+      en: "The server rejected some of what was entered. Check the values you changed, then try again.",
+      ar: "رفض الخادم بعض ما تم إدخاله. تحقق من القيم التي غيّرتها ثم حاول مرة أخرى.",
+    },
+  };
+  function noLeak(text: string, locale: "en" | "ar") {
+    expect(text).not.toMatch(/not_found|negative_acceptance|_json/);
+    expect(text).not.toContain(MANIFEST);
+    expect(text).not.toContain("Check what you entered");
+    if (locale === "ar") expect(text.replace(/[^A-Za-z]+/g, " ").trim()).toBe("");
+  }
+
+  for (const locale of ["en", "ar"] as const) {
+    test(`[${locale}] load 404 not_found -> the 'no longer exists / no access' sentence, no code`, async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => reply(404, BACKEND_NOT_FOUND)),
+      );
+      mount(locale);
+      await waitFor(() => expect(screen.getByTestId("mandate-load-error")).toBeTruthy());
+      const text = screen.getByTestId("mandate-load-error").textContent!;
+      expect(text).toContain(WORDS.notFound[locale]);
+      noLeak(text, locale);
+    });
+
+    test(`[${locale}] save 409 AgentManifestLockedError -> the conflict sentence, edits kept`, async () => {
+      serve({ patch: () => reply(409, BACKEND_LOCKED) });
+      await loaded(locale);
+      const first = document.querySelector("textarea") as HTMLTextAreaElement;
+      fireEvent.change(first, { target: { value: "keep me" } });
+      fireEvent.click(screen.getByTestId("mandate-save-button"));
+      await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+      const text = screen.getByTestId("mandate-save-error").textContent!;
+      expect(text).toContain(WORDS.conflict[locale]);
+      noLeak(text, locale);
+      expect(first.value).toBe("keep me");
+    });
+
+    test(`[${locale}] save 400 validation -> the validation sentence, never the backend text`, async () => {
+      serve({ patch: () => reply(400, BACKEND_INVALID) });
+      await loaded(locale);
+      const first = document.querySelector("textarea") as HTMLTextAreaElement;
+      fireEvent.change(first, { target: { value: "x" } });
+      fireEvent.click(screen.getByTestId("mandate-save-button"));
+      await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+      const text = screen.getByTestId("mandate-save-error").textContent!;
+      expect(text).toContain(WORDS.invalid[locale]);
+      noLeak(text, locale);
+    });
+
+    test(`[${locale}] requirements refresh 404 -> the safe sentence beside the stale-data note`, async () => {
+      let broken = false;
+      serve({
+        requirementsReply: () => (broken ? reply(404, BACKEND_NOT_FOUND) : reply(200, [])),
+      });
+      await loaded(locale);
+      broken = true;
+      fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
+      await waitFor(() => expect(screen.getByTestId("refresh-enforcement-error")).toBeTruthy());
+      const text = screen.getByTestId("refresh-enforcement-error").textContent!;
+      expect(text).toContain(WORDS.notFound[locale]);
+      noLeak(text, locale);
+    });
+  }
 });

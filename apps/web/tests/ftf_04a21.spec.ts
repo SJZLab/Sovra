@@ -17,7 +17,7 @@
 import { createElement } from "react";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
   draftStorageKey,
@@ -154,7 +154,10 @@ function installServer(partial: Partial<Server> = {}) {
       }
       if (parsed.pathname === MANIFEST_PATH && method === "PATCH") {
         if (server.patchStatus !== 200) {
-          return jsonResponse(server.patchStatus, { detail: "manifest is locked" });
+          return jsonResponse(server.patchStatus, {
+            detail:
+              "agent manifest 33333333-3333-3333-3333-333333333333 is 'locked' -- content can only be edited while draft or review_required (this task's own negative_acceptance)",
+          });
         }
         server.manifest = { ...server.manifest, ...(body as Record<string, unknown>) };
         return jsonResponse(200, server.manifest);
@@ -165,7 +168,10 @@ function installServer(partial: Partial<Server> = {}) {
       }
       if (parsed.pathname === `${MANIFEST_PATH}/lock` && method === "POST") {
         if (server.lockStatus !== 200) {
-          return jsonResponse(server.lockStatus, { detail: "missing required field(s)" });
+          return jsonResponse(server.lockStatus, {
+            detail:
+              "agent manifest 33333333-3333-3333-3333-333333333333 is missing required field(s) ['agent_entrypoint_json'] -- this task's own negative_acceptance: missing critical evidence/model/runtime tuple blocks activation",
+          });
         }
         server.manifest = { ...server.manifest, status: "locked", manifest_sha256: "a".repeat(64) };
         return jsonResponse(200, server.manifest);
@@ -419,7 +425,7 @@ test("a refused save keeps every edit, locally and on screen", async () => {
   fireEvent.click(saveButton());
   await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
   expect(screen.getByTestId("manifest-action-error").textContent).toContain(
-    "The server refused the request: manifest is locked. Check what you entered, then try again.",
+    "The manifest is not in a state that allows this: it may be locked, changed elsewhere, or missing a required part. Reload to see the current version; your edits stay in the editor until you do.",
   );
   expect(input("mandate_json").value).toBe('{"goal":"keep me"}');
   expect(storage.getItem(STORAGE_KEY)).toContain("keep me");
@@ -681,7 +687,7 @@ test("a backend lock refusal is shown and the manifest is not shown as locked", 
   fireEvent.click(lockButton());
   await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
   expect(screen.getByTestId("manifest-action-error").textContent).toContain(
-    "The server refused the request: missing required field(s). Check what you entered, then try again.",
+    "The manifest is not in a state that allows this: it may be locked, changed elsewhere, or missing a required part. Reload to see the current version; your edits stay in the editor until you do.",
   );
   expect(screen.getByTestId("manifest-status").textContent).toContain("In review");
 });
@@ -729,7 +735,7 @@ test("a manifest load failure renders only the error", async () => {
   renderUI();
   await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
   expect(screen.getByTestId("manifest-load-error").textContent).toContain(
-    "The server refused the request: not_found. Check what you entered, then try again.",
+    "This manifest no longer exists, or you do not have access to it. Go back and choose another one.",
   );
   expect(screen.queryByTestId("lock-button")).toBeNull();
 });
@@ -1170,6 +1176,11 @@ const MANIFEST_SCALAR_FAULTS: [string, string, unknown][] = [
   ["id", "blank", ""],
   ["project_id", "wrong type", null],
   ["project_id", "blank", ""],
+  ["organization_id", "wrong type", 5],
+  ["organization_id", "blank", ""],
+  ["organization_id", "another organization", "99999999-9999-9999-9999-999999999999"],
+  ["target_source_snapshot_id", "wrong type", null],
+  ["target_source_snapshot_id", "blank", ""],
   ["status", "outside the enum", "approved"],
   ["status", "wrong type", 7],
   ["status", "wrong case", "LOCKED"],
@@ -1185,6 +1196,8 @@ const MANIFEST_SCALAR_FAULTS: [string, string, unknown][] = [
 const MANIFEST_MISSING = [
   "id",
   "project_id",
+  "organization_id",
+  "target_source_snapshot_id",
   "status",
   "version",
   "manifest_sha256",
@@ -1322,7 +1335,13 @@ test("[UX03-C7] the parsers accept the real shapes and reject the wrong ones dir
 
 // --- [UX03-D] one binding function: the reply must match what was sent --------------------------
 
-const CTX = { manifestId: MANIFEST_ID, projectId: PROJECT_ID };
+const SNAPSHOT_ID = "44444444-4444-4444-4444-444444444444";
+const CTX = {
+  manifestId: MANIFEST_ID,
+  projectId: PROJECT_ID,
+  organizationId: ORG_ID,
+  snapshotId: SNAPSHOT_ID,
+};
 
 test("[UX03-D1] unboundFields names every mismatch and nothing else", () => {
   const base = manifestRecord();
@@ -1335,6 +1354,12 @@ test("[UX03-D1] unboundFields names every mismatch and nothing else", () => {
   expect(unboundFields(patch, good, CTX)).toEqual([]);
   expect(unboundFields(patch, { ...good, id: "other" }, CTX)).toEqual(["id"]);
   expect(unboundFields(patch, { ...good, project_id: "other" }, CTX)).toEqual(["project_id"]);
+  expect(unboundFields(patch, { ...good, organization_id: "other" }, CTX)).toEqual([
+    "organization_id",
+  ]);
+  expect(unboundFields(patch, { ...good, target_source_snapshot_id: "other" }, CTX)).toEqual([
+    "target_source_snapshot_id",
+  ]);
   expect(unboundFields(patch, { ...good, status: "locked" }, CTX)).toEqual(["status"]);
   expect(unboundFields(patch, { ...good, mandate_json: { goal: "y" } }, CTX)).toEqual([
     "mandate_json",
@@ -1776,4 +1801,163 @@ test("[UX03-R1] edits typed while a save is in flight are refused (read-only), n
   expect(input("mandate_json").readOnly).toBe(false);
   edit("agent_name", "after");
   expect(input("agent_name").value).toBe("after");
+});
+
+// --- [UX03-R2] pre-review round 2: tenant binding on every manifest reply, real backend failures ---
+
+const OTHER_ORG = "99999999-9999-9999-9999-999999999999";
+
+test("[UX03-R2-ORG1] a save reply from another organization is refused: nothing shown as saved, drafts kept", async () => {
+  stubServer({ patch: (body) => ({ ...manifestRecord(), ...body, organization_id: OTHER_ORG }) });
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+  edit("mandate_json", '{"goal":"x"}');
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+  expect(screen.queryByTestId("manifest-action-notice")).toBeNull();
+  expect(input("mandate_json").value).toBe('{"goal":"x"}');
+});
+
+test("[UX03-R2-ORG2] submit and lock replies from another organization, or another snapshot, are refused", async () => {
+  for (const [name, bad] of [
+    ["organization", { organization_id: OTHER_ORG }],
+    ["snapshot", { target_source_snapshot_id: "55555555-5555-5555-5555-555555555555" }],
+  ] as const) {
+    cleanup();
+    stubServer({ submit: manifestRecord({ status: "review_required", ...bad }) });
+    renderLocale("en");
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    cleanup();
+    stubServer({
+      manifest: manifestRecord({ status: "draft" }),
+      submit: manifestRecord({ status: "review_required", ...bad }),
+    });
+    renderLocale("en");
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("submit-for-review-button"));
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status"), name).toBe(
+      "draft",
+    );
+    cleanup();
+    stubServer({
+      lock: manifestRecord({ status: "locked", manifest_sha256: "a".repeat(64), ...bad }),
+    });
+    renderLocale("en");
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    fireEvent.click(lockButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    expect(screen.getByTestId("manifest-status").getAttribute("data-manifest-status"), name).toBe(
+      "review_required",
+    );
+  }
+});
+
+// The exact bodies apps/api/app/target_connectors/agent_manifest_routes.py answers with.
+const BACKEND_NOT_FOUND = { detail: "not_found" };
+const BACKEND_LOCKED = {
+  detail: `agent manifest ${MANIFEST_ID} is 'locked' -- content can only be edited while draft or review_required (this task's own negative_acceptance)`,
+};
+const BACKEND_INCOMPLETE = {
+  detail: `agent manifest ${MANIFEST_ID} is missing required field(s) ['agent_entrypoint_json'] -- this task's own negative_acceptance: missing critical evidence/model/runtime tuple blocks activation`,
+};
+const BACKEND_INVALID = { detail: "unknown AgentManifest field(s): ['bogus']" };
+
+const SAFE = {
+  notFound: {
+    en: "This manifest no longer exists, or you do not have access to it. Go back and choose another one.",
+    ar: "لم يعد هذا البيان موجودًا، أو ليست لديك صلاحية الوصول إليه. ارجع واختر بيانًا آخر.",
+  },
+  conflict: {
+    en: "The manifest is not in a state that allows this: it may be locked, changed elsewhere, or missing a required part. Reload to see the current version; your edits stay in the editor until you do.",
+    ar: "البيان ليس في حالة تسمح بذلك: قد يكون مقفلًا أو تم تغييره من مكان آخر أو ينقصه جزء مطلوب. أعد التحميل لرؤية النسخة الحالية؛ تبقى تعديلاتك في المحرر إلى أن تفعل ذلك.",
+  },
+  invalid: {
+    en: "The server rejected some of what was entered. Check the values you changed, then try again.",
+    ar: "رفض الخادم بعض ما تم إدخاله. تحقق من القيم التي غيّرتها ثم حاول مرة أخرى.",
+  },
+};
+
+function expectNoBackendLeak(text: string, locale: "en" | "ar") {
+  expect(text).not.toMatch(/not_found/);
+  expect(text).not.toContain(MANIFEST_ID);
+  expect(text).not.toContain("negative_acceptance");
+  expect(text).not.toContain("_json");
+  expect(text).not.toContain("Check what you entered");
+  if (locale === "ar") expect(text.replace(/[^A-Za-z]+/g, " ").trim()).toBe("");
+}
+
+describe.each(["en", "ar"] as const)("[UX03-R2-REAL-BODIES] %s", (locale) => {
+  test("load 404 not_found: a localized 'no longer exists / no access' sentence, no code", async () => {
+    stubFetch(() => jsonResponse(404, BACKEND_NOT_FOUND));
+    renderLocale(locale);
+    await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+    const text = screen.getByTestId("manifest-load-error").textContent!;
+    expect(text).toContain(SAFE.notFound[locale]);
+    expectNoBackendLeak(text, locale);
+  });
+
+  test("save 409 AgentManifestLockedError: the conflict sentence with reload, edits kept, no backend text", async () => {
+    stubServer({});
+    renderLocale(locale);
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    stubFetch((url, method) => {
+      if (method === "PATCH") return jsonResponse(409, BACKEND_LOCKED);
+      return jsonResponse(404, BACKEND_NOT_FOUND);
+    });
+    edit("mandate_json", '{"goal":"keep"}');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    const text = screen.getByTestId("manifest-action-error").textContent!;
+    expect(text).toContain(SAFE.conflict[locale]);
+    expectNoBackendLeak(text, locale);
+    expect(input("mandate_json").value).toBe('{"goal":"keep"}');
+  });
+
+  test("lock 409 AgentManifestIncompleteError: the same safe conflict sentence", async () => {
+    stubServer({});
+    renderLocale(locale);
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    stubFetch(() => jsonResponse(409, BACKEND_INCOMPLETE));
+    fireEvent.click(lockButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    const text = screen.getByTestId("manifest-action-error").textContent!;
+    expect(text).toContain(SAFE.conflict[locale]);
+    expectNoBackendLeak(text, locale);
+  });
+
+  test("save 400 validation: the validation sentence, never the backend text", async () => {
+    stubServer({});
+    renderLocale(locale);
+    await waitFor(() => expect(screen.getByTestId("manifest-status")).toBeTruthy());
+    stubFetch(() => jsonResponse(400, BACKEND_INVALID));
+    edit("mandate_json", '{"goal":"x"}');
+    fireEvent.click(saveButton());
+    await waitFor(() => expect(screen.getByTestId("manifest-action-error")).toBeTruthy());
+    const text = screen.getByTestId("manifest-action-error").textContent!;
+    expect(text).toContain(SAFE.invalid[locale]);
+    expect(text).not.toContain("bogus");
+    expectNoBackendLeak(text, locale);
+  });
+});
+
+test("[UX03-R2-PARSE] parseManifest itself refuses a manifest that does not name its organization or snapshot", () => {
+  for (const field of ["organization_id", "target_source_snapshot_id"]) {
+    for (const bad of [undefined, null, 5, ""]) {
+      const record = { ...manifestRecord(), [field]: bad } as Record<string, unknown>;
+      if (bad === undefined) delete record[field];
+      expect(parseManifest(record), `${field}=${String(bad)}`).toBeNull();
+    }
+  }
+});
+
+test("[UX03-R2-OTHER4XX] an unrecognised 4xx shows a generic sentence with the status, never the backend's words", async () => {
+  stubFetch(() => jsonResponse(418, { detail: "teapot_short_and_stout internal detail" }));
+  renderLocale("en");
+  await waitFor(() => expect(screen.getByTestId("manifest-load-error")).toBeTruthy());
+  const text = screen.getByTestId("manifest-load-error").textContent!;
+  expect(text).toContain(
+    "The request failed (418). Try again; if it keeps happening, contact your administrator.",
+  );
+  expect(text).not.toContain("teapot");
 });

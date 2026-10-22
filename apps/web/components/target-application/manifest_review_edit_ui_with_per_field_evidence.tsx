@@ -67,7 +67,7 @@ import {
   MALFORMED_FAILURE,
   NETWORK_FAILURE,
   failureFromResponse,
-  failureMessage,
+  safeFailureMessage,
   isRecord,
   type Failure,
 } from "./common";
@@ -118,6 +118,8 @@ export const EVIDENCE_TYPES = [
 export interface ManifestRecord {
   id: string;
   project_id: string;
+  organization_id: string;
+  target_source_snapshot_id: string;
   status: string;
   version: number;
   manifest_sha256: string | null;
@@ -267,6 +269,12 @@ export function parseManifest(body: unknown): ManifestRecord | null {
   if (!isRecord(body)) return null;
   if (typeof body.id !== "string" || body.id === "") return null;
   if (typeof body.project_id !== "string" || body.project_id === "") return null;
+  // Tenant and snapshot identity are part of the reply's shape: a manifest that does not say which
+  // organization and snapshot it belongs to cannot be shown as this organization's manifest.
+  if (typeof body.organization_id !== "string" || body.organization_id === "") return null;
+  if (typeof body.target_source_snapshot_id !== "string" || body.target_source_snapshot_id === "") {
+    return null;
+  }
   if (
     typeof body.status !== "string" ||
     !(MANIFEST_STATUSES as readonly string[]).includes(body.status)
@@ -353,11 +361,16 @@ export type SentAction =
 export function unboundFields(
   action: SentAction,
   reply: ManifestRecord,
-  expected: { manifestId: string; projectId: string },
+  expected: { manifestId: string; projectId: string; organizationId: string; snapshotId: string },
 ): string[] {
   const unbound: string[] = [];
   if (reply.id !== expected.manifestId) unbound.push("id");
   if (reply.project_id !== expected.projectId) unbound.push("project_id");
+  if (reply.organization_id !== expected.organizationId) unbound.push("organization_id");
+  // Fixed at creation: an action reply that moves the manifest to another snapshot is not ours.
+  if (reply.target_source_snapshot_id !== expected.snapshotId) {
+    unbound.push("target_source_snapshot_id");
+  }
   if (action.kind === "patch") {
     if (reply.status !== action.previousStatus) unbound.push("status");
     for (const [field, sent] of Object.entries(action.sent)) {
@@ -595,7 +608,8 @@ function ManifestReviewEditInner({
         !manifestBody ||
         !evidenceBody ||
         manifestBody.id !== manifestId ||
-        manifestBody.project_id !== projectId
+        manifestBody.project_id !== projectId ||
+        manifestBody.organization_id !== organizationId
       ) {
         setLoadFailure(MALFORMED_FAILURE);
         return;
@@ -726,7 +740,14 @@ function ManifestReviewEditInner({
         setActionFailure(MALFORMED_FAILURE);
         return null;
       }
-      if (unboundFields(action, updated, { manifestId, projectId }).length > 0) {
+      if (
+        unboundFields(action, updated, {
+          manifestId,
+          projectId,
+          organizationId,
+          snapshotId: manifest.target_source_snapshot_id,
+        }).length > 0
+      ) {
         setActionFailure({ kind: "unbound" });
         return null;
       }
@@ -790,7 +811,7 @@ function ManifestReviewEditInner({
       <div {...shell}>
         <div data-testid="manifest-load-error">
           <Banner kind="error" locale={locale}>
-            {failureMessage(loadFailure, locale)}
+            {safeFailureMessage(loadFailure, locale)}
           </Banner>
         </div>
         <div>
@@ -902,7 +923,7 @@ function ManifestReviewEditInner({
           <Banner kind="error" locale={locale}>
             {actionFailure.kind === "unbound"
               ? tt("notBound")
-              : failureMessage(actionFailure, locale)}
+              : safeFailureMessage(actionFailure, locale)}
           </Banner>
         </div>
       )}
