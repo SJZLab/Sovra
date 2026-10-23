@@ -16,9 +16,9 @@ Rules this module enforces:
   license outranks base compatibility.
 - An external endpoint can be evaluated and compared. Whatever its reference or roles say, it can
   neither continue tuning (`endpoint_not_trainable`) nor resume (`no_trusted_checkpoint`):
-  permission to invoke is not permission or technical ability to continue training (Section 68.1) and a
-  teacher role does not determine trainability (Section 0.12). The reference text is carried only
-  for display and is never read to decide anything.
+  permission to invoke is not permission or technical ability to continue training (Section 68.1)
+  and a teacher role does not determine trainability (Section 0.12). The reference text is carried
+  only for display and is never read to decide anything.
 - Imported weights and adapters continue as a `new_run` (Section 17: "Imported adapters without
   optimizer state start a new training run, not a resume"); they never `exact_resume`. A factory
   trained version resumes only when a trusted checkpoint fact exists; the route has no such input
