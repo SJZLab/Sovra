@@ -22,6 +22,8 @@ export interface Route {
   pending?: boolean;
   /** Rejects like a network failure. */
   reject?: boolean;
+  /** Settle only after this many ms (a request slow enough for the UI to be observed busy). */
+  delayMs?: number;
   /** The JSON body is not JSON (a 200 HTML error page). */
   notJson?: boolean;
 }
@@ -74,14 +76,17 @@ function stubFetch(routes: Route[]): void {
       if (route.pending) return new Promise(() => undefined);
       if (route.reject) return Promise.reject(new TypeError("Failed to fetch"));
       const status = route.status ?? 200;
-      return Promise.resolve({
+      const reply = {
         ok: status >= 200 && status < 300,
         status,
         json: async () => {
           if (route.notJson) throw new SyntaxError("Unexpected token < in JSON at position 0");
           return route.body;
         },
-      } as Response);
+      } as Response;
+      return route.delayMs
+        ? new Promise<Response>((resolve) => setTimeout(() => resolve(reply), route.delayMs))
+        : Promise.resolve(reply);
     }
     return Promise.resolve({
       ok: false,

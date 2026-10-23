@@ -1216,6 +1216,7 @@ function UploadInner({
       setPhase("resumable");
     } else {
       setPhase("idle");
+      setNeedsFocusOnIdle(true);
     }
   }
 

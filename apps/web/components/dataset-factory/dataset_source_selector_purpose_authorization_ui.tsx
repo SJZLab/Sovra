@@ -418,16 +418,34 @@ function DatasetSourceSelectorInner({
   const formIsReadyForReview =
     displayName.trim().length > 0 && purposes.size > 0 && securityClassification !== "";
 
+  // Round-3 L2 pre-review 2 finding 1: Review / Back unmount the clicked button; hand focus to the
+  // step that appears (the preview region, or the form's first field) instead of <body>.
+  const stepFocusRef = useRef<"preview" | "form" | null>(null);
+  useEffect(() => {
+    const want = stepFocusRef.current;
+    if (!want || want !== formStep) return;
+    stepFocusRef.current = null;
+    document
+      .querySelector<HTMLElement>(
+        want === "preview"
+          ? '[data-testid="dataset-source-preview"]'
+          : '[data-testid="dataset-source-display-name-input"]',
+      )
+      ?.focus();
+  }, [formStep]);
+
   function handleReview(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!formIsReadyForReview) {
       return;
     }
     setCreateError(null);
+    stepFocusRef.current = "preview";
     setFormStep("preview");
   }
 
   function handleBackToEdit() {
+    stepFocusRef.current = "form";
     setFormStep("form");
   }
 
@@ -729,7 +747,11 @@ function DatasetSourceSelectorInner({
         )}
 
         {formStep === "preview" && (
-          <div data-testid="dataset-source-preview">
+          <div
+            data-testid="dataset-source-preview"
+            tabIndex={-1}
+            aria-label={phrase("previewNotice", locale)}
+          >
             <p data-testid="dataset-source-preview-notice">{phrase("previewNotice", locale)}</p>
             <dl>
               <dt>{phrase("previewSourceTypeLabel", locale)}</dt>

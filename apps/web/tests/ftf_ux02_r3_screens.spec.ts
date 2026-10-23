@@ -459,3 +459,42 @@ test("[UX02-R3-U5] 0501-UI an expired session offers a way forward: 'Start a new
   fireEvent.click(screen.getByTestId("upload-new-upload-button"));
   expect(screen.getByTestId("upload-form")).toBeTruthy();
 });
+
+test("[UX02-R3-L1] 0516 Load more on the LAST page and Reload on the first issues land on a Review button, never <body>", async () => {
+  replies["GET issues"] = {
+    ok: true,
+    status: 200,
+    body: { items: [issue(OPEN)], next_after: sha("b") },
+  };
+  mount516();
+  await load516();
+  const more = screen.getByText("Load more issues") as HTMLButtonElement;
+  more.focus();
+  replies["GET issues"] = {
+    ok: true,
+    status: 200,
+    body: { items: [issue(sha("b"))], next_after: null },
+  };
+  await act(async () => {
+    fireEvent.click(more);
+  });
+  await waitFor(() => expect(screen.queryByText("Load more issues")).toBeNull());
+  expect((document.activeElement as HTMLElement).getAttribute("data-testid")).toMatch(/^review-/);
+  cleanup();
+
+  replies["GET issues"] = { ok: true, status: 200, body: { items: [], next_after: null } };
+  mount516();
+  await load516();
+  const reload = screen.getByTestId("empty-reload-button") as HTMLButtonElement;
+  reload.focus();
+  replies["GET issues"] = {
+    ok: true,
+    status: 200,
+    body: { items: [issue(OPEN)], next_after: null },
+  };
+  await act(async () => {
+    fireEvent.click(reload);
+  });
+  await waitFor(() => expect(screen.queryByTestId("empty-reload-button")).toBeNull());
+  expect((document.activeElement as HTMLElement).getAttribute("data-testid")).toMatch(/^review-/);
+});

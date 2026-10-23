@@ -273,6 +273,8 @@ interface UiState {
   steps?: Step[];
   ready: string;
   noControlsExpected?: boolean;
+  /** A transient fixture for a behaviour test (timing-dependent), not a screen state for the matrix. */
+  behaviourOnly?: boolean;
 }
 
 const P0500A = { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT };
@@ -617,6 +619,31 @@ const STATES: UiState[] = [
     steps: finalizeAs("my-dataset"),
     ready: '[data-testid="upload-finalize-retry-text"]',
   },
+  {
+    id: "0500A create refused",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [] },
+      { method: "POST", path: SOURCES, status: 403, body: { detail: "project_not_found" } },
+    ],
+    steps: [
+      { fill: ["dataset-source-display-name-input", "Refused"] },
+      { click: "dataset-source-purpose-training" },
+      { select: ["dataset-source-security-classification-select", "internal"] },
+      { click: "dataset-source-review-button" },
+      { click: "dataset-source-confirm-button" },
+    ],
+    ready: '[data-testid="dataset-source-create-error"]',
+  },
+  {
+    id: "0501-UI malformed create",
+    component: "0501-UI",
+    props: P0501,
+    routes: [{ method: "POST", path: SESSIONS_P, status: 201, body: {} }],
+    steps: startUpload,
+    ready: '[data-testid="upload-malformed"]',
+  },
   // ---- FTF-0516 ----
   {
     id: "0516 idle",
@@ -753,6 +780,52 @@ const STATES: UiState[] = [
       { click: "resolution-submit" },
     ],
     ready: '[data-testid="dir-error"]',
+  },
+  {
+    id: "0516 slow load",
+    component: "0516",
+    props: P0516,
+    routes: [{ ...QR, body: report(), delayMs: 400 }, ...R516.slice(1)],
+    steps: [LOAD],
+    ready: '[data-testid="load-report-button"][disabled]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0516 paged",
+    component: "0516",
+    props: P0516,
+    routes: [
+      { ...QR, body: report() },
+      { ...ISS, body: { items: ISSUES, next_after: ISSUE_FAIL } },
+      { ...RES, body: { items: [resolution()] } },
+    ],
+    steps: [LOAD],
+    ready: '[data-testid="report"]',
+  },
+  {
+    id: "0516 waive form",
+    component: "0516",
+    props: P0516,
+    routes: R516,
+    steps: [
+      LOAD,
+      { click: `review-${ISSUE_WARN}` },
+      { select: ["resolution-action-select", "waive"] },
+      { fill: ["resolution-rationale", "a justified false positive"] },
+    ],
+    ready: '[data-testid="resolution-submit"]',
+  },
+  {
+    id: "0516 new version form",
+    component: "0516",
+    props: P0516,
+    routes: R516,
+    steps: [
+      LOAD,
+      { click: `review-${ISSUE_OPEN}` },
+      { select: ["resolution-action-select", "new_version"] },
+    ],
+    ready: '[data-testid="resolution-submit"]',
   },
   // ---- shared UX01 Dialog ----
   {
@@ -990,7 +1063,7 @@ async function rootLangDir(page: Page, locale: Locale): Promise<string[]> {
 }
 
 describe("[UX02-R3-BROWSER] every state x en/ar x light/dark in real Chromium", () => {
-  for (const state of STATES) {
+  for (const state of STATES.filter((st) => !st.behaviourOnly)) {
     for (const locale of ["en", "ar"] as Locale[]) {
       for (const scheme of ["light", "dark"] as Scheme[]) {
         test(`[${state.id}] [${locale}] [${scheme}] no overflow (320/390/768/1280/200%), 24px targets, axe clean`, async () => {
@@ -1423,6 +1496,67 @@ describe("[UX02-R3-FOLLOWUP] focus after success, terminal screens, Pending indi
         };
       });
       expect(res).toEqual({ inside: true, scrolls: true });
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("[UX02-R3-FOLLOWUP2] focus on step changes and unpinned hand-offs", () => {
+  const stateOf = (id: string) => STATES.find((st) => st.id === id)!;
+  const active = (page: Page) =>
+    page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "<body>");
+
+  for (const locale of ["en", "ar"] as Locale[]) {
+    test(`[0500A] [${locale}] Review focuses the preview, Back focuses the first form field, never <body>`, async () => {
+      const page = await openState(stateOf("0500A preview"), locale, "light");
+      try {
+        await page.waitForTimeout(100);
+        expect(await active(page)).toBe("dataset-source-preview");
+        await page.getByTestId("dataset-source-back-button").click();
+        await page.waitForTimeout(100);
+        expect(await active(page)).toBe("dataset-source-display-name-input");
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0501-UI] [${locale}] Back from a malformed create (no draft) focuses the fresh form`, async () => {
+      const page = await openState(stateOf("0501-UI malformed create"), locale, "light");
+      try {
+        await page.getByTestId("upload-malformed-back-button").click();
+        await page.waitForSelector('[data-testid="upload-form"]');
+        await page.waitForTimeout(100);
+        expect(await active(page)).toBe("upload-purpose-select");
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0516] [${locale}] after a successful load focus returns to the Load button`, async () => {
+      const page = await openState(stateOf("0516 slow load"), locale, "light");
+      try {
+        await page.waitForSelector('[data-testid="report"]', { timeout: 5000 });
+        await page.waitForTimeout(100);
+        expect(await active(page)).toBe("load-report-button");
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("[0501-UI] uploading -> ready hands focus to the finalize section; accepted is a status region", async () => {
+    let page = await openState(stateOf("0501-UI ready to finalize"), "en", "light");
+    try {
+      await page.waitForTimeout(100);
+      expect(await active(page)).toBe("upload-finalize");
+    } finally {
+      await page.close();
+    }
+    page = await openState(stateOf("0501-UI accepted"), "en", "light");
+    try {
+      const role = await page.getByTestId("upload-accepted").getAttribute("role");
+      expect(role).toBe("status");
     } finally {
       await page.close();
     }

@@ -569,6 +569,8 @@ export function DatasetIssueResolutionUI({
   // back (UX01 `useRefocusAfter`), and move focus to the outcome (the failure alert, or the
   // recorded decision) so a keyboard user is never dropped on <body> after a failed or finished request.
   const armRefocus = useRefocusAfter(loading || submitting);
+  // When the armed control unmounts (last page loaded / first issues appear) land on the first Review button.
+  const firstReviewButton = () => document.querySelector<HTMLElement>('[data-testid^="review-"]');
   useEffect(() => {
     if (error) document.querySelector<HTMLElement>('[data-testid="dir-error"]')?.focus();
   }, [error]);
@@ -933,7 +935,7 @@ export function DatasetIssueResolutionUI({
                 <Button
                   data-testid="empty-reload-button"
                   onClick={() => {
-                    armRefocus();
+                    armRefocus(firstReviewButton);
                     void load();
                   }}
                   disabled={loading || submitting}
@@ -1028,7 +1030,7 @@ export function DatasetIssueResolutionUI({
             <div>
               <Button
                 onClick={() => {
-                  armRefocus();
+                  armRefocus(firstReviewButton);
                   void loadMore();
                 }}
                 disabled={loading || submitting}
