@@ -12358,3 +12358,29 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Local 57/57 UX07+0101 specs, vitest 2663/2663. Faults: N11a/b, focus token, F7/F8/F9, B1 RED; N2 GREEN (pin ignores
   alpha; optional variant). FTF-0101 REQUALIFIED. No severity 3-4. Gates: product_truth 49/49, validate_spec --strict,
   data_exposure OK.
+## 2026-10-23T09:10Z — CERTIFIED (child slice): FTF-UX05
+- **FTF-UX05: CERTIFIED (L2)** (round 3 under the stopping rule; PR #983, merge 5d793fb8d1d8b84306ec48cc52c740a2ceebafbf, head 6bf6a604). Producer
+  session_01FSq4kMCexAgMEGEk8MYndX ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict
+  120297554117; gate 120279605755 installed Chromium and ran vitest incl. ftf_ux05_browser.spec.ts (step-level; log host
+  403) and the parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 3014/3014 (browser
+  spec 251 in real Chromium); parent and UX01/02/03/07 specs byte-identical (Law 9). 624 real-Chromium pages: axe 0,
+  lang/dir, 0 px overflow at 1280/768/390/320 and 200 % (every round-2 culprit), 1301 failures announced with recovery and
+  never a fabricated empty result, malformed bodies never unmount, no English or body echo under ar, focus never to
+  <body>, single-flight writes. Faults 65/66 RED incl. all 16 earlier GREEN (V33 kindForStatus(400) GREEN, hand-picked).
+  Point-to-commit map verified. Parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED. No severity 3-4. Follow-ups
+  FTF-UX01-F1 and FTF-1301-F1 queued. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T10:08Z — CERTIFIED (child slice): FTF-H010-P3
+- **FTF-H010-P3: CERTIFIED (L2)** (round 2 under the stopping rule; PR #989, merge e54745261e66d8799f5fc3ad5f76fedf6795c414, head fae0606f). Producer
+  session_01KCUWZomH33bcWZ49kEP1ff ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict 120325097697;
+  gate 120301810206 "OK -- 21490 checks in 32 suite runs, 31 faults RED, 0 failing (FTF-H010-P3)";
+  model-weights-import-integration 120302019685 "all checks passed" on PG 16. `_finish` re-reads the base artifact FOR
+  SHARE (licence accepted, ready, digest and revision unchanged; missing base fails closed). Local: task suite 21490/31 RED,
+  P3 integration 7 fresh runs, P3a 129592/69 RED, P2 42547/98 RED, P1/P2 integrations pass; uncapped mutation 202/202.
+  Round-1 PG-M1/M2 now fail `artifact_changed_during_validation`; real two-session PG races confirm both rows share-locked
+  to commit. Faults: VF10/VF14/VF20 and own variants RED; GREEN only advisory/equivalent/hand-picked. Gates: product_truth
+  49/49, validate_spec --strict, data_exposure OK. UNWIRED.
+## 2026-10-23T10:54Z — OWNER DECISION: Radix Dialog approved; FTF-UX02 r2 unparked
+- The owner approved `@radix-ui/react-dialog@1.3.1` (exact-pinned) live in the Control-plane session ("Go for both",
+  then "the decision is yours" for must-haves); the "Owner actions - current" ask is removed and the FTF-UX01 Dialog park
+  resolved. `@radix-ui/react-progress` was not asked for and is not approved. FTF-UX02 round 2 (#947, item 0k) is
+  unparked: close the round-3 pre-review's two items on the same PR, then L2 (which also requalifies the UX01 Dialog).
