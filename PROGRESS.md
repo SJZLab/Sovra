@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T10:54Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T14:56Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,9 @@ Updated: 2026-10-23T10:54Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T14:56Z:**
+  - Returned: FTF-UX02 r2 (dataset screens): the approved Radix dependency is clean and the dialog works by keyboard in English, but in Arabic the new shared dialog is drawn half off-screen so its buttons cannot be clicked, some malformed server replies crash the source screen or show "Authorized" falsely, long names overflow, and the issue-resolution screen was not rebuilt at all. These screens are not reachable in the product yet. Round 3 fixes the dialog first.
+  - Returned: FTF-1301-F1 r1 (cost panel after switching project): late replies from the old project are now ignored, but while the new project is still loading the panel still shows the old project's rate, three error paths have no test, and the required real-browser test is missing. Round 2 is small.
 - **2026-10-23T10:54Z:**
   - Owner decision (live): `@radix-ui/react-dialog@1.3.1` approved (exact-pinned), so FTF-UX02 round 2 (#947) is unparked and finishes on its open PR, bringing the accessible Dialog with it.
 - **2026-10-23T10:08Z:**
