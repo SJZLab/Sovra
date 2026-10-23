@@ -10947,6 +10947,19 @@ docs/spec-matrix.yaml. It never invents criteria.)
     beyond this one append-order resolution. The CI-hang root cause above is still unconfirmed and still needs a real
     CI run to resolve; this merge only keeps the branch current against `main` so a future unpark is not also fighting
     a stale diff.
+  - **2026-10-23T0457Z, second occurrence on a different job (this shift, no new diagnosis attempted):** PR #971
+    (`relay/FTF-R006-P1b-r2`, unrelated to this Parked item — its own diff touches only Argilla/identity files)
+    hit a red `storage-semantics-integration` job on run `39893556331`: `test_multipart` raised
+    `TimeoutError('timed out')` with the SeaweedFS container logging `failed to find writable volumes for
+    collection:sovra-test-multipart-...` at the moment of failure — the same "no free volumes left" signature this
+    entry already diagnosed for `object-storage-backup-integration`, now reproduced on a second job sharing the same
+    `infra/docker/docker-compose.yml` `s3` fixture. Confirmed via the test's own source
+    (`tests/integration/test_storage_semantics.py`): `sys.exit(1)` fires from the script's own `FAILURES` branch, not
+    from the `docker compose stop` cleanup (`check_exit=False` either way). Not this PR's fault — commented on PR #971
+    with the full diagnosis and left the one sanctioned re-run (CLAUDE.md CI-red rule) for whenever that run (still
+    `in_progress` at comment time) completes, since GitHub rejects `rerun_failed_jobs` on an in-progress run
+    (`403 This workflow is already running`). This raises the confidence that the fix belongs to the shared fixture
+    (route options (3)/(4) above — per-test cleanup and/or periodic SeaweedFS recycle), not to either individual job.
 - **FTF-H010-P2 Import-validation activity, job fencing and endpoint-only import: PARKED (unclear DoD, contradiction with certified FTF-1001), 2026-10-10T02:30Z, lane C.**
   - **2026-10-10T03:57Z: RESOLVED by Control-plane ruling (route 3, see the FTF-H010-P2 Backlog entry).** P2 is back in the Backlog; claim `relay/FTF-H010-P2-r2`. This entry is history.
   - What failed: nothing was implemented. The DoD says the success path inserts the ModelVersion "through the `ModelVersion` constructor ... `endpoint_reference = external_provider_model_ref = ref` verbatim". Reproduced on `main` (d64628a): `ModelVersion(import_kind="endpoint", endpoint_reference="ft-gpt-4o-mini-acme", ...)` raises `ModelVersionValidationError: endpoint_reference must use https://, got scheme ''`, because `validate_endpoint_reference` (model_version_schema.py, FTF-1001) requires an `https://` URL with a host. A discovered gateway alias (`/v1/models` id) is not a URL, so the happy path can never succeed for a real alias; the `ck_model_versions_kind_consistency` CHECK also makes `endpoint_reference` NOT NULL for `import_kind='endpoint'`.
