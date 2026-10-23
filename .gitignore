@@ -25,5 +25,8 @@ reports/
 .vscode/
 .idea/
 
+# Claude Code isolated-worktree agents (harness-local, session-scoped, never committed)
+.claude/worktrees/
+
 # Python type-checker cache (never commit)
 .mypy_cache/
