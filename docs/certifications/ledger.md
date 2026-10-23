@@ -12358,3 +12358,14 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Local 57/57 UX07+0101 specs, vitest 2663/2663. Faults: N11a/b, focus token, F7/F8/F9, B1 RED; N2 GREEN (pin ignores
   alpha; optional variant). FTF-0101 REQUALIFIED. No severity 3-4. Gates: product_truth 49/49, validate_spec --strict,
   data_exposure OK.
+## 2026-10-23T09:10Z — CERTIFIED (child slice): FTF-UX05
+- **FTF-UX05: CERTIFIED (L2)** (round 3 under the stopping rule; PR #983, merge 5d793fb8d1d8b84306ec48cc52c740a2ceebafbf, head 6bf6a604). Producer
+  session_01FSq4kMCexAgMEGEk8MYndX ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict
+  120297554117; gate 120279605755 installed Chromium and ran vitest incl. ftf_ux05_browser.spec.ts (step-level; log host
+  403) and the parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 3014/3014 (browser
+  spec 251 in real Chromium); parent and UX01/02/03/07 specs byte-identical (Law 9). 624 real-Chromium pages: axe 0,
+  lang/dir, 0 px overflow at 1280/768/390/320 and 200 % (every round-2 culprit), 1301 failures announced with recovery and
+  never a fabricated empty result, malformed bodies never unmount, no English or body echo under ar, focus never to
+  <body>, single-flight writes. Faults 65/66 RED incl. all 16 earlier GREEN (V33 kindForStatus(400) GREEN, hand-picked).
+  Point-to-commit map verified. Parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED. No severity 3-4. Follow-ups
+  FTF-UX01-F1 and FTF-1301-F1 queued. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
