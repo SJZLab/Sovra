@@ -30716,3 +30716,69 @@ item found. Full detail: `docs/progress/2026-10-22T1450Z-relay.md`.
 STEP 3: this file and the shift log (plain docs-only PR, not `[relay]`-titled; QUEUE.md and
 `docs/certifications/queue.md` untouched). STEP 4: routine saturation, not a blocker -- no new
 `BLOCKER.md` entry, no new "Owner actions" line, no item claimed.
+
+## 2026-10-23T0049Z -- Scheduled relay shift -- returned-work CI sweep, two red-CI fixes pushed
+
+STEP 0: `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`. STEP 0.1: read PROGRESS.md/QUEUE.md/
+docs/certifications/queue.md fresh this shift (large files -- grep/offset, not in full; no new
+`docs/certifications/queue.md`/QUEUE.md "## Active" content since the last shift's own entry,
+confirmed by `git log --oneline -- <file>` showing only `[CERT]`-titled Control-plane commits in
+between). STEP 0.2: no `cognee-cli` binary -- text-search fallback declared.
+
+Checked every item in QUEUE.md "## Active" (0b/0c/0d/0e/0f/0g/0k) against the live GitHub state
+rather than the file's own stale text: 0b (FTF-0904-F2-r3, PR #949) and 0g (FTF-H011-P2-r2,
+PR #978) are already merged to `main`, PROVISIONAL, awaiting Control-plane L2 (the file's
+"TAKE FIRST" wording predates those merges). 0c (PR #971), 0d (PR #982), 0e (PR #983) each have
+an open `[relay]` PR already -- claimed, not reclaimed. 0f (FTF-UX06-r2, PR #979) is also already
+merged. 0k (FTF-UX02-r2, PR #947) stays PARKED per the prior shift's own entry -- left untouched.
+Backlog's UX04 (PR #960), R006-P2 (PR #961), H010-P3 (PR #948) and H011-P3 (PR #974) are each
+already claimed by an open PR; FTF-0308-P1/FTF-0602-P1/FTF-0501-P1 branches exist but have no
+open PR (merged or closed already) -- nothing unclaimed found anywhere in Active or Backlog.
+
+Per CLAUDE.md "Relay is execution-only" step 1 ("Fix every open or returned [relay] item before
+new work"), audited every currently-open PR's real CI state directly via the GitHub API (not the
+stale `mergeable_state` summary alone -- pulled actual check-run conclusions) rather than trust
+QUEUE.md's text. No merge conflicts found anywhere (no PR with `mergeable_state: dirty` or a real
+conflict). Found and fixed two genuine red-CI defects on open `[relay]` PRs, both independently
+verified before pushing:
+
+- **PR #982 (`relay/FTF-UX07-r3`, item 0d, evidence-only round): `gate` FAILED for real** --
+  `tsc --build` error TS2345 x3 at `apps/web/tests/ftf_ux07_browser.spec.ts:263` (columns 31/47/63,
+  the `f(r)`/`f(g)`/`f(b)` calls inside the focus-ring-contrast test's `lum` helper). Root cause:
+  `lum` destructures `[r, g, b]` from a parameter typed `number[]` (not a fixed-length tuple);
+  under this repo's `noUncheckedIndexedAccess`, destructuring from a non-tuple array types each
+  binding `number | undefined`, which `f(v: number)` then rejects. Fixed with default values
+  (`[r = 0, g = 0, b = 0]: number[]`) -- the defaults are never hit at runtime (every real caller,
+  `parse()`'s 4-tuple return and the 3-element `bg` seed, always supplies all three), so this is a
+  type-checker-only fix with no behavior change. Verified before pushing: `pnpm run typecheck`/
+  `lint`/`format:check` clean, and `vitest run tests/ftf_ux07_browser.spec.ts` still 46/46 passing
+  (same count as before the fix). Pushed directly to `relay/FTF-UX07-r3` (`0d98699b`).
+- **PR #983 (`relay/FTF-UX05-r3`, item 0e, round 3): `relay-policy` FAILED for real** -- "changes
+  Control-plane/governance files a [relay] PR may not touch: PROGRESS.md, docs/certifications/
+  ledger.md, docs/certifications/queue.md" (CLAUDE.md "No shared-file edits"). Root cause: an
+  earlier commit on this same branch (`35d785da`, "drop accidentally merged control-plane tracker
+  edits") had tried to self-fix an identical violation but restored a *stale* pre-`091ccf05` main
+  snapshot instead of the actual current `main` -- net effect, the branch's copy of all three
+  files still diverged from current `main` (confirmed via `git diff origin/main -- <files>`: it
+  was silently re-deleting the "FTF-UX05/FTF-UX07 round 2 returned -> round 3" tracker entries
+  that `091ccf05` had added). Fixed by checking out all three files byte-identical to current
+  `origin/main` (`git checkout origin/main -- PROGRESS.md docs/certifications/ledger.md
+  docs/certifications/queue.md`) rather than attempting another partial restore. Pushed directly
+  to `relay/FTF-UX05-r3` (`a2608499`).
+
+Neither fix touches the item's own production code, tests, or submission -- both are
+CI-infrastructure corrections on branches this shift does not otherwise own (0d/0e belong to
+other sessions' in-flight rounds). Did not wait for the resulting CI re-runs synchronously (both
+were still queued/in-progress at last check, nothing else red). All other open PRs' check runs
+were inspected directly (not inferred from `mergeable_state` alone): #971, #974, #948, #950,
+#960, #961 all green or still legitimately running; #759/#732/#709 are long-open WIP drafts,
+already claimed, untouched.
+
+STEP 3: this file and the designated-branch docs-only PR (no `docs/certifications/queue.md` or
+QUEUE.md edit -- this shift changed no Active/Backlog state, only pushed CI fixes to two other
+sessions' already-open relay branches, which is returned-work maintenance, not a tracker change).
+STEP 4 stop condition: no blocker, no ask-first item. This shift's full time went to the
+returned-work CI sweep and the two fixes above; no new Backlog item was claimed (everything
+currently dependency-ready in Active and Backlog already has an open `[relay]` PR in flight from
+a parallel session -- confirmed item by item above, not assumed). `BLOCKER.md` unchanged.
+Certified/product-true counts unchanged (no new merge, no new certification by this shift).
