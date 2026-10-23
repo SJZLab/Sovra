@@ -30918,3 +30918,45 @@ has a fresh-base `ci-verdict` run in flight; staying subscribed to merge on gree
 red job. No new `BLOCKER.md` entry (every entry in the file is RESOLVED, none currently LIVE). No
 new "Owner actions" line (the two existing dated asks -- FTF-0616 LiteLLM judge secret, FTF-04A31
 private-repo credential -- are unchanged, still open). Certified/product-true counts unchanged.
+
+## 2026-10-23T1759Z -- Scheduled relay shift (continued) -- FTF-1301-F1 round 2 returned and fixed (PR #1005)
+
+Continuation of this shift's own PR #996: while it was mid the fresh-base merge chase, Control plane
+reviewed and RETURNED it (QUEUE.md item 0d, merge `45d381a`) -- four real findings
+(MISSING-BROWSER-TEST: the item's own DoD needed both jsdom and the UX05 Chromium harness, round 1
+shipped jsdom only; STALE-WHILE-LOADING, severity 3: a project switch left the OLD project's rate on
+screen under the NEW project's own loading indicator until its response arrived; UNPINNED-STALE-ERROR
+F3/F4/F5: three existing `stale()` guards with no test exercising them; EVIDENCE: round 1's "in
+jsdom" wording contradicted the DoD) plus an advisory (P8: a stale Verify error could surface on the
+new project's panel after a switch). Per CLAUDE.md "fix every open or returned item before new work,"
+this became the shift's top priority.
+
+Claimed `relay/FTF-1301-F1-r2`. Fixed all four findings: a `seenIdentity` render-time reset (same
+pattern already certified in the sibling FTF-0309 component) clears search/error/notice and sets
+loading synchronously on any identity change; three new jsdom tests pin the pre-existing F3/F4/F5
+guards (each independently fault-injected); `apps/web/tests/browser/ux05_entry.tsx` extended with a
+persistent per-page root (so a second `mount()` call is a genuine React re-render of the same
+instance, not a fresh mount) and a held/individually-released fetch mechanism, backing two new
+real-Chromium tests (the out-of-order race and STALE-WHILE-LOADING), both independently confirmed
+RED against the TRUE pre-round-1 code (`dab64d2^1`) before the fix existed; P8 fixed in both
+`handleCreate` and `handleVerify`.
+
+The same independent reviewer who certified round 1 pre-reviewed round 2 (fresh assignment, new
+code): ran the full fault matrix across pre-round-1/round-1-only/this-round code in both jsdom and
+Chromium, its own adversarial probe (switching projects in the gap between React's commit and the
+mount effect firing -- the reset held), full regression, and found one real gap in the round's OWN
+evidence -- the Create-side P8 guard had no test. Closed with a follow-up commit (test "P8, Create",
+independently fault-injected) before submission. Reviewer's final verdict: `FTF-1301-F1-r2 CERTIFY`
+(pre-review evidence only, Law 4 -- never self-certification).
+
+Full web suite: 3119/3119 (jsdom) + 253/253 (real-Chromium UX05 harness). `tsc`/`eslint`/`prettier`
+clean on all four changed files. Merged fresh `main` before opening the PR; confirmed zero net diff
+on QUEUE.md/PROGRESS.md/docs/certifications/queue.md. Opened **PR #1005**, PROVISIONAL (Law 4),
+subscribed to its activity. Full evidence:
+`docs/certifications/submissions/2026-10-23T1742Z-FTF-1301-F1-r2.md`; shift log:
+`docs/progress/2026-10-23T1759Z-relay.md`.
+
+STEP 3: this file and the designated-branch docs-only PR (QUEUE.md/docs/certifications/queue.md
+untouched -- no certification action taken this shift). STEP 4 stop condition: single-item outcome
+(PR #1005 opened, PROVISIONAL, awaiting Control-plane L2 review). No new `BLOCKER.md` entry. No new
+"Owner actions" line. Certified/product-true counts unchanged.
