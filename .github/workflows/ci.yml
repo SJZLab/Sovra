@@ -375,6 +375,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r005_r4.py
       - name: FTF-R006-P1 negative-test proof (Argilla REST adapter, no network required)
         run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
+      - name: FTF-R006-P2 review queue proof (real-socket fake Argilla + SQLite, no external service)
+        run: uv run python3 tests/tasks/test_ftf_r006_p2.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -2074,6 +2076,61 @@ jobs:
           bao version
       - name: Prove the real Argilla review-scope/reviewer-identity/workspace-membership evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_argilla_identity_scope.py
+
+  argilla-review-queue-integration:
+    # FTF-R006-P2: real Postgres + real OpenBao proof for the Argilla review queue
+    # (Section 8-10/65/67/77.3-77.6/78.4/80.1-80.4/81) -- migration 0036 upgrade/downgrade/upgrade
+    # with one head; ENABLE+FORCE row-level security, a non-allow-all tenant_isolation policy,
+    # SELECT/INSERT/UPDATE only and the update-guard triggers on review_queues / review_items /
+    # review_responses; a queue built from a real dataset version (real FTF-0501 stores, FTF-0516
+    # quality report, FTF-0502-P1 reader, importer); every refusal writing nothing to PostgreSQL or
+    # Argilla (sealed purposes with a canary, a locked FTF-0519 manifest, a revoked grant, an unclear
+    # quality report); idempotent replay, crash-resume and an 8-thread create race; responses written
+    # with the reviewer's own OpenBao-resolved key, row_version under real SELECT ... FOR UPDATE
+    # locks (8-thread first-response race: one winner, one Argilla write); drift reconciliation with
+    # sticky drift in the database; cross-tenant read/write/foreign-key refusals; no API key in any
+    # table or audit row -- tests/integration/test_argilla_review_queue.py. The Argilla-facing leg runs
+    # against the same real-socket FakeArgillaServer as argilla-identity-scope-integration (the
+    # upstream argilla-server additionally needs a live OpenSearch engine at startup; disclosed in
+    # tests/tasks/argilla_test_support.py). Same real postgres service and from-source OpenBao build.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-review-queue-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf_r006_p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf_r006_p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf_r006_p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Prove the Argilla review queue against the live database and live OpenBao
+        run: uv run python3 tests/integration/test_argilla_review_queue.py
 
   target-source-snapshot-integration:
     # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
@@ -4078,6 +4135,7 @@ jobs:
       - api-load-test-integration
       - dataset-source-connection-integration
       - argilla-identity-scope-integration
+      - argilla-review-queue-integration
       - target-application-connection-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration
