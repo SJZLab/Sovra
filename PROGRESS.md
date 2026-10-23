@@ -30753,3 +30753,33 @@ diagnosed and documented, not fixed in place, since nothing in that PR's own dif
 no landed fix for the shared SeaweedFS-fixture issue exists yet to port. No new `BLOCKER.md` entry
 (not systemic -- every other PR and job is unaffected). No new "Owner actions" line. Certified/
 product-true counts unchanged.
+
+## 2026-10-23T0652Z -- Scheduled relay shift -- frontier re-confirmed saturated, no new claim
+
+STEP 0/0.1/0.2 clean (hash matched `423c9dee...df083`, no `BLOCKER.md` live entry, no `cognee-cli`).
+Branch `claude/wizardly-fermat-jzcxb3` had no remote ref yet; local HEAD already at `origin/main`
+(`2fe558e`). Returned-work sweep over all 14 open PRs found no red `ci-verdict`, no merge conflict, no
+`needs-fix` label; re-checked PR #971's full 83-run check-run set and confirmed `storage-semantics-
+integration` -- red in the 0457Z shift's diagnosis -- is `success` on its newer run, consistent with
+that shift's resource-exhaustion diagnosis (not a defect in #971's own diff); `gate` still in progress,
+nothing further to do there.
+
+Walked QUEUE.md's "## Active" list (0a-0k, then 0o -> Backlog) against live GitHub state: 0b (PR #950,
+Control-plane-produced), 0c (PR #971), 0e (PR #983, pushed 06:39Z), 0h (PR #989, pushed 06:28Z) each
+already have an open PR; 0f/0g (FTF-UX06/FTF-H011-P2 r2) are already merged from concurrent sessions; 0k
+(PR #947, FTF-UX02-r2) stays PARKED per its 2026-10-22T0230Z entry. Every Active item is claimed, merged,
+or parked -- nothing free per the 2026-10-06T17:40Z claim rule.
+
+Swept the full Backlog section for any `ready now`/`claim relay/...` item not already covered: every one
+found (FTF-UX00, FTF-0501-F2, FTF-0512-F2/F3, FTF-0519-P1/P2, FTF-H011-P1, FTF-H010-P3a, FTF-0502-P1,
+FTF-0505) is explicitly marked CERTIFIED in the same bullet despite older unpruned body text still
+saying "ready now"; FTF-1504/FTF-0617/FTF-R004-P3/FTF-H011-P3/FTF-UX04/FTF-R006-P2 each already have an
+open draft `[relay]` PR (#759/#732/#709/#974/#960/#961) -- skip per claim rule regardless of age. No
+genuinely unclaimed, non-parked, non-certified item found anywhere in Active or Backlog this shift.
+
+Full detail: `docs/progress/2026-10-23T0652Z-relay.md`.
+
+STEP 3: this file and the shift log (plain docs-only PR, not `[relay]`-titled; QUEUE.md and
+`docs/certifications/queue.md` untouched -- nothing here is a certification action). STEP 4: routine
+saturation, not a systemic blocker -- no new `BLOCKER.md` entry, no new "Owner actions" line, no item
+claimed. Certified/product-true counts unchanged (nothing certified this shift).
