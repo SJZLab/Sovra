@@ -25254,3 +25254,5 @@ different session.
   note. Full clause-to-test mapping, fault→RED tables, every round's verbatim reviewer report and
   this update's regression writeup: `docs/certifications/submissions/2026-10-22T0119Z-FTF-UX02-r2.md`.
   Shift log: `docs/progress/2026-10-23T1318Z-relay.md`.
+- **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
+- **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.
