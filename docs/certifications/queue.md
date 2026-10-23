@@ -25224,3 +25224,5 @@ different session.
 - **Certified:** FTF-UX07 (#982, merge 2aa77912), round 3; FTF-0101 requalified.
 - **Certified:** FTF-UX05 (#983, merge 5d793fb8), round 3; parents and FTF-UX01 requalified; follow-ups FTF-UX01-F1, FTF-1301-F1 queued.
 - **Certified:** FTF-H010-P3 (#989, merge e5474526), round 2; P3a/P2 requalified.
+- **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
+- **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.
