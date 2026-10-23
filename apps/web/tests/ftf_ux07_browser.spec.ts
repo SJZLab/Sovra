@@ -255,7 +255,7 @@ describe("[UX07-BROWSER] real-Chromium §72.5 evidence", () => {
               m[3] === undefined ? 1 : Number(m[3]),
             ];
           };
-          const lum = ([r, g, b]: number[]) => {
+          const lum = ([r = 0, g = 0, b = 0]: number[]) => {
             const f = (v: number) => {
               const x = v / 255;
               return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
