@@ -239,4 +239,77 @@ describe("[UX07-BROWSER] real-Chromium §72.5 evidence", () => {
       await page.close();
     }
   });
+
+  for (const scheme of SCHEMES) {
+    test(`[${scheme}] focus ring contrast against the page is >= 3:1 (WCAG 1.4.11)`, async () => {
+      const page = await open("en", scheme, VIEWPORTS[0]);
+      try {
+        await page.keyboard.press("Tab");
+        const ratio = await page.evaluate(() => {
+          const parse = (c: string): [number, number, number, number] => {
+            const m = c.match(/[\d.]+/g) ?? [];
+            return [
+              Number(m[0]),
+              Number(m[1]),
+              Number(m[2]),
+              m[3] === undefined ? 1 : Number(m[3]),
+            ];
+          };
+          const lum = ([r, g, b]: number[]) => {
+            const f = (v: number) => {
+              const x = v / 255;
+              return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+            };
+            return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+          };
+          const link = document.activeElement as HTMLElement;
+          const ring = parse(getComputedStyle(link).outlineColor);
+          let bg: number[] = [255, 255, 255];
+          for (let el: HTMLElement | null = link.parentElement; el; el = el.parentElement) {
+            const c = parse(getComputedStyle(el).backgroundColor);
+            if (c[3] > 0) {
+              bg = c;
+              break;
+            }
+          }
+          const a = lum(ring);
+          const b = lum(bg);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        });
+        expect(ratio, "focus ring vs page background").toBeGreaterThanOrEqual(3);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("[custom-hintId] aria-describedby follows a caller-supplied hintId to the hint paragraph", async () => {
+    const page = await browser.newPage({ viewport: VIEWPORTS[0] });
+    try {
+      const body = renderToStaticMarkup(
+        createElement(OidcLoginButton, {
+          apiBaseUrl: API,
+          locale: "en",
+          hintId: "second-login-hint",
+        }),
+      );
+      await page.setContent(
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><style>${TOKENS_CSS}</style></head><body>${body}</body></html>`,
+      );
+      const info = await page.evaluate(() => {
+        const link = document.querySelector("[data-testid=oidc-login-link]") as HTMLElement;
+        const target = document.getElementById(link.getAttribute("aria-describedby") ?? "");
+        return {
+          describedBy: link.getAttribute("aria-describedby"),
+          targetTestId: target?.getAttribute("data-testid") ?? null,
+          defaultIdPresent: document.getElementById("oidc-login-hint") !== null,
+        };
+      });
+      expect(info.describedBy).toBe("second-login-hint");
+      expect(info.targetTestId).toBe("oidc-login-hint");
+      expect(info.defaultIdPresent).toBe(false);
+    } finally {
+      await page.close();
+    }
+  });
 });
