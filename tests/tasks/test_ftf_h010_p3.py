@@ -2406,6 +2406,20 @@ def group_l(m: Any) -> None:
             )
             check("L2", f"L2 adapter base, {label}: no new ModelVersion", len(env.versions()) == 1)
 
+    # L2b: a VALID multi-shard base succeeds for an adapter whose target tensor is in the first shard
+    with Env(m).patched() as env:
+        base = weights_files()
+        base.pop("model.safetensors")
+        base["model-00001-of-00002.safetensors"] = safetensors_bytes(BASE_TENSORS[:1])
+        base["model-00002-of-00002.safetensors"] = safetensors_bytes(BASE_TENSORS[1:])
+        fx = env.adapter_job(base_files=base)
+        outcome = env.run(ADAPTER, fx)
+        check(
+            "L2",
+            f"L2b a valid two-shard base succeeds: ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("succeeded", None),
+        )
+
     # L3: the terminal re-reads are FOR SHARE on PostgreSQL (one row for weights, two for an adapter)
     def share_locked(env: Any) -> list[str]:
         out = []
