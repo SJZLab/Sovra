@@ -69,7 +69,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Button, EmptyState } from "../ui";
+import { AlertMessage, Button, EmptyState, networkErrorMessage } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
@@ -252,15 +252,22 @@ export function CostProfileSearchPanel({
         credentials: "include",
       });
       if (!response.ok) {
+        setSearch(null);
         setError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isSearchResponse(body)) {
+        setSearch(null);
         setError(phrase("costProfileMalformedSearchResponse", locale));
         return;
       }
       setSearch(body);
+    } catch (caught) {
+      // A rejected fetch or a body that is not JSON: the previous result may be stale, and
+      // "no certified cheapest rate" must never be shown for a search that did not complete.
+      setSearch(null);
+      setError(networkErrorMessage(caught, locale));
     } finally {
       setLoading(false);
     }
@@ -293,12 +300,20 @@ export function CostProfileSearchPanel({
         setError(await readErrorDetail(response, locale));
         return;
       }
-      const created: CostProfileRecord = await response.json();
+      const created: unknown = await response.json();
+      if (!isCostProfileRecord(created)) {
+        // The write may have happened, but the response cannot be read: keep the typed values so
+        // nothing the user entered is lost, and say so.
+        setError(phrase("costProfileMalformedSearchResponse", locale));
+        return;
+      }
       setLabel("");
       setRateAmount("");
       setSource("");
       onCreated?.(created);
       await refresh();
+    } catch (caught) {
+      setError(networkErrorMessage(caught, locale));
     } finally {
       setSaving(false);
     }
@@ -306,19 +321,29 @@ export function CostProfileSearchPanel({
 
   async function handleVerify(costProfileId: string) {
     setError(null);
-    const response = await fetch(costProfileVerifyUrl(apiBaseUrl, organizationId, costProfileId), {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!response.ok) {
-      setError(await readErrorDetail(response, locale));
+    try {
+      const response = await fetch(
+        costProfileVerifyUrl(apiBaseUrl, organizationId, costProfileId),
+        { method: "POST", credentials: "include" },
+      );
+      if (!response.ok) {
+        setError(await readErrorDetail(response, locale));
+        return;
+      }
+    } catch (caught) {
+      setError(networkErrorMessage(caught, locale));
       return;
     }
     await refresh();
   }
 
   return (
-    <div data-testid="cost-profile-panel" lang={resolveLocale(locale)} dir={dirFor(locale)}>
+    <div
+      data-testid="cost-profile-panel"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
+    >
       <form onSubmit={handleCreate} data-testid="cost-profile-create-form">
         <label htmlFor="cost-profile-type">{phrase("costProfileTypeLabel", locale)}</label>
         <select
@@ -397,11 +422,7 @@ export function CostProfileSearchPanel({
           required
         />
 
-        {error && (
-          <p role="alert" data-testid="cost-profile-form-error" dir={dirFor(locale)}>
-            <bdi>{error}</bdi>
-          </p>
-        )}
+        {error && <AlertMessage message={error} locale={locale} testId="cost-profile-form-error" />}
 
         <Button
           type="submit"
@@ -430,9 +451,16 @@ export function CostProfileSearchPanel({
               <bdi>{search.current_cheapest_certified.currency}</bdi> /{" "}
               <bdi>{search.current_cheapest_certified.rate_unit}</bdi>
             </p>
-          ) : (
+          ) : search ? (
             <p data-testid="no-certified-cheapest-rate">
               {phrase("costProfileNoCertifiedCheapestRate", locale)}
+            </p>
+          ) : loading ? null : (
+            // The search has not produced a validated answer (it failed or has not run): the
+            // cheapest rate is UNKNOWN, which is not the same statement as "none is certified"
+            // (Law 17).
+            <p data-testid="cheapest-rate-unknown">
+              {phrase("costProfileCheapestUnknown", locale)}
             </p>
           )}
         </div>

@@ -145,7 +145,7 @@
 
 import { useRef, useState } from "react";
 
-import { Button, EmptyState, Pending } from "../ui";
+import { AlertMessage, Button, EmptyState, Pending, networkErrorMessage } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface ProjectSummary {
@@ -265,11 +265,6 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
-function networkErrorMessage(caught: unknown, locale: Locale): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -343,6 +338,9 @@ export function ModelCatalogUI({
 }: ModelCatalogUIProps) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  // True only after a validated, successful project listing: an empty list is shown as an empty
+  // state only when the server really answered with zero projects, never before or after a failure.
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   // Deliberately starts null, never pre-selected -- this task's own real
   // "explicit project selection" requirement.
@@ -366,6 +364,7 @@ export function ModelCatalogUI({
   async function handleLoadProjects() {
     setLoadingProjects(true);
     setProjectsError(null);
+    setProjectsLoaded(false);
     try {
       const response = await fetch(projectsListUrl(apiBaseUrl, organizationId), {
         method: "GET",
@@ -381,6 +380,7 @@ export function ModelCatalogUI({
         return;
       }
       setProjects(body);
+      setProjectsLoaded(true);
     } catch (caught) {
       setProjectsError(networkErrorMessage(caught, locale));
     } finally {
@@ -513,6 +513,7 @@ export function ModelCatalogUI({
       data-testid="model-catalog-ui"
       lang={resolveLocale(locale)}
       dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
     >
       <section data-testid="project-selection">
         <Button
@@ -527,13 +528,26 @@ export function ModelCatalogUI({
           <Pending label={phrase("catalogLoadProjects", locale)} locale={locale} />
         )}
         {projectsError && (
-          <p role="alert" data-testid="projects-error" dir={dirFor(locale)}>
-            <bdi>{projectsError}</bdi>
-          </p>
+          <AlertMessage message={projectsError} locale={locale} testId="projects-error" />
+        )}
+        {projectsLoaded && projects.length === 0 && (
+          <EmptyState
+            title={phrase("catalogNoProjectsTitle", locale)}
+            why={phrase("catalogNoProjectsWhy", locale)}
+            action={
+              <Button data-testid="projects-reload-button" onClick={handleLoadProjects}>
+                {phrase("catalogLoadProjects", locale)}
+              </Button>
+            }
+          />
         )}
         <ul data-testid="project-list">
           {projects.map((project) => (
-            <li key={project.id} data-testid={`project-row-${project.id}`}>
+            <li
+              key={project.id}
+              data-testid={`project-row-${project.id}`}
+              style={{ overflowWrap: "anywhere" }}
+            >
               <span>
                 <bdi>{project.name}</bdi>
               </span>
@@ -594,9 +608,7 @@ export function ModelCatalogUI({
 
       {loadingCatalog && <Pending label={phrase("catalogLoadCatalog", locale)} locale={locale} />}
       {catalogError && (
-        <p role="alert" data-testid="catalog-error" dir={dirFor(locale)}>
-          <bdi>{catalogError}</bdi>
-        </p>
+        <AlertMessage message={catalogError} locale={locale} testId="catalog-error" />
       )}
 
       {catalog && (
@@ -660,11 +672,7 @@ export function ModelCatalogUI({
               </option>
             </select>
           </label>
-          {probeError && (
-            <p role="alert" data-testid="probe-error" dir={dirFor(locale)}>
-              <bdi>{probeError}</bdi>
-            </p>
-          )}
+          {probeError && <AlertMessage message={probeError} locale={locale} testId="probe-error" />}
 
           {catalog.entries.length === 0 && (
             <EmptyState

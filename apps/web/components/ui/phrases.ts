@@ -340,6 +340,30 @@ export const PHRASES = {
     en: "The gateway could not be reached, so compatibility could not be determined. No recommendation is made.",
     ar: "تعذّر الوصول إلى البوابة، فلم يتمكن من تحديد التوافق. لا يُقدَّم أي توصية.",
   },
+  // FTF-UX05 round 3 (shared by the 0214/0308/0309/1301 components).
+  networkErrorUnknown: { en: "unknown error", ar: "خطأ غير معروف" },
+  malformedResponseMessage: {
+    en: "The server sent a response this page cannot read. Nothing was changed.",
+    ar: "أرسل الخادم استجابة لا تستطيع هذه الصفحة قراءتها. لم يتم تغيير أي شيء.",
+  },
+  errorRecoveryStep: {
+    en: "Check your connection and try again. If it keeps failing, contact an administrator.",
+    ar: "تحقق من اتصالك ثم حاول مرة أخرى. إذا استمر الفشل، تواصل مع المسؤول.",
+  },
+  catalogNoProjectsTitle: { en: "No projects found", ar: "لم يتم العثور على مشاريع" },
+  catalogNoProjectsWhy: {
+    en: "This organization has no projects yet, so no catalog can be loaded. Create a project, then load projects again.",
+    ar: "لا تحتوي هذه المؤسسة على مشاريع بعد، لذلك لا يمكن تحميل أي كتالوج. أنشئ مشروعًا ثم حمّل المشاريع مرة أخرى.",
+  },
+  mappingNoArtifactsTitle: { en: "No trainable artifacts", ar: "لا توجد مصنفات قابلة للتدريب" },
+  mappingNoArtifactsWhy: {
+    en: "This organization has no registered trainable artifacts, so there is nothing to map this model to. Register an artifact, then load artifacts again.",
+    ar: "لا تحتوي هذه المؤسسة على مصنفات قابلة للتدريب مسجَّلة، لذلك لا يوجد ما يمكن ربط هذا النموذج به. سجّل مصنفًا ثم حمّل المصنفات مرة أخرى.",
+  },
+  costProfileCheapestUnknown: {
+    en: "Cheapest certified rate unknown: the search has not completed.",
+    ar: "السعر المعتمد الأرخص غير معروف: لم يكتمل البحث.",
+  },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 /** `{name}` placeholders in a catalogue string are replaced from `vars`; nothing else is touched

@@ -68,7 +68,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Button } from "../ui";
+import { AlertMessage, Button, networkErrorMessage } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
@@ -159,11 +159,6 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   if (response.status === 503) return phrase("compatGatewayUnavailableMessage", locale);
   if (response.status === 404) return phrase("compatNotFoundMessage", locale);
   return phrase("requestFailedTemplate", locale, { status: response.status });
-}
-
-function networkErrorMessage(caught: unknown, locale: Locale): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
 }
 
 function shown(value: unknown, locale: Locale): string {
@@ -418,6 +413,7 @@ export function CapabilityCompatibilityUI({
       aria-label="Capability compatibility"
       lang={resolveLocale(locale)}
       dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
     >
       <h2>
         {phrase("compatibilityHeadingPrefix", locale)} <bdi>{modelName}</bdi>
@@ -425,11 +421,7 @@ export function CapabilityCompatibilityUI({
       <Button onClick={handleLoad} disabled={loading} aria-busy={loading}>
         {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
       </Button>
-      {error ? (
-        <p role="alert" dir={dirFor(locale)}>
-          <bdi>{error}</bdi>
-        </p>
-      ) : null}
+      {error ? <AlertMessage message={error} locale={locale} testId="compat-error" /> : null}
       {capabilities ? (
         <div>
           <dl>
@@ -478,7 +470,7 @@ export function CapabilityCompatibilityUI({
               )}
             </dd>
           </dl>
-          <table>
+          <table style={{ inlineSize: "100%", tableLayout: "fixed", overflowWrap: "anywhere" }}>
             <tbody>
               {DIMENSIONS.map(({ key, dim, labelKey }) => (
                 <DimensionRow

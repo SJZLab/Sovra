@@ -93,7 +93,7 @@
 
 import { useRef, useState } from "react";
 
-import { Button } from "../ui";
+import { AlertMessage, Button, EmptyState, Pending, networkErrorMessage } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface MappedArtifact {
@@ -207,11 +207,6 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
-function networkErrorMessage(caught: unknown, locale: Locale): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
-}
-
 function shown(value: unknown, locale: Locale): string {
   if (value === null || value === undefined || value === "") {
     return phrase("notRecordedText", locale);
@@ -286,6 +281,9 @@ export function ModelToArtifactMappingUI({
 
   const [artifacts, setArtifacts] = useState<MappedArtifact[]>([]);
   const [artifactsError, setArtifactsError] = useState<string | null>(null);
+  const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+  // True only after a validated, successful listing (an empty list is then a real empty state).
+  const [artifactsLoaded, setArtifactsLoaded] = useState(false);
   // Deliberately starts null: never pre-selected, never derived from the alias.
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
 
@@ -296,6 +294,7 @@ export function ModelToArtifactMappingUI({
 
   const [changes, setChanges] = useState<MappingChange[] | null>(null);
   const [changesError, setChangesError] = useState<string | null>(null);
+  const [loadingChanges, setLoadingChanges] = useState(false);
 
   async function handleLoadMapping() {
     setLoadingMapping(true);
@@ -328,6 +327,8 @@ export function ModelToArtifactMappingUI({
 
   async function handleLoadArtifacts() {
     setArtifactsError(null);
+    setArtifactsLoaded(false);
+    setLoadingArtifacts(true);
     try {
       const response = await fetch(artifactsUrl(apiBaseUrl, organizationId), {
         method: "GET",
@@ -343,13 +344,17 @@ export function ModelToArtifactMappingUI({
         return;
       }
       setArtifacts(body);
+      setArtifactsLoaded(true);
     } catch (caught) {
       setArtifactsError(networkErrorMessage(caught, locale));
+    } finally {
+      setLoadingArtifacts(false);
     }
   }
 
   async function handleLoadChanges() {
     setChangesError(null);
+    setLoadingChanges(true);
     try {
       const response = await fetch(
         mappingChangesUrl(apiBaseUrl, organizationId, connectionId, modelName),
@@ -371,6 +376,8 @@ export function ModelToArtifactMappingUI({
       setChanges(body.changes);
     } catch (caught) {
       setChangesError(networkErrorMessage(caught, locale));
+    } finally {
+      setLoadingChanges(false);
     }
   }
 
@@ -473,8 +480,9 @@ export function ModelToArtifactMappingUI({
       aria-label={phrase("mappingAriaLabel", locale, { model: modelName })}
       lang={resolveLocale(locale)}
       dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
     >
-      <h2 data-testid="mapping-model-name">
+      <h2 data-testid="mapping-model-name" style={{ overflowWrap: "anywhere" }}>
         <bdi>{modelName}</bdi>
       </h2>
       <p data-testid="mapping-three-steps-notice">{phrase("mappingThreeStepsNotice", locale)}</p>
@@ -483,14 +491,14 @@ export function ModelToArtifactMappingUI({
         <Button
           data-testid="load-mapping-button"
           disabled={loadingMapping}
+          aria-busy={loadingMapping}
           onClick={handleLoadMapping}
         >
           {phrase("mappingLoadMapping", locale)}
         </Button>
+        {loadingMapping && <Pending label={phrase("mappingLoadMapping", locale)} locale={locale} />}
         {mappingError && (
-          <p role="alert" data-testid="mapping-error">
-            <bdi>{mappingError}</bdi>
-          </p>
+          <AlertMessage message={mappingError} locale={locale} testId="mapping-error" />
         )}
         {mapping && (
           <div data-testid="mapping-state" tabIndex={-1}>
@@ -518,13 +526,30 @@ export function ModelToArtifactMappingUI({
       </section>
 
       <section data-testid="mapping-picker">
-        <Button data-testid="load-artifacts-button" onClick={handleLoadArtifacts}>
+        <Button
+          data-testid="load-artifacts-button"
+          disabled={loadingArtifacts}
+          aria-busy={loadingArtifacts}
+          onClick={handleLoadArtifacts}
+        >
           {phrase("mappingLoadArtifacts", locale)}
         </Button>
+        {loadingArtifacts && (
+          <Pending label={phrase("mappingLoadArtifacts", locale)} locale={locale} />
+        )}
         {artifactsError && (
-          <p role="alert" data-testid="artifacts-error">
-            <bdi>{artifactsError}</bdi>
-          </p>
+          <AlertMessage message={artifactsError} locale={locale} testId="artifacts-error" />
+        )}
+        {artifactsLoaded && artifacts.length === 0 && (
+          <EmptyState
+            title={phrase("mappingNoArtifactsTitle", locale)}
+            why={phrase("mappingNoArtifactsWhy", locale)}
+            action={
+              <Button data-testid="artifacts-reload-button" onClick={handleLoadArtifacts}>
+                {phrase("mappingLoadArtifacts", locale)}
+              </Button>
+            }
+          />
         )}
         <ul data-testid="artifact-list">
           {artifacts.map((artifact) => (
@@ -604,11 +629,7 @@ export function ModelToArtifactMappingUI({
           </div>
         )}
 
-        {writeError && (
-          <p role="alert" data-testid="write-error">
-            <bdi>{writeError}</bdi>
-          </p>
-        )}
+        {writeError && <AlertMessage message={writeError} locale={locale} testId="write-error" />}
         {notice && (
           <p role="status" data-testid="mapping-notice">
             {notice}
@@ -617,13 +638,19 @@ export function ModelToArtifactMappingUI({
       </section>
 
       <section data-testid="mapping-history">
-        <Button data-testid="load-changes-button" onClick={handleLoadChanges}>
+        <Button
+          data-testid="load-changes-button"
+          disabled={loadingChanges}
+          aria-busy={loadingChanges}
+          onClick={handleLoadChanges}
+        >
           {phrase("mappingLoadChangeHistory", locale)}
         </Button>
+        {loadingChanges && (
+          <Pending label={phrase("mappingLoadChangeHistory", locale)} locale={locale} />
+        )}
         {changesError && (
-          <p role="alert" data-testid="changes-error">
-            <bdi>{changesError}</bdi>
-          </p>
+          <AlertMessage message={changesError} locale={locale} testId="changes-error" />
         )}
         {changes && changes.length === 0 && (
           <p data-testid="changes-empty">{phrase("mappingNoChangesRecorded", locale)}</p>
@@ -657,7 +684,7 @@ function ArtifactDetails({
 }) {
   const packages = artifact.required_python_packages ?? [];
   return (
-    <dl data-testid={`${prefix}-artifact-details`}>
+    <dl data-testid={`${prefix}-artifact-details`} style={{ overflowWrap: "anywhere" }}>
       <dt>{phrase("artifactDetailArtifact", locale)}</dt>
       <dd data-testid={`${prefix}-artifact-name`}>
         <bdi>{artifact.display_name}</bdi>
