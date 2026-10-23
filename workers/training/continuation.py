@@ -49,6 +49,7 @@ __all__ = [
     "ExactResumePlan",
     "ModelActionFacts",
     "NewRunPlan",
+    "canonical_origin",
     "evaluate_model_actions",
     "require_action_allowed",
 ]
@@ -85,6 +86,8 @@ CODE_NOT_CURRENT_PRODUCTION = "not_current_production"
 CODE_UNKNOWN_ACTION = "unknown_action"
 
 PREREQUISITE_AVAILABLE = "available"
+PREREQUISITE_UNAVAILABLE = "unavailable"
+_PREREQUISITE_STATES = (PREREQUISITE_AVAILABLE, PREREQUISITE_UNAVAILABLE)
 _PREREQUISITE_OF = MappingProxyType(
     {
         "request_qualification": "qualification_lifecycle",
@@ -92,15 +95,17 @@ _PREREQUISITE_OF = MappingProxyType(
         "retire": "status_lifecycle",
     }
 )
-_USE_ACTIONS = frozenset(
+# True for an action that uses the model (so a revoked license or a failing base denies it).
+_IS_USE_ACTION = MappingProxyType(
     {
-        "evaluate",
-        "compare",
-        "continue_tuning",
-        "exact_resume",
-        "request_qualification",
-        "retain_incumbent",
-        "deploy_route",
+        "evaluate": True,
+        "compare": True,
+        "continue_tuning": True,
+        "exact_resume": True,
+        "request_qualification": True,
+        "retain_incumbent": True,
+        "deploy_route": True,
+        "retire": False,
     }
 )
 
@@ -119,6 +124,17 @@ class ActionDeniedError(Exception):
         super().__init__(code)
         self.action = action
         self.code = code
+
+
+def canonical_origin(value: object) -> str:
+    """The module's own singleton for `value`, or `ContinuationFactsError`. No case folding,
+    trimming or subclass: callers then compare by identity (`is`)."""
+    if type(value) is not str:
+        raise ContinuationFactsError("origin_invalid")
+    try:
+        return ORIGINS[ORIGINS.index(value)]
+    except ValueError:
+        raise ContinuationFactsError("origin_invalid") from None
 
 
 def _exact_str(value: object, what: str, *, limit: int) -> str:
@@ -191,17 +207,16 @@ class ModelActionFacts:
     def __post_init__(self) -> None:
         _exact_str(self.model_version_id, "model_version_id", limit=_ID_MAX)
         _exact_str(self.new_run_id, "new_run_id", limit=_ID_MAX)
-        if type(self.origin) is not str or self.origin not in ORIGINS:
-            raise ContinuationFactsError("origin_invalid")
+        object.__setattr__(self, "origin", canonical_origin(self.origin))
         if type(self.validated) is not bool:
             raise ContinuationFactsError("validated_invalid")
-        is_endpoint = self.origin == ORIGIN_EXTERNAL_ENDPOINT
+        is_endpoint = self.origin is ORIGIN_EXTERNAL_ENDPOINT
         if is_endpoint:
             if self.license_accepted is not None:
                 raise ContinuationFactsError("license_accepted_invalid")
         elif type(self.license_accepted) is not bool:
             raise ContinuationFactsError("license_accepted_invalid")
-        if self.origin == ORIGIN_IMPORTED_ADAPTER:
+        if self.origin is ORIGIN_IMPORTED_ADAPTER:
             if type(self.base_compatible) is not bool:
                 raise ContinuationFactsError("base_compatible_invalid")
         elif self.base_compatible is not None:
@@ -236,7 +251,7 @@ def _allow(action: str, plan: NewRunPlan | ExactResumePlan | None = None) -> Act
 
 
 def _continue_tuning(facts: ModelActionFacts) -> ActionDecision:
-    if facts.origin == ORIGIN_EXTERNAL_ENDPOINT:
+    if facts.origin is ORIGIN_EXTERNAL_ENDPOINT:
         return _deny("continue_tuning", CODE_ENDPOINT_NOT_TRAINABLE)
     plan = NewRunPlan(parent_model_version_id=facts.model_version_id, run_id=facts.new_run_id)
     return _allow("continue_tuning", plan)
@@ -244,7 +259,7 @@ def _continue_tuning(facts: ModelActionFacts) -> ActionDecision:
 
 def _exact_resume(facts: ModelActionFacts) -> ActionDecision:
     checkpoint = facts.checkpoint
-    if facts.origin != ORIGIN_FACTORY_TRAINED or checkpoint is None:
+    if facts.origin is not ORIGIN_FACTORY_TRAINED or checkpoint is None:
         return _deny("exact_resume", CODE_NO_TRUSTED_CHECKPOINT)
     plan = ExactResumePlan(
         checkpoint_id=checkpoint.checkpoint_id, start_step=checkpoint.step, run_id=checkpoint.run_id
@@ -252,9 +267,21 @@ def _exact_resume(facts: ModelActionFacts) -> ActionDecision:
     return _allow("exact_resume", plan)
 
 
+def _canonical_state(state: object) -> str | None:
+    """The module's own singleton for an exact prerequisite state, else None (unknown)."""
+    if type(state) is not str:
+        return None
+    try:
+        return _PREREQUISITE_STATES[_PREREQUISITE_STATES.index(state)]
+    except ValueError:
+        return None
+
+
 def _needs_prerequisite(action: str, facts: ModelActionFacts) -> ActionDecision:
-    state = facts.prerequisites.get(_PREREQUISITE_OF[action])
-    if type(state) is str and state == PREREQUISITE_AVAILABLE:
+    if (
+        _canonical_state(facts.prerequisites.get(_PREREQUISITE_OF[action]))
+        is PREREQUISITE_AVAILABLE
+    ):
         return _allow(action)
     return _deny(action, CODE_PREREQUISITE_NOT_AVAILABLE)
 
@@ -265,23 +292,56 @@ def _retain_incumbent(facts: ModelActionFacts) -> ActionDecision:
     return _deny("retain_incumbent", CODE_NOT_CURRENT_PRODUCTION)
 
 
+def _evaluate(facts: ModelActionFacts) -> ActionDecision:
+    return _allow("evaluate")
+
+
+def _compare(facts: ModelActionFacts) -> ActionDecision:
+    return _allow("compare")
+
+
+def _request_qualification(facts: ModelActionFacts) -> ActionDecision:
+    return _needs_prerequisite("request_qualification", facts)
+
+
+def _deploy_route(facts: ModelActionFacts) -> ActionDecision:
+    return _needs_prerequisite("deploy_route", facts)
+
+
+def _retire(facts: ModelActionFacts) -> ActionDecision:
+    return _needs_prerequisite("retire", facts)
+
+
+_RULES = MappingProxyType(
+    {
+        "evaluate": _evaluate,
+        "compare": _compare,
+        "continue_tuning": _continue_tuning,
+        "exact_resume": _exact_resume,
+        "request_qualification": _request_qualification,
+        "retain_incumbent": _retain_incumbent,
+        "deploy_route": _deploy_route,
+        "retire": _retire,
+    }
+)
+
+
+def _use_gate(action: str, facts: ModelActionFacts) -> ActionDecision | None:
+    if facts.license_accepted is False:
+        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)
+    if facts.base_compatible is False:
+        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)
+    return None
+
+
 def _decide(action: str, facts: ModelActionFacts) -> ActionDecision:
     if not facts.validated:
         return _deny(action, CODE_IMPORT_NOT_VALIDATED)
-    if action in _USE_ACTIONS:
-        if facts.license_accepted is False:
-            return _deny(action, CODE_LICENSE_NOT_ACCEPTED)
-        if facts.base_compatible is False:
-            return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)
-    if action == "continue_tuning":
-        return _continue_tuning(facts)
-    if action == "exact_resume":
-        return _exact_resume(facts)
-    if action == "retain_incumbent":
-        return _retain_incumbent(facts)
-    if action in _PREREQUISITE_OF:
-        return _needs_prerequisite(action, facts)
-    return _allow(action)
+    if _IS_USE_ACTION[action]:
+        denied = _use_gate(action, facts)
+        if denied is not None:
+            return denied
+    return _RULES[action](facts)
 
 
 def evaluate_model_actions(facts: ModelActionFacts) -> Mapping[str, ActionDecision]:

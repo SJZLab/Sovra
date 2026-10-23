@@ -55,9 +55,9 @@ from app.model_versions.model_role_crud import (
     revoke_role,
 )
 from app.model_versions.model_role_schema import (
-    ADMIN_ONLY_ROLES,
     ModelRoleAssignment,
     ModelRoleValidationError,
+    is_admin_only,
     validate_idempotency_key,
     validate_role,
 )
@@ -125,7 +125,7 @@ async def _read_object(request: Request) -> dict[str, Any]:
 
 
 def _require_role_allowed(ctx: AuthorizedContext, role: str) -> None:
-    if role in ADMIN_ONLY_ROLES and ctx.role is not Role.ORGANIZATION_ADMIN:
+    if is_admin_only(role) and ctx.role is not Role.ORGANIZATION_ADMIN:
         raise HTTPException(status_code=403, detail="forbidden")
 
 
@@ -167,7 +167,7 @@ def build_model_role_router(
                 body = [_serialize(row) for row in rows]
         except (ModelVersionNotFoundError, ProjectNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.post(_ROLES_PATH)
     async def assign(
@@ -219,7 +219,7 @@ def build_model_role_router(
     ) -> JSONResponse:
         del organization_id
         raw = await request.body()
-        if raw.strip() and await _read_object(request) != {}:
+        if raw and not raw.isspace() and await _read_object(request) != {}:
             raise HTTPException(status_code=400, detail="invalid_body")
         try:
             checked_role = validate_role(role)
@@ -242,7 +242,7 @@ def build_model_role_router(
             raise HTTPException(status_code=404, detail="not_found") from exc
         except RoleConflictError as exc:
             raise HTTPException(status_code=409, detail=exc.code) from None
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.get(_ACTIONS_PATH)
     async def actions(
@@ -269,6 +269,6 @@ def build_model_role_router(
             raise HTTPException(status_code=404, detail="not_found") from exc
         except ContinuationFactsError as exc:
             raise HTTPException(status_code=409, detail="model_facts_invalid") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     return router

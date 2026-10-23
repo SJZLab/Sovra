@@ -24,6 +24,7 @@ from the database, never from request text, and returns the `ModelActionFacts`
 
 from __future__ import annotations
 
+import hmac
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -31,7 +32,15 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
-from workers.training.continuation import ModelActionFacts
+from workers.training.continuation import (
+    ORIGIN_EXTERNAL_ENDPOINT,
+    ORIGIN_FACTORY_TRAINED,
+    ORIGIN_IMPORTED_ADAPTER,
+    ORIGIN_IMPORTED_WEIGHTS,
+    ContinuationFactsError,
+    ModelActionFacts,
+    canonical_origin,
+)
 
 from app.artifacts.artifact_lineage_manifest import (
     ArtifactLineageError,
@@ -59,11 +68,6 @@ __all__ = [
     "list_roles",
     "revoke_role",
 ]
-
-_ORIGIN_FACTORY_TRAINED = "factory_trained"
-_ORIGIN_IMPORTED_WEIGHTS = "imported_weights"
-_ORIGIN_IMPORTED_ADAPTER = "imported_adapter"
-_ORIGIN_EXTERNAL_ENDPOINT = "external_endpoint"
 
 # violated index / trigger CONSTRAINT -> the stable conflict code (the DB is the authority)
 _CONFLICT_BY_NAME = {
@@ -99,10 +103,19 @@ def _violated_name(exc: DBAPIError) -> str | None:
     return name if isinstance(name, str) else None
 
 
+def _origin_of(version: ModelVersion) -> str | None:
+    """The module's own singleton for the version's origin, or None when it is not exactly one of
+    the four (a row the database CHECK would have refused). Callers compare with `is`."""
+    try:
+        return canonical_origin(version.origin)
+    except ContinuationFactsError:
+        return None
+
+
 def is_validated(session: Session, context: TenantContext, version: ModelVersion) -> bool:
     """A version is validated when the Factory trained it, or a succeeded import job names it as
     its result. An FTF-1001 synchronous create has neither."""
-    if version.origin == _ORIGIN_FACTORY_TRAINED:
+    if _origin_of(version) is ORIGIN_FACTORY_TRAINED:
         return True
     statement = select(ModelImportJob.id).where(
         ModelImportJob.organization_id == context.organization_id,
@@ -125,7 +138,7 @@ def _find_by_idempotency_key(
 
 
 def _replay_or_reuse(existing: ModelRoleAssignment, digest: str) -> AssignmentResult:
-    if existing.request_sha256 != digest:
+    if not hmac.compare_digest(existing.request_sha256.encode(), digest.encode()):
         raise RoleConflictError("idempotency_key_reused")
     return AssignmentResult(assignment=existing, replayed=True)
 
@@ -289,7 +302,7 @@ def _base_compatible(
         ModelVersion.project_id == version.project_id,
     )
     parent = execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
-    if parent is None or parent.origin != _ORIGIN_IMPORTED_WEIGHTS:
+    if parent is None or _origin_of(parent) is not ORIGIN_IMPORTED_WEIGHTS:
         return False
     if not is_validated(session, context, parent):
         return False
@@ -309,15 +322,15 @@ def build_action_facts(
     """The server-side facts for `evaluate_model_actions`. No checkpoint fact and no available
     prerequisite is ever assumed: FTF-0713's checkpoint manifest, the qualification lifecycle,
     deployment routing and the status lifecycle do not exist yet."""
-    origin = version.origin
-    is_endpoint = origin == _ORIGIN_EXTERNAL_ENDPOINT
+    origin = canonical_origin(version.origin)
+    is_endpoint = origin is ORIGIN_EXTERNAL_ENDPOINT
     artifact = (
         None if is_endpoint else _artifact_of(session, context, version.trainable_artifact_id)
     )
     license_accepted = None if is_endpoint else _license_accepted(artifact)
     base_compatible = (
         _base_compatible(session, context, version, artifact)
-        if origin == _ORIGIN_IMPORTED_ADAPTER
+        if origin is ORIGIN_IMPORTED_ADAPTER
         else None
     )
     return ModelActionFacts(

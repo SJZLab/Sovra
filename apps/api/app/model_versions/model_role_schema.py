@@ -30,6 +30,7 @@ __all__ = [
     "ROLES",
     "ModelRoleAssignment",
     "ModelRoleValidationError",
+    "is_admin_only",
     "request_sha256",
     "validate_idempotency_key",
     "validate_role",
@@ -60,6 +61,11 @@ def validate_role(value: object) -> str:
         return ROLES[ROLES.index(value)]
     except ValueError:
         raise ModelRoleValidationError("invalid_role") from None
+
+
+def is_admin_only(role: object) -> bool:
+    """True only for the exact spelling of an admin-only role (no folding, no trimming)."""
+    return type(role) is str and role in ADMIN_ONLY_ROLES
 
 
 def validate_idempotency_key(value: object) -> str:

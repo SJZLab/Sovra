@@ -162,6 +162,10 @@ def expected(
     return out
 
 
+class S(str):
+    """A str subclass: equal to its text but never an exact str."""
+
+
 def suite(m: Any, source: str, *, big: bool = True) -> None:
     # ---- A1: complete decision table -------------------------------------------------
     rows = 0
@@ -186,6 +190,11 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
         got = m.evaluate_model_actions(facts)
         want = expected(origin, validated, license_arg, base_arg, incumbent)
         check("A1", f"decision keys are exactly ACTIONS for {origin}", tuple(got) == ACTIONS)
+        check(
+            "A1",
+            f"every decision names its own action for {origin}",
+            all(d.action == name for name, d in got.items()),
+        )
         for action in ACTIONS:
             decision = got[action]
             rows += 1
@@ -330,7 +339,10 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
             "AVAILABLE",
             "Available",
             "available ",
+            " available",
+            "available\u200b",
             "",
+            S("available"),
             True,
             1,
             None,
@@ -445,10 +457,18 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
     except m.ContinuationFactsError:
         check("C1", "a new run id equal to the checkpoint's run id is refused", True)
 
-    # ---- D1 -------------------------------------------------------------------------------
-    class S(str):
-        pass
+    alpha = m.CheckpointFact(checkpoint_id=CKPT, step=7, run_id="Run-Alpha")
+    for other_run in ("run-alpha", "RUN-ALPHA", " Run-Alpha", "Run-Alpha "):
+        got = m.evaluate_model_actions(
+            make_facts(m, origin="factory_trained", checkpoint=alpha, new_run_id=other_run)
+        )
+        check(
+            "C1",
+            f"run id {other_run!r} differs from the checkpoint's run id (no normalisation)",
+            got["continue_tuning"].plan.run_id == other_run,
+        )
 
+    # ---- D1 -------------------------------------------------------------------------------
     def refused(label: str, **kwargs: Any) -> None:
         try:
             make_facts(m, **kwargs)
@@ -550,6 +570,36 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
             marker not in str(exc) and marker not in repr(exc.args),
         )
 
+    # ---- canonical_origin -----------------------------------------------------------------
+    for origin in ORIGINS:
+        got = m.canonical_origin(origin)
+        check(
+            "D1",
+            f"canonical_origin({origin!r}) is the module's own singleton",
+            got == origin and got is m.ORIGINS[m.ORIGINS.index(origin)],
+        )
+    for bad in (
+        "Factory_Trained",
+        "FACTORY_TRAINED",
+        " factory_trained",
+        "factory_trained ",
+        "",
+        None,
+        1,
+        b"factory_trained",
+        S("factory_trained"),
+        ("factory_trained",),
+    ):
+        try:
+            m.canonical_origin(bad)
+            check("D1", f"canonical_origin refuses {bad!r}", False)
+        except m.ContinuationFactsError as exc:
+            check(
+                "D1",
+                f"canonical_origin refuses {bad!r} with the code only",
+                str(exc) == "origin_invalid" and exc.args == ("origin_invalid",),
+            )
+
     # ---- G1 -------------------------------------------------------------------------------
     tree = ast.parse(source)
     allowed_imports = {"__future__", "collections.abc", "dataclasses", "types", "typing", "re"}
@@ -611,6 +661,10 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 def _jsonb_as_json(element: Any, compiler: Any, **kw: Any) -> str:
     return "JSON"
 
+
+from workers.training.continuation import (  # noqa: E402
+    ContinuationFactsError as ContinuationFactsErrorType,
+)
 
 import app.auth.organization_workspace_schema  # noqa: E402,F401  (FK targets in the metadata)
 import app.auth.resource_authorization as resource_authorization  # noqa: E402
@@ -709,7 +763,12 @@ class Env:
             removed = [
                 c
                 for c in table.constraints
-                if getattr(c, "name", None) == "ck_trainable_artifacts_ready_needs_license"
+                if getattr(c, "name", None)
+                in (
+                    "ck_trainable_artifacts_ready_needs_license",
+                    "ck_model_versions_origin_values",
+                    "ck_model_import_jobs_succeeded_has_result",
+                )
             ]
             for c in removed:
                 table.constraints.discard(c)
@@ -863,6 +922,7 @@ class Env:
         project: uuid.UUID = PROJECT,
         state: str = "succeeded",
         result: Any = "auto",
+        result_in_any_state: bool = False,
     ) -> ModelImportJob:
         origin = version.origin
         succeeded = state == "succeeded"
@@ -876,7 +936,7 @@ class Env:
             if origin == "external_endpoint"
             else None,
             result_model_version_id=(version.id if result == "auto" else result)
-            if succeeded
+            if (succeeded or result_in_any_state)
             else None,
             claim_epoch=0 if state == "queued" else 1,
             lease_expires_at=NOW + timedelta(hours=1) if state == "validating" else None,
@@ -955,6 +1015,32 @@ def store_suite(crud: Any) -> None:
                 f"idempotency key {str(key)[:10]!r} refused invalid_body",
                 (not ok) and exc.code == "invalid_body",
             )
+    for role in schema.ROLES:
+        check(
+            "SC",
+            f"is_admin_only({role!r})",
+            schema.is_admin_only(role) is (role in ("current_production", "judge")),
+        )
+    for bad in (
+        "Judge",
+        "JUDGE",
+        "judge ",
+        " judge",
+        "ｊudge",
+        "current_production\u200b",
+        "",
+        None,
+        1,
+        S("judge"),
+        S("current_production"),
+        b"judge",
+        ("judge",),
+    ):
+        check(
+            "SC",
+            f"is_admin_only({bad!r}) is False for anything but the exact spelling",
+            schema.is_admin_only(bad) is False,
+        )
     check(
         "SC",
         "ADMIN_ONLY_ROLES is exactly the incumbent and the judge",
@@ -1061,7 +1147,9 @@ def store_suite(crud: Any) -> None:
         check("S1", "the refusal wrote nothing", len(e.rows()) == 2 and len(e.audit.events) == 2)
         # validation is not satisfied by a non-succeeded job
         for state in ("queued", "validating", "failed", "blocked_external"):
-            pending = e.version("weights", artifact=e.artifact(char="1"), job_state=state)
+            pending = e.version("weights", artifact=e.artifact(char="1"), validated=False)
+            # (a row Postgres' own CHECK would refuse: a result named in a non-succeeded state)
+            e.job(pending, state=state, result_in_any_state=True)
             try:
                 e.assign(pending, "baseline", f"p-{state}")
                 check("S1", f"a {state} job does not validate", False)
@@ -1146,6 +1234,23 @@ def store_suite(crud: Any) -> None:
                 check("S2", f"an unmapped violation {name!r} is not a conflict code", False)
             finally:
                 FaultySession.fail_with = None
+    for name in [*names, "uq_model_role_assignments_idempotency"]:
+        for variant in (name.upper(), name + " ", " " + name, name.replace("_", "-")):
+            with Env(crud).patched() as e:
+                e.session = FaultySession(e.engine)
+                v = e.version("weights", artifact=e.artifact())
+                FaultySession.fail_with = (variant,)
+                try:
+                    e.assign(v, "baseline", "d-3")
+                    check("S2", f"variant {variant!r} is not swallowed", False)
+                except IntegrityError:
+                    check("S2", f"variant {variant!r} of a mapped name is re-raised as is", True)
+                except crud.RoleConflictError:
+                    check(
+                        "S2", f"variant {variant!r} of a mapped name must not map to a code", False
+                    )
+                finally:
+                    FaultySession.fail_with = None
     # the idempotency index race: re-read and replay / reuse / re-raise when nothing is there
     for label, stored_digest, expect in (
         ("same digest", "match", "replay"),
@@ -1211,6 +1316,57 @@ def store_suite(crud: Any) -> None:
                 FaultySession.fail_with = None
                 if stored_digest is not None:
                     crud._find_by_idempotency_key = original_find
+
+    # a case / space variant of the idempotency index name is NOT the idempotency index, even when
+    # a raced row is waiting: it must be re-raised, never replayed
+    for variant in (
+        "UQ_MODEL_ROLE_ASSIGNMENTS_IDEMPOTENCY",
+        "uq_model_role_assignments_idempotency ",
+        " uq_model_role_assignments_idempotency",
+        "uq-model-role-assignments-idempotency",
+    ):
+        with Env(crud).patched() as e:
+            e.session = FaultySession(e.engine)
+            v = e.version("weights", artifact=e.artifact())
+            e.session.add(
+                schema.ModelRoleAssignment(
+                    organization_id=ORG,
+                    project_id=PROJECT,
+                    model_version_id=v.id,
+                    role="baseline",
+                    assigned_by="raced",
+                    request_id="r",
+                    idempotency_key="race-key",
+                    request_sha256=schema.request_sha256(PROJECT, v.id, "baseline"),
+                )
+            )
+            e.session.flush()
+            original_find = crud._find_by_idempotency_key
+            calls = {"n": 0}
+
+            def late_find(
+                session: Any,
+                ctx: Any,
+                project: Any,
+                key: Any,
+                _o: Any = original_find,
+                _c: Any = calls,
+            ) -> Any:
+                _c["n"] += 1
+                return None if _c["n"] == 1 else _o(session, ctx, project, key)
+
+            crud._find_by_idempotency_key = late_find
+            FaultySession.fail_with = (variant,)
+            try:
+                e.assign(v, "baseline", "race-key")
+                check("S2", f"variant {variant!r} with a raced row is not replayed", False)
+            except IntegrityError:
+                check("S2", f"variant {variant!r} with a raced row is re-raised", True)
+            except crud.RoleConflictError:
+                check("S2", f"variant {variant!r} must not map to a conflict code", False)
+            finally:
+                FaultySession.fail_with = None
+                crud._find_by_idempotency_key = original_find
 
     # ---- revoke --------------------------------------------------------------------------------
     with Env(crud).patched() as e:
@@ -1313,6 +1469,80 @@ def store_suite(crud: Any) -> None:
         except version_crud.ModelVersionNotFoundError:
             check("R1", "list_roles on a wrong project is refused", True)
 
+    # ---- non-canonical origins fail closed (no case folding) ----------------------------------
+    with Env(crud).patched() as e:
+        for bad in (
+            "FACTORY_TRAINED",
+            "Factory_Trained",
+            " factory_trained",
+            "factory_trained ",
+            "factory-trained",
+        ):
+            v = e.version("factory", artifact=e.artifact())
+            v.origin = bad
+            e.session.flush()
+            check(
+                "F0",
+                f"origin {bad!r} is not validated even without a job",
+                crud.is_validated(e.session, e.ctx, v) is False,
+            )
+            try:
+                crud.build_action_facts(e.session, e.ctx, v)
+                check("F0", f"origin {bad!r} raises in build_action_facts", False)
+            except ContinuationFactsErrorType:
+                check(
+                    "F0",
+                    f"origin {bad!r} raises ContinuationFactsError in build_action_facts",
+                    True,
+                )
+        base = e.version("weights", artifact=e.artifact(char="b"))
+        ad = e.version("adapter", artifact=e.artifact(char="d"), parent=base)
+        check(
+            "F0",
+            "control: the exact parent origin is a compatible base",
+            crud.build_action_facts(e.session, e.ctx, ad).base_compatible is True,
+        )
+        for bad in (
+            "IMPORTED_WEIGHTS",
+            "Imported_Weights",
+            "imported_weights ",
+            " imported_weights",
+        ):
+            base.origin = bad
+            e.session.flush()
+            check(
+                "F0",
+                f"parent origin {bad!r} is not a base",
+                crud.build_action_facts(e.session, e.ctx, ad).base_compatible is False,
+            )
+        base.origin = "imported_weights"
+        e.session.flush()
+        # the early guards cost no query
+        art = e.session.query(TrainableArtifact).first()
+        e.statements.clear()
+        no_parent = SimpleNamespace(
+            parent_model_version_id=None, project_id=PROJECT, id=uuid.uuid4()
+        )
+        check(
+            "F0",
+            "no parent -> incompatible without a query",
+            crud._base_compatible(e.session, e.ctx, no_parent, art) is False and e.statements == [],
+        )
+        e.statements.clear()
+        has_parent = SimpleNamespace(
+            parent_model_version_id=base.id, project_id=PROJECT, id=uuid.uuid4()
+        )
+        check(
+            "F0",
+            "no artifact -> incompatible without a query",
+            crud._base_compatible(e.session, e.ctx, has_parent, None) is False
+            and e.statements == [],
+        )
+        crud._base_compatible(
+            e.session, e.ctx, ad, e.session.get(TrainableArtifact, ad.trainable_artifact_id)
+        )
+        check("F0", "both present -> the parent is looked up", len(e.statements) > 0)
+
     # ---- facts ---------------------------------------------------------------------------------
     with Env(crud).patched() as e:
         ep = e.version("endpoint", ref="provider/ft:lora")
@@ -1355,6 +1585,15 @@ def store_suite(crud: Any) -> None:
             and f.base_compatible is None
             and f.model_ref is None,
         )
+        w.external_provider_model_ref = "stray/ft:lora-trainable"
+        e.session.flush()
+        check(
+            "F1",
+            "a stray reference on a weight-backed row is never carried into the facts",
+            crud.build_action_facts(e.session, e.ctx, w).model_ref is None,
+        )
+        w.external_provider_model_ref = None
+        e.session.flush()
         w_art.license_accepted_by = None
         e.session.flush()
         check(
@@ -1747,6 +1986,29 @@ def routes_suite(routes: Any) -> None:
                 "RI",
                 "first 201 then replay 200 with the same id",
                 r1.status == 201 and r2.status == 200 and r1.json()["id"] == r2.json()["id"],
+            )
+            stored = [row for row in e.rows() if row.idempotency_key == "idem"]
+            check(
+                "RI",
+                "the 201 body's id is the stored row's id",
+                len(stored) == 1 and r1.json()["id"] == str(stored[0].id),
+            )
+            assign_events = [x for x in e.audit.events if x["action"] == "model_role.assign"]
+            last = assign_events[-1]
+            check(
+                "RI",
+                "the route's audit actor is the authenticated subject, type user",
+                last["actor_type"] == "user"
+                and last["actor_id"] == "ml_engineer-1"
+                and last["organization_id"] == ORG
+                and last["resource_id"] == str(stored[0].id),
+            )
+            check(
+                "RI",
+                "each request carries its own 32-hex request id",
+                re.fullmatch(r"[0-9a-f]{32}", last["request_id"]) is not None
+                and last["request_id"] == stored[0].request_id
+                and len({x["request_id"] for x in assign_events}) == len(assign_events),
             )
             r3 = post(b, "ml_engineer1", v.id, "candidate", "idem")
             check(
@@ -2264,9 +2526,67 @@ def static_suite() -> None:
     )
 
 
+def _full_app_env() -> dict[str, str]:
+    return {
+        "SOVRA_ENVIRONMENT": "staging",
+        "SOVRA_DATABASE_URL": "postgresql+psycopg://sovra_app:s3cr3t@db.internal:5432/sovra",
+        "SOVRA_LITELLM_GATEWAY_URL": "https://litellm.internal.example",
+        "SOVRA_PRIVACY_POLICY": "standard",
+        "SOVRA_TLS_VERIFY": "true",
+        "SOVRA_MAX_TRAINING_BUDGET_USD": "500.00",
+        "SOVRA_LITELLM_API_KEY_SECRET_REF": "vault://sovra/litellm-api-key",
+        "SOVRA_DATABASE_PASSWORD_SECRET_REF": "openbao://sovra/db-password",
+        "SOVRA_OIDC_ISSUER": "http://idp.internal.example",
+        "SOVRA_OIDC_CLIENT_ID": "sovra-factory",
+        "SOVRA_OIDC_CLIENT_SECRET_REF": "vault://sovra/oidc-client-secret",
+        "SOVRA_OIDC_REDIRECT_URI": "http://factory.internal.example/auth/callback",
+        "SOVRA_OIDC_AUTHORIZATION_ENDPOINT": "http://idp.internal.example/authorize",
+        "SOVRA_OIDC_TOKEN_ENDPOINT": "http://idp.internal.example/token",
+        "SOVRA_OIDC_JWKS_URI": "http://idp.internal.example/jwks",
+        "SOVRA_SESSION_SIGNING_KEY_SECRET_REF": "vault://sovra/session-signing-key",
+        "SOVRA_OIDC_ALLOWED_ORIGIN": "http://factory.internal.example",
+        "SOVRA_OIDC_CLIENT_SECRET_VALUE": "not-a-real-secret",
+        "SOVRA_SESSION_SIGNING_KEY_VALUE": "not-a-real-signing-key",
+    }
+
+
+def create_app_suite() -> None:
+    """The real, unmodified `create_app()` mounts the roles and actions routes (no database:
+    `create_engine` is lazy and the role gate runs before any session is opened)."""
+    env = _full_app_env()
+    added = set(env) - set(os.environ)
+    old = {k: os.environ[k] for k in env if k in os.environ}
+    os.environ.update(env)
+    try:
+        import app.main as main_module
+
+        app = main_module.create_app()
+    finally:
+        for key in added:
+            os.environ.pop(key, None)
+        os.environ.update(old)
+    check("WR", "create_app returns a real app", app is not None)
+    vid = uuid.uuid4()
+    base_path = f"/api/v1/organizations/{ORG}/projects/{PROJECT}/model-versions/{vid}"
+    with serve(app) as b:
+        for method, suffix, payload in (
+            ("GET", "/roles", None),
+            ("POST", "/roles", {"role": "baseline", "idempotency_key": "k"}),
+            ("POST", "/roles/baseline/revoke", None),
+            ("GET", "/actions", None),
+        ):
+            result = http_request(b, method, base_path + suffix, principal=None, payload=payload)
+            check(
+                "WR",
+                f"{method} {suffix} is mounted on the real app (401, not 404)",
+                result.status == 401,
+            )
+
+
 def db_free_groups() -> None:
     store_suite(real_crud)
     routes_suite(real_routes)
+    create_app_suite()
     static_suite()
 
 
@@ -2274,28 +2594,28 @@ def db_free_groups() -> None:
 FAULTS: list[tuple[str, str, str]] = [
     (
         "endpoint-continue-on-trainable-ref",
-        'if facts.origin == ORIGIN_EXTERNAL_ENDPOINT:\n        return _deny("continue_tuning"',
-        'if facts.origin == ORIGIN_EXTERNAL_ENDPOINT and not any(w in (facts.model_ref or "").lower() for w in ("lora", "ft:", "llama", "trainable", "teacher")):\n        return _deny("continue_tuning"',
+        'if facts.origin is ORIGIN_EXTERNAL_ENDPOINT:\n        return _deny("continue_tuning"',
+        'if facts.origin is ORIGIN_EXTERNAL_ENDPOINT and not any(w in (facts.model_ref or "").lower() for w in ("lora", "ft:", "llama", "trainable", "teacher")):\n        return _deny("continue_tuning"',
     ),
     (
         "endpoint-continue-on-teacher-role",
-        'if facts.origin == ORIGIN_EXTERNAL_ENDPOINT:\n        return _deny("continue_tuning"',
-        'if facts.origin == ORIGIN_EXTERNAL_ENDPOINT and "teacher" not in facts.roles:\n        return _deny("continue_tuning"',
+        'if facts.origin is ORIGIN_EXTERNAL_ENDPOINT:\n        return _deny("continue_tuning"',
+        'if facts.origin is ORIGIN_EXTERNAL_ENDPOINT and "teacher" not in facts.roles:\n        return _deny("continue_tuning"',
     ),
     (
         "imported-adapter-exact-resume",
-        "if facts.origin != ORIGIN_FACTORY_TRAINED or checkpoint is None:",
+        "if facts.origin is not ORIGIN_FACTORY_TRAINED or checkpoint is None:",
         "if facts.origin not in (ORIGIN_FACTORY_TRAINED, ORIGIN_IMPORTED_ADAPTER) or checkpoint is None:",
     ),
     (
         "imported-weights-exact-resume",
-        "if facts.origin != ORIGIN_FACTORY_TRAINED or checkpoint is None:",
-        "if facts.origin == ORIGIN_EXTERNAL_ENDPOINT or checkpoint is None:",
+        "if facts.origin is not ORIGIN_FACTORY_TRAINED or checkpoint is None:",
+        "if facts.origin is ORIGIN_EXTERNAL_ENDPOINT or checkpoint is None:",
     ),
     (
         "exact-resume-without-checkpoint-fact",
-        "if facts.origin != ORIGIN_FACTORY_TRAINED or checkpoint is None:",
-        "if facts.origin != ORIGIN_FACTORY_TRAINED:",
+        "if facts.origin is not ORIGIN_FACTORY_TRAINED or checkpoint is None:",
+        "if facts.origin is not ORIGIN_FACTORY_TRAINED:",
     ),
     ("revoked-license-ignored", "if facts.license_accepted is False:", "if False:"),
     ("base-incompatibility-ignored", "if facts.base_compatible is False:", "if False:"),
@@ -2306,13 +2626,23 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "unknown-prerequisite-allowed",
-        "if type(state) is str and state == PREREQUISITE_AVAILABLE:",
-        'if state != "unavailable":',
+        "    except ValueError:\n        return None",
+        "    except ValueError:\n        return PREREQUISITE_AVAILABLE",
+    ),
+    (
+        "missing-prerequisite-allowed",
+        "facts.prerequisites.get(_PREREQUISITE_OF[action])",
+        "facts.prerequisites.get(_PREREQUISITE_OF[action], PREREQUISITE_AVAILABLE)",
     ),
     (
         "prerequisite-casefolded",
-        "if type(state) is str and state == PREREQUISITE_AVAILABLE:",
-        "if type(state) is str and state.casefold().strip() == PREREQUISITE_AVAILABLE:",
+        "return _PREREQUISITE_STATES[_PREREQUISITE_STATES.index(state)]",
+        "return _PREREQUISITE_STATES[_PREREQUISITE_STATES.index(state.strip().lower())]",
+    ),
+    (
+        "prerequisite-str-subclass-allowed",
+        "    if type(state) is not str:\n        return None",
+        "    if False:\n        return None",
     ),
     (
         "resume-start-step-zero",
@@ -2335,19 +2665,28 @@ FAULTS: list[tuple[str, str, str]] = [
     ("incumbent-by-any-role", 'if "current_production" in facts.roles:', "if facts.roles:"),
     (
         "retain-incumbent-not-a-use-action",
-        '        "retain_incumbent",\n        "deploy_route",\n    }',
-        '        "deploy_route",\n    }',
+        '"retain_incumbent": True,',
+        '"retain_incumbent": False,',
     ),
     (
         "base-before-license",
-        "        if facts.license_accepted is False:\n            return _deny(action, CODE_LICENSE_NOT_ACCEPTED)\n        if facts.base_compatible is False:\n            return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)",
-        "        if facts.base_compatible is False:\n            return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)\n        if facts.license_accepted is False:\n            return _deny(action, CODE_LICENSE_NOT_ACCEPTED)",
+        "    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)\n    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)",
+        "    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)\n    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)",
     ),
-    ("run-id-collision-allowed", "if self.checkpoint.run_id == self.new_run_id:", "if False:"),
+    (
+        "run-id-collision-allowed",
+        "if self.checkpoint.run_id == self.new_run_id:",
+        "if False:",
+    ),
     (
         "origin-casefolded",
-        "if type(self.origin) is not str or self.origin not in ORIGINS:",
-        "if type(self.origin) is not str or self.origin.strip().lower() not in ORIGINS:",
+        "return ORIGINS[ORIGINS.index(value)]",
+        "return ORIGINS[ORIGINS.index(value.strip().lower())]",
+    ),
+    (
+        "origin-str-subclass-allowed",
+        '    if type(value) is not str:\n        raise ContinuationFactsError("origin_invalid")',
+        '    if False:\n        raise ContinuationFactsError("origin_invalid")',
     ),
     (
         "roles-accept-any-string",
@@ -2368,6 +2707,240 @@ FAULTS: list[tuple[str, str, str]] = [
         "error-text-leaks-action-detail",
         "super().__init__(code)",
         "super().__init__(f'{code}: {action}')",
+    ),
+    (
+        "denied-decision-names-another-action",
+        "return ActionDecision(action=action, allowed=False, code=code)",
+        'return ActionDecision(action="evaluate", allowed=False, code=code)',
+    ),
+    (
+        "compare-rule-is-evaluate",
+        '"compare": _compare,',
+        '"compare": _evaluate,',
+    ),
+]
+
+
+# H1 for the store and the routes: each (id, old, new) patches a copy of the production module
+# and the DB-free suite must go RED against it.
+CRUD_FAULTS: list[tuple[str, str, str]] = [
+    (
+        "validation-check-dropped",
+        '    if not is_validated(session, context, version):\n        raise RoleConflictError("import_not_validated")',
+        '    if False:\n        raise RoleConflictError("import_not_validated")',
+    ),
+    (
+        "replay-ignores-the-request-digest",
+        "if not hmac.compare_digest(existing.request_sha256.encode(), digest.encode()):",
+        "if False:",
+    ),
+    (
+        "replay-always-reuse",
+        "if not hmac.compare_digest(existing.request_sha256.encode(), digest.encode()):",
+        "if True:",
+    ),
+    (
+        "every-violation-is-role-already-assigned",
+        "code = _CONFLICT_BY_NAME.get(name) if name is not None else None",
+        'code = "role_already_assigned"',
+    ),
+    (
+        "unmapped-violation-swallowed-as-conflict",
+        "        if code is None:\n            raise\n",
+        '        if code is None:\n            code = "role_already_assigned"\n',
+    ),
+    (
+        "idempotency-name-casefolded",
+        "if name == _IDEMPOTENCY_INDEX:",
+        'if (name or "").strip().lower() == _IDEMPOTENCY_INDEX:',
+    ),
+    (
+        "race-with-nothing-stored-swallowed",
+        "            if raced is None:\n                raise\n",
+        "            if raced is None:\n                return AssignmentResult(assignment=assignment, replayed=True)\n",
+    ),
+    (
+        "audit-action-renamed",
+        'action="model_role.assign",',
+        'action="model_role.assigned",',
+    ),
+    (
+        "assigned-by-not-the-actor",
+        "assigned_by=actor.actor_id,",
+        'assigned_by="someone",',
+    ),
+    (
+        "revoke-without-row-lock",
+        "        .with_for_update()\n",
+        "",
+    ),
+    (
+        "revoke-matches-revoked-rows",
+        "            ModelRoleAssignment.revoked_at.is_(None),\n        )\n        .with_for_update()",
+        "        )\n        .with_for_update()",
+    ),
+    (
+        "revoke-reason-changed",
+        "assignment.revoke_reason_code = REVOKE_REASON_BY_ACTOR",
+        'assignment.revoke_reason_code = "x"',
+    ),
+    (
+        "factory-trained-check-dropped",
+        "if _origin_of(version) is ORIGIN_FACTORY_TRAINED:",
+        "if True:",
+    ),
+    (
+        "any-succeeded-job-validates-any-project",
+        "        ModelImportJob.project_id == version.project_id,\n",
+        "",
+    ),
+    (
+        "job-state-ignored",
+        '        ModelImportJob.state == "succeeded",\n',
+        "",
+    ),
+    (
+        "job-result-ignored",
+        "        ModelImportJob.result_model_version_id == version.id,\n",
+        "",
+    ),
+    (
+        "license-gate-ignored",
+        "return artifact is not None and evaluate_license_gate(artifact).accepted",
+        "return True",
+    ),
+    (
+        "missing-artifact-accepted",
+        "return artifact is not None and evaluate_license_gate(artifact).accepted",
+        "return artifact is None or evaluate_license_gate(artifact).accepted",
+    ),
+    (
+        "lineage-failure-ignored",
+        "    except ArtifactLineageError:\n        return False",
+        "    except ArtifactLineageError:\n        return True",
+    ),
+    (
+        "unvalidated-base-allowed",
+        "    if not is_validated(session, context, parent):\n        return False",
+        "    if False:\n        return False",
+    ),
+    (
+        "base-license-ignored",
+        "    if not _license_accepted(base_artifact):\n        return False",
+        "    if False:\n        return False",
+    ),
+    (
+        "base-origin-ignored",
+        "if parent is None or _origin_of(parent) is not ORIGIN_IMPORTED_WEIGHTS:",
+        "if parent is None:",
+    ),
+    (
+        "parent-guard-removed",
+        "    if version.parent_model_version_id is None or artifact is None:\n        return False",
+        "    if False:\n        return False",
+    ),
+    (
+        "revoked-roles-counted",
+        "        ModelRoleAssignment.model_version_id == version.id,\n        ModelRoleAssignment.revoked_at.is_(None),\n",
+        "        ModelRoleAssignment.model_version_id == version.id,\n",
+    ),
+    (
+        "constant-run-id",
+        "new_run_id=str(uuid.uuid4()),",
+        "new_run_id=str(version.id),",
+    ),
+    (
+        "endpoint-ref-always-passed",
+        "model_ref=version.external_provider_model_ref if is_endpoint else None,",
+        "model_ref=version.external_provider_model_ref,",
+    ),
+]
+
+ROUTES_FAULTS: list[tuple[str, str, str]] = [
+    (
+        "admin-only-rule-dropped",
+        "if is_admin_only(role) and ctx.role is not Role.ORGANIZATION_ADMIN:",
+        "if False:",
+    ),
+    (
+        "ml-engineer-may-assign-admin-roles",
+        "if is_admin_only(role) and ctx.role is not Role.ORGANIZATION_ADMIN:",
+        "if is_admin_only(role) and ctx.role not in (Role.ORGANIZATION_ADMIN, Role.ML_ENGINEER):",
+    ),
+    (
+        "exact-keys-check-dropped",
+        "if set(payload) != _POST_BODY_KEYS:",
+        "if False:",
+    ),
+    (
+        "extra-keys-allowed",
+        "if set(payload) != _POST_BODY_KEYS:",
+        "if not set(payload) >= _POST_BODY_KEYS:",
+    ),
+    (
+        "role-casefolded",
+        'role = validate_role(payload["role"])',
+        'role = validate_role(payload["role"].strip().lower())',
+    ),
+    (
+        "non-str-role-accepted",
+        '            if type(payload["role"]) is not str:\n                raise ModelRoleValidationError("invalid_body")\n',
+        "",
+    ),
+    (
+        "replay-reported-as-created",
+        "status_code=200 if result.replayed else 201",
+        "status_code=201",
+    ),
+    (
+        "creation-reported-as-replay",
+        "status_code=200 if result.replayed else 201",
+        "status_code=200",
+    ),
+    (
+        "revoke-body-rule-dropped",
+        "if raw and not raw.isspace() and await _read_object(request) != {}:",
+        "if False:",
+    ),
+    (
+        "revoke-path-role-unchecked",
+        "checked_role = validate_role(role)",
+        "checked_role = role",
+    ),
+    (
+        "model-facts-error-unmapped",
+        '        except ContinuationFactsError as exc:\n            raise HTTPException(status_code=409, detail="model_facts_invalid") from exc',
+        "        except ContinuationFactsError:\n            raise",
+    ),
+    (
+        "assign-open-to-read-roles",
+        "        model_version_id: uuid.UUID,\n        ctx: AuthorizedContext = write_dependency,\n    ) -> JSONResponse:\n        del organization_id\n        payload = await _read_object(request)",
+        "        model_version_id: uuid.UUID,\n        ctx: AuthorizedContext = read_dependency,\n    ) -> JSONResponse:\n        del organization_id\n        payload = await _read_object(request)",
+    ),
+    (
+        "revoked-by-dropped-from-the-body",
+        '        "revoked_by": assignment.revoked_by,\n',
+        "",
+    ),
+    (
+        "id-not-the-assignment-id",
+        '        "id": str(assignment.id),',
+        '        "id": str(assignment.model_version_id),',
+    ),
+    (
+        "actor-type-changed",
+        'actor_type="user", actor_id=ctx.principal.subject',
+        'actor_type="system", actor_id=ctx.principal.subject',
+    ),
+    (
+        "plan-not-serialized",
+        '"plan": None if plan is None else dict(vars(plan)),',
+        '"plan": None,',
+    ),
+    (
+        "actions-key-order-changed",
+        'body: dict[str, object] = {\n                    "model_version_id": str(version.id),',
+        'body: dict[str, object] = {\n                    "model_version_id": str(version.project_id),',
     ),
 ]
 
@@ -2396,6 +2969,32 @@ def main() -> int:
         return 1
     if not BEHAVIOUR_ONLY:
         import tempfile
+
+        for label, path, table, runner in (
+            ("crud", CRUD_PATH, CRUD_FAULTS, lambda module: store_suite(module)),
+            ("routes", ROUTES_PATH, ROUTES_FAULTS, lambda module: routes_suite(module)),
+        ):
+            module_source = path.read_text(encoding="utf-8")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                for index, (fid, old, new) in enumerate(table):
+                    if module_source.count(old) != 1:
+                        print(
+                            f"FAIL [H1] {label}:{fid}: patch text occurs "
+                            f"{module_source.count(old)} time(s), expected 1"
+                        )
+                        return 1
+                    copy_path = Path(tmp_dir) / f"{label}_fault_{index}.py"
+                    copy_path.write_text(module_source.replace(old, new), encoding="utf-8")
+                    _failures.clear()
+                    try:
+                        runner(load_module(copy_path, f"{label}_fault_{index}"))
+                    except Exception:  # noqa: BLE001
+                        _failures.append("raised")
+                    CHECK_COUNT[0] += 1
+                    if not _failures:
+                        print(f"FAIL [H1] {label} fault {fid} stayed GREEN")
+                        return 1
+        _failures.clear()
 
         source = MODULE_PATH.read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
