@@ -81,9 +81,18 @@
  * state set, which has no "disqualified: expired/unverified" member -- mapping them would invent one).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { AlertMessage, Button, EmptyState, networkErrorMessage } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  EmptyState,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
@@ -186,16 +195,17 @@ function disqualifiedReasonText(reason: Exclude<DisqualifiedReason, null>, local
   }
 }
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return body.detail;
+      return uiError(body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  return phrase("requestFailedTemplate", locale, { status: response.status });
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -247,7 +257,7 @@ export function CostProfileSearchPanel({
   locale = "en",
 }: CostProfilePanelProps) {
   const [search, setSearch] = useState<CostPerSuccessSearchResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [profileType, setProfileType] = useState<ProfileType>("provider");
@@ -257,6 +267,15 @@ export function CostProfileSearchPanel({
   const [currency, setCurrency] = useState("USD");
   const [source, setSource] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Submit and the search triggers disable themselves while busy (or unmount, like Verify on
+  // success) and would drop keyboard focus to <body>: give it back afterwards.
+  const armSaveFocus = useRefocusAfter(saving);
+  const armSearchFocus = useRefocusAfter(loading);
+  const panelRef = useRef<HTMLDivElement>(null);
+  function inPanel(testId: string): HTMLElement | null {
+    return panelRef.current?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null;
+  }
 
   async function refresh() {
     setLoading(true);
@@ -273,7 +292,7 @@ export function CostProfileSearchPanel({
       const body: unknown = await response.json();
       if (!isSearchResponse(body)) {
         setSearch(null);
-        setError(phrase("costProfileMalformedSearchResponse", locale));
+        setError(uiError(phrase("costProfileMalformedSearchResponse", locale)));
         return;
       }
       setSearch(body);
@@ -281,7 +300,7 @@ export function CostProfileSearchPanel({
       // A rejected fetch or a body that is not JSON: the previous result may be stale, and
       // "no certified cheapest rate" must never be shown for a search that did not complete.
       setSearch(null);
-      setError(networkErrorMessage(caught, locale));
+      setError(networkError(caught, locale));
     } finally {
       setLoading(false);
     }
@@ -293,6 +312,8 @@ export function CostProfileSearchPanel({
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    armSaveFocus(() => inPanel("cost-profile-submit-button"));
+    armSearchFocus(() => inPanel("cost-per-success-search-results"));
     setSaving(true);
     setError(null);
     try {
@@ -316,9 +337,10 @@ export function CostProfileSearchPanel({
       }
       const created: unknown = await response.json();
       if (!isCostProfileRecord(created)) {
-        // The write may have happened, but the response cannot be read: keep the typed values so
-        // nothing the user entered is lost, and say so.
-        setError(phrase("costProfileMalformedSearchResponse", locale));
+        // The server answered 2xx, so the write very likely happened, but the response cannot be
+        // read: keep the typed values, and say to check the current state before submitting again
+        // (a blind retry would record the rate twice).
+        setError(uiError(phrase("malformedWriteResponseMessage", locale), "verify-state"));
         return;
       }
       setLabel("");
@@ -327,13 +349,23 @@ export function CostProfileSearchPanel({
       onCreated?.(created);
       await refresh();
     } catch (caught) {
-      setError(networkErrorMessage(caught, locale));
+      setError(networkError(caught, locale, { write: true }));
     } finally {
       setSaving(false);
     }
   }
 
+  function retrySearch() {
+    armSearchFocus(() => inPanel("cost-per-success-search-results"));
+    void refresh();
+  }
+
   async function handleVerify(costProfileId: string) {
+    armSearchFocus(
+      () =>
+        inPanel(`cost-profile-result-${costProfileId}`) ??
+        inPanel("cost-per-success-search-results"),
+    );
     setError(null);
     try {
       const response = await fetch(
@@ -345,7 +377,7 @@ export function CostProfileSearchPanel({
         return;
       }
     } catch (caught) {
-      setError(networkErrorMessage(caught, locale));
+      setError(networkError(caught, locale, { write: true }));
       return;
     }
     await refresh();
@@ -353,6 +385,7 @@ export function CostProfileSearchPanel({
 
   return (
     <div
+      ref={panelRef}
       data-testid="cost-profile-panel"
       lang={resolveLocale(locale)}
       dir={dirFor(locale)}
@@ -440,7 +473,7 @@ export function CostProfileSearchPanel({
           required
         />
 
-        {error && <AlertMessage message={error} locale={locale} testId="cost-profile-form-error" />}
+        {error && <AlertMessage error={error} locale={locale} testId="cost-profile-form-error" />}
 
         <Button
           type="submit"
@@ -452,7 +485,7 @@ export function CostProfileSearchPanel({
         </Button>
       </form>
 
-      <section data-testid="cost-per-success-search-results">
+      <section data-testid="cost-per-success-search-results" tabIndex={-1}>
         <h2>{phrase("costPerSuccessSearchHeading", locale)}</h2>
         {loading && (
           <p role="status" aria-live="polite" data-testid="cost-profile-loading">
@@ -477,9 +510,14 @@ export function CostProfileSearchPanel({
             // The search has not produced a validated answer (it failed or has not run): the
             // cheapest rate is UNKNOWN, which is not the same statement as "none is certified"
             // (Law 17).
-            <p data-testid="cheapest-rate-unknown">
-              {phrase("costProfileCheapestUnknown", locale)}
-            </p>
+            <>
+              <p data-testid="cheapest-rate-unknown">
+                {phrase("costProfileCheapestUnknown", locale)}
+              </p>
+              <Button data-testid="cheapest-rate-retry-button" onClick={retrySearch}>
+                {phrase("costProfileReload", locale)}
+              </Button>
+            </>
           )}
         </div>
 
@@ -488,7 +526,7 @@ export function CostProfileSearchPanel({
             title={phrase("costProfileNoResultsTitle", locale)}
             why={phrase("costProfileNoResultsWhy", locale)}
             action={
-              <Button data-testid="cost-profile-reload-button" onClick={() => void refresh()}>
+              <Button data-testid="cost-profile-reload-button" onClick={retrySearch}>
                 {phrase("costProfileReload", locale)}
               </Button>
             }
@@ -500,6 +538,7 @@ export function CostProfileSearchPanel({
             <li
               key={result.id}
               data-testid={`cost-profile-result-${result.id}`}
+              tabIndex={-1}
               style={{ overflowWrap: "anywhere" }}
             >
               <span>

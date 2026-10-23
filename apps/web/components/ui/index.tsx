@@ -7,6 +7,7 @@ export * from "./EmptyState";
 export * from "./errors";
 export * from "./ErrorSummary";
 export * from "./Field";
+export * from "./focus";
 export * from "./Pending";
 export * from "./StatusBadge";
 export * from "./phrases";

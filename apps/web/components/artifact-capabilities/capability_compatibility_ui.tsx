@@ -72,7 +72,16 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { AlertMessage, Button, networkErrorMessage } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  Pending,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
@@ -145,24 +154,28 @@ export function capabilitiesUrl(
   );
 }
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      if (body.detail === "not_found") return phrase("compatNotFoundMessage", locale);
+      if (body.detail === "not_found")
+        return uiError(phrase("compatNotFoundMessage", locale), kind);
       if (body.detail === "gateway_unavailable") {
-        return phrase("compatGatewayUnavailableMessage", locale);
+        return uiError(phrase("compatGatewayUnavailableMessage", locale), kind);
       }
       // An unrecognized code is raw backend data (its language is the backend's choice, not this
       // component's) and is returned verbatim, never mistranslated.
-      return body.detail;
+      return uiError(body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  if (response.status === 503) return phrase("compatGatewayUnavailableMessage", locale);
-  if (response.status === 404) return phrase("compatNotFoundMessage", locale);
-  return phrase("requestFailedTemplate", locale, { status: response.status });
+  if (response.status === 503) {
+    return uiError(phrase("compatGatewayUnavailableMessage", locale), kind);
+  }
+  if (response.status === 404) return uiError(phrase("compatNotFoundMessage", locale), kind);
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function shown(value: unknown, locale: Locale): string {
@@ -346,7 +359,7 @@ export function CapabilityCompatibilityUI({
 }: CapabilityCompatibilityUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
   const [result, setResult] = useState<ModelCapabilities | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
   const latestRequest = useRef(0);
@@ -367,7 +380,10 @@ export function CapabilityCompatibilityUI({
 
   const capabilities = result;
 
+  const armFocus = useRefocusAfter(loading);
+
   async function handleLoad() {
+    armFocus();
     const request = ++latestRequest.current;
     const stale = () => request !== latestRequest.current;
     setLoading(true);
@@ -387,7 +403,7 @@ export function CapabilityCompatibilityUI({
       const body: unknown = await response.json();
       if (stale()) return;
       if (!isCapabilities(body)) {
-        setError(phrase("compatMalformedResponse", locale));
+        setError(uiError(phrase("compatMalformedResponse", locale)));
         return;
       }
       if (
@@ -395,12 +411,12 @@ export function CapabilityCompatibilityUI({
         body.project_id !== projectId ||
         body.litellm_connection_id !== connectionId
       ) {
-        setError(phrase("compatResponseMismatch", locale));
+        setError(uiError(phrase("compatResponseMismatch", locale)));
         return;
       }
       setResult(body);
     } catch (caught) {
-      if (!stale()) setError(networkErrorMessage(caught, locale));
+      if (!stale()) setError(networkError(caught, locale));
     } finally {
       if (!stale()) setLoading(false);
     }
@@ -425,7 +441,8 @@ export function CapabilityCompatibilityUI({
       <Button onClick={handleLoad} disabled={loading} aria-busy={loading}>
         {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
       </Button>
-      {error ? <AlertMessage message={error} locale={locale} testId="compat-error" /> : null}
+      {loading ? <Pending label={phrase("checkingCompatibility", locale)} locale={locale} /> : null}
+      {error ? <AlertMessage error={error} locale={locale} testId="compat-error" /> : null}
       {capabilities ? (
         <div>
           <dl>

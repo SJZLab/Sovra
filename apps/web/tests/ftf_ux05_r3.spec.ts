@@ -17,6 +17,8 @@ import { CapabilityCompatibilityUI } from "../components/artifact-capabilities/c
 import { ModelToArtifactMappingUI } from "../components/artifact-capabilities/model_to_artifact_mapping_ui";
 import { CostProfileSearchPanel } from "../components/cost-and-model-search/costprofile_schema_ui";
 import { ModelCatalogUI } from "../components/litellm-gateway/model_catalog_ui";
+import { AlertMessage } from "../components/ui/AlertMessage";
+import type { RecoveryKind } from "../components/ui/errors";
 import { phrase } from "../components/ui/phrases";
 
 const API = "http://localhost:8000";
@@ -300,7 +302,7 @@ describe("1301 errors are announced, localized, recoverable and never read as 'n
     await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
     const alert = screen.getByTestId("cost-profile-form-error");
     expect(alert.getAttribute("role")).toBe("alert");
-    expect(alert.textContent).toBe("network error: Failed to fetch");
+    expect(alert.textContent).toBe("network error: could not reach the server");
     expect(screen.getByTestId("cost-profile-form-error-recovery").textContent).toBe(
       "Check your connection and try again. If it keeps failing, contact an administrator.",
     );
@@ -342,7 +344,7 @@ describe("1301 errors are announced, localized, recoverable and never read as 'n
     await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
     expect(screen.getByTestId("cost-profile-form-error").getAttribute("role")).toBe("alert");
     expect(screen.getByTestId("cost-profile-form-error").textContent).toBe(
-      "network error: Failed to fetch",
+      "network error: could not reach the server",
     );
     expect((screen.getByTestId("cost-profile-label-input") as HTMLInputElement).value).toBe(
       "My rate",
@@ -1056,5 +1058,378 @@ describe("named faults now pinned", () => {
     expect(phrase("requestFailedTemplate", "en", inherited)).toBe("request failed ({status})");
     expect(phrase("requestFailedTemplate", "en", { status: 500 })).toBe("request failed (500)");
     expect(phrase("requestFailedTemplate", "ar", { status: 500 })).toBe("فشل الطلب (500)");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Pre-review round 1 (independent L2 reviewer, FTF-UX05-r3 RETURN)
+// ---------------------------------------------------------------------------------------------
+const AR_UNREACHABLE = "خطأ في الشبكة: تعذّر الوصول إلى الخادم";
+const WRITE_EN = "The server answered, but this page could not read the result.";
+const WRITE_AR = "ردّ الخادم، لكن تعذّر على هذه الصفحة قراءة النتيجة.";
+const VERIFY_EN = "Reload to check the current state before trying again.";
+const VERIFY_AR = "أعد التحميل للتحقق من الحالة الحالية قبل المحاولة مرة أخرى.";
+
+describe("a fetch failure is localized (the browser's own English TypeError text is never shown)", () => {
+  test("R3-pre2 the browser's TypeError text never appears under ar, in all four components", async () => {
+    const fetchFailure = new TypeError("Failed to fetch");
+    stub({ method: "GET", path: PROJECTS_PATH, reject: fetchFailure });
+    renderCatalog("ar");
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+    expect(screen.getByTestId("projects-error").textContent).toBe(AR_UNREACHABLE);
+    cleanup();
+
+    stub({ method: "GET", path: MAP_PATH, reject: fetchFailure });
+    renderMapping("ar");
+    fireEvent.click(screen.getByTestId("load-mapping-button"));
+    await waitFor(() => expect(screen.getByTestId("mapping-error")).toBeTruthy());
+    expect(screen.getByTestId("mapping-error").textContent).toBe(AR_UNREACHABLE);
+    cleanup();
+
+    stub({ method: "GET", path: CAP_PATH, reject: fetchFailure });
+    renderCompat("ar");
+    fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toBe(AR_UNREACHABLE);
+    cleanup();
+
+    stub({ method: "GET", path: SEARCH_PATH, reject: fetchFailure });
+    renderCost("ar");
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    expect(screen.getByTestId("cost-profile-form-error").textContent).toBe(AR_UNREACHABLE);
+  });
+
+  test("R3-pre2 an Error that is not a TypeError keeps its own message (certified behaviour)", async () => {
+    stub({ method: "GET", path: PROJECTS_PATH, reject: new Error("connection refused") });
+    renderCatalog("en");
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+    expect(screen.getByTestId("projects-error").textContent).toBe(
+      "network error: connection refused",
+    );
+  });
+
+  test("R3-R101 a rejected paid probe under ar is localized (and is announced, not an unhandled rejection)", async () => {
+    await loadCatalogReady("ar");
+    stub({ method: "POST", path: PROBE_PATH, reject: new TypeError("Failed to fetch") });
+    fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+    fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+    await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+    expect(screen.getByTestId("probe-error").textContent).toBe(AR_UNREACHABLE);
+    expect(screen.getByTestId("probe-error").getAttribute("role")).toBe("alert");
+    // a write whose outcome is unknown: check the state before running a paid probe again
+    expect(screen.getByTestId("probe-error-recovery").textContent).toBe(VERIFY_AR);
+  });
+});
+
+describe("an unreadable 2xx answer to a WRITE never says 'nothing was changed' and never says 'try again'", () => {
+  test("R3-pre3 0214 paid probe, non-JSON 200", async () => {
+    await loadCatalogReady();
+    stub({ method: "POST", path: PROBE_PATH, malformedJson: true });
+    fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+    fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+    await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+    expect(screen.getByTestId("probe-error").textContent).toBe(WRITE_EN);
+    expect(screen.getByTestId("probe-error-recovery").textContent).toBe(VERIFY_EN);
+    expect(document.body.textContent).not.toMatch(/Nothing was changed/);
+  });
+
+  test("R3-pre3 0214 paid probe, valid JSON of the wrong shape: verify-state recovery", async () => {
+    await loadCatalogReady();
+    stub({ method: "POST", path: PROBE_PATH, body: { nope: true } });
+    fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+    fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+    await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+    expect(screen.getByTestId("probe-error-recovery").textContent).toBe(VERIFY_EN);
+  });
+
+  test("R3-pre3 0308 mapping POST, non-JSON 200, en and ar", async () => {
+    for (const [locale, message, recovery] of [
+      ["en", WRITE_EN, VERIFY_EN],
+      ["ar", WRITE_AR, VERIFY_AR],
+    ] as const) {
+      await loadMappingAndArtifacts(locale);
+      stub({ method: "POST", path: MAP_PATH, malformedJson: true });
+      fireEvent.click(screen.getByTestId("confirm-change-button"));
+      await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+      expect(screen.getByTestId("write-error").textContent).toBe(message);
+      expect(screen.getByTestId("write-error-recovery").textContent).toBe(recovery);
+      cleanup();
+    }
+  });
+
+  test("R3-pre3 1301 create, non-JSON 200 and wrong-shape 201: typed values kept, verify-state recovery", async () => {
+    for (const route of [
+      { method: "POST", path: COST_BASE, malformedJson: true },
+      { method: "POST", path: COST_BASE, status: 201, body: { nope: true } },
+    ] as Route[]) {
+      stub({ method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) }, route);
+      renderCost();
+      await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+      fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+        target: { value: "My rate" },
+      });
+      fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+        target: { value: "0.5" },
+      });
+      fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+        target: { value: "https://x" },
+      });
+      fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+      await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+      expect(screen.getByTestId("cost-profile-form-error").textContent).toBe(WRITE_EN);
+      expect(screen.getByTestId("cost-profile-form-error-recovery").textContent).toBe(VERIFY_EN);
+      expect((screen.getByTestId("cost-profile-label-input") as HTMLInputElement).value).toBe(
+        "My rate",
+      );
+      cleanup();
+    }
+  });
+
+  test("R3-pre3 a READ whose body is not JSON still says nothing was changed (it is true for a read)", async () => {
+    stub({ method: "GET", path: PROJECTS_PATH, malformedJson: true });
+    renderCatalog();
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+    expect(screen.getByTestId("projects-error").textContent).toContain("Nothing was changed");
+    expect(screen.getByTestId("projects-error-recovery").textContent).toContain("try again");
+  });
+});
+
+describe("the recovery step fits the failure", () => {
+  const PERMISSION_EN =
+    "You do not have permission for this action. Ask an administrator for access.";
+  const PERMISSION_AR = "ليست لديك صلاحية لهذا الإجراء. اطلب الوصول من المسؤول.";
+  const CONFLICT_EN = "The data changed since you loaded it. Reload, then try again.";
+  const CONFLICT_AR = "تغيّرت البيانات منذ تحميلها. أعد التحميل ثم حاول مرة أخرى.";
+
+  test("R3-pre7 403 → ask for access, 409 → reload first, en and ar", async () => {
+    for (const [locale, permission, conflict] of [
+      ["en", PERMISSION_EN, CONFLICT_EN],
+      ["ar", PERMISSION_AR, CONFLICT_AR],
+    ] as const) {
+      await loadCatalogReady(locale);
+      stub({
+        method: "POST",
+        path: PROBE_PATH,
+        status: 403,
+        body: { detail: "role_not_authorized" },
+      });
+      fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+      fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+      await waitFor(() => expect(screen.getByTestId("probe-error-recovery")).toBeTruthy());
+      expect(screen.getByTestId("probe-error-recovery").textContent).toBe(permission);
+      cleanup();
+
+      await loadMappingAndArtifacts(locale);
+      stub({
+        method: "POST",
+        path: MAP_PATH,
+        status: 409,
+        body: { detail: "catalog_version_conflict" },
+      });
+      fireEvent.click(screen.getByTestId("confirm-change-button"));
+      await waitFor(() => expect(screen.getByTestId("write-error-recovery")).toBeTruthy());
+      expect(screen.getByTestId("write-error-recovery").textContent).toBe(conflict);
+      cleanup();
+    }
+  });
+
+  test("R3-pre7 every recovery kind renders its own sentence, en and ar (AlertMessage directly)", () => {
+    const expected: Record<string, [string, string]> = {
+      retry: [
+        "Check your connection and try again. If it keeps failing, contact an administrator.",
+        "تحقق من اتصالك ثم حاول مرة أخرى. إذا استمر الفشل، تواصل مع المسؤول.",
+      ],
+      "verify-state": [VERIFY_EN, VERIFY_AR],
+      permission: [PERMISSION_EN, PERMISSION_AR],
+      conflict: [CONFLICT_EN, CONFLICT_AR],
+      input: [
+        "Complete the missing step, then try again.",
+        "أكمل الخطوة الناقصة ثم حاول مرة أخرى.",
+      ],
+    };
+    for (const [kind, [en, ar]] of Object.entries(expected)) {
+      for (const [locale, want] of [
+        ["en", en],
+        ["ar", ar],
+      ] as const) {
+        const { unmount } = render(
+          createElement(AlertMessage, {
+            error: { message: "m", kind: kind as RecoveryKind },
+            locale,
+            testId: "x",
+          }),
+        );
+        expect(screen.getByTestId("x-recovery").textContent, `${kind}/${locale}`).toBe(want);
+        expect(screen.getByTestId("x").textContent).toBe("m");
+        unmount();
+      }
+    }
+  });
+});
+
+describe("1301 has a way to re-run a failed search", () => {
+  test("R3-pre4 a failed search shows a Reload button that re-runs it and recovers", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, status: 503, body: {} });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cheapest-rate-retry-button")).toBeTruthy());
+    expect(screen.getByTestId("cheapest-rate-retry-button").textContent).toBe("Reload search");
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody() });
+    fireEvent.click(screen.getByTestId("cheapest-rate-retry-button"));
+    await waitFor(() => expect(screen.getByTestId(`cost-profile-result-${RATE_ID}`)).toBeTruthy());
+    expect(screen.queryByTestId("cost-profile-form-error")).toBeNull();
+    expect(calls.filter((c) => c.pathname.endsWith(SEARCH_PATH))).toHaveLength(1);
+  });
+
+  test("R3-F37 the empty-state Reload re-runs the search", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody() });
+    fireEvent.click(screen.getByTestId("cost-profile-reload-button"));
+    await waitFor(() => expect(screen.getByTestId(`cost-profile-result-${RATE_ID}`)).toBeTruthy());
+  });
+});
+
+describe("faults the independent reviewer found GREEN", () => {
+  test("R3-F03 the alert message is isolated in <bdi>", async () => {
+    stub({ method: "GET", path: PROJECTS_PATH, status: 503, body: { detail: "בדיקה" } });
+    renderCatalog("en");
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+    expect(screen.getByTestId("projects-error").querySelector("bdi")?.textContent).toBe("בדיקה");
+  });
+
+  test("R3-F17/F18 the Arabic 'why' texts of the new empty states", async () => {
+    stub({ method: "GET", path: PROJECTS_PATH, body: [] });
+    renderCatalog("ar");
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-reload-button")).toBeTruthy());
+    expect(
+      screen.getByText(
+        "لا تحتوي هذه المؤسسة على مشاريع بعد، لذلك لا يمكن تحميل أي كتالوج. أنشئ مشروعًا ثم حمّل المشاريع مرة أخرى.",
+      ),
+    ).toBeTruthy();
+    cleanup();
+    stub({ method: "GET", path: ARTIFACTS_PATH, body: [] });
+    renderMapping("ar");
+    fireEvent.click(screen.getByTestId("load-artifacts-button"));
+    await waitFor(() => expect(screen.getByTestId("artifacts-reload-button")).toBeTruthy());
+    expect(
+      screen.getByText(
+        "لا تحتوي هذه المؤسسة على مصنفات قابلة للتدريب مسجَّلة، لذلك لا يوجد ما يمكن ربط هذا النموذج به. سجّل مصنفًا ثم حمّل المصنفات مرة أخرى.",
+      ),
+    ).toBeTruthy();
+  });
+
+  test("R3-F24 a result with an unknown disqualified_reason is rejected, not rendered", async () => {
+    stub({
+      method: "GET",
+      path: SEARCH_PATH,
+      body: searchBody({
+        results: [{ ...rate(), certifiable_cheapest: false, disqualified_reason: "bogus" }],
+      }),
+    });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    expect(screen.queryByTestId(`cost-profile-result-${RATE_ID}`)).toBeNull();
+  });
+
+  test("R3-F31 the cheapest-certified label, amount, currency and unit are isolated in <bdi>", async () => {
+    stub({
+      method: "GET",
+      path: SEARCH_PATH,
+      body: searchBody({
+        results: [],
+        current_cheapest_certified: rate({ verified_at: "2026-10-02T00:00:00+00:00" }),
+      }),
+    });
+    renderCost();
+    await waitFor(() =>
+      expect(screen.getByTestId("current-cheapest-certified").querySelector("p")).toBeTruthy(),
+    );
+    const bdis = Array.from(
+      screen.getByTestId("current-cheapest-certified").querySelectorAll("bdi"),
+    ).map((b) => b.textContent);
+    expect(bdis).toEqual(["OpenAI list price", "0.0000025", "USD", "per_input_token"]);
+  });
+
+  test("R3-F54 the 0214 probe confirm is described by its own text", async () => {
+    await loadCatalogReady();
+    fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+    await waitFor(() => expect(screen.getByTestId(`confirm-probe-${MODEL_A}`)).toBeTruthy());
+    const dialog = screen.getByTestId(`confirm-probe-${MODEL_A}`);
+    const describedBy = dialog.getAttribute("aria-describedby");
+    expect(describedBy).toBe(`confirm-probe-text-${MODEL_A}`);
+    expect(document.getElementById(describedBy as string)?.textContent).toMatch(/real request/i);
+  });
+
+  test("R3-F62 a rejected paid probe is announced, never an unhandled rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (event: PromiseRejectionEvent) => unhandled.push(event.reason);
+    window.addEventListener("unhandledrejection", onUnhandled);
+    await loadCatalogReady();
+    stub({ method: "POST", path: PROBE_PATH, reject: new Error("boom") });
+    fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+    fireEvent.click(screen.getByTestId(`confirm-probe-button-${MODEL_A}`));
+    await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+    expect(screen.getByTestId("probe-error").textContent).toBe("network error: boom");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    window.removeEventListener("unhandledrejection", onUnhandled);
+    expect(unhandled).toEqual([]);
+  });
+
+  test("R3-R102 the empty change history: Arabic title/why, and a reload action that re-fetches", async () => {
+    stub({ method: "GET", path: `${MAP_PATH}/changes`, body: { changes: [] } });
+    renderMapping("ar");
+    fireEvent.click(screen.getByTestId("load-changes-button"));
+    await waitFor(() => expect(screen.getByTestId("changes-empty")).toBeTruthy());
+    expect(screen.getByText("لم تُسجَّل تغييرات في الربط")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "لم يتم ربط اسم هذا النموذج أو تغييره أو إزالته بعد. أعد تحميل السجل بعد أول تغيير.",
+      ),
+    ).toBeTruthy();
+    stub({ method: "GET", path: `${MAP_PATH}/changes`, body: { changes: [] } });
+    fireEvent.click(screen.getByTestId("changes-reload-button"));
+    await waitFor(() =>
+      expect(calls.filter((c) => c.pathname.endsWith("/changes"))).toHaveLength(1),
+    );
+  });
+});
+
+describe("a failed reload does not leave the previous result beside the error", () => {
+  test("R3-pre7 0214: a failed catalog reload clears the previous entries", async () => {
+    await loadCatalogReady();
+    expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy();
+    stub({ method: "GET", path: CATALOG_PATH, status: 503, body: {} });
+    fireEvent.click(screen.getByTestId("load-catalog-button"));
+    await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+    expect(screen.queryByTestId(`catalog-entry-${MODEL_A}`)).toBeNull();
+    expect(screen.queryByTestId("catalog-results")).toBeNull();
+  });
+
+  test("R3-pre7 0308: a failed mapping reload clears the previous mapping", async () => {
+    stub({ method: "GET", path: MAP_PATH, body: mappingBody(2, ART_A) });
+    renderMapping();
+    fireEvent.click(screen.getByTestId("load-mapping-button"));
+    await waitFor(() => expect(screen.getByTestId("mapping-state")).toBeTruthy());
+    stub({ method: "GET", path: MAP_PATH, status: 503, body: {} });
+    fireEvent.click(screen.getByTestId("load-mapping-button"));
+    await waitFor(() => expect(screen.getByTestId("mapping-error")).toBeTruthy());
+    expect(screen.queryByTestId("mapping-state")).toBeNull();
+  });
+
+  test("R3-pre7 0309: a Pending status shows once the check passes 1 s", async () => {
+    vi.useFakeTimers();
+    stub({ method: "GET", path: CAP_PATH, pending: true });
+    renderCompat();
+    fireEvent.click(screen.getByRole("button", { name: "Check compatibility" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1300);
+    });
+    expect(screen.getByRole("status").textContent).toContain("Checking");
   });
 });

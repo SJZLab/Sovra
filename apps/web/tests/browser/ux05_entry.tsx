@@ -18,6 +18,8 @@ export interface Route {
   path: string;
   status?: number;
   body?: unknown;
+  /** Successive answers (the last repeats): a reload that returns different data. */
+  bodies?: unknown[];
   /** Never settles: the request stays in flight (the loading state). */
   pending?: boolean;
   /** Rejects like a network failure. */
@@ -29,6 +31,7 @@ export interface Route {
 export type Kind = "catalog" | "mapping" | "compat" | "cost";
 
 function stubFetch(routes: Route[]): void {
+  const counts = new Map<Route, number>();
   (window as unknown as { __requests: string[] }).__requests = [];
   window.fetch = ((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -39,7 +42,10 @@ function stubFetch(routes: Route[]): void {
       if (route.pending) return new Promise(() => undefined);
       if (route.reject) return Promise.reject(new TypeError("Failed to fetch"));
       const status = route.status ?? 200;
-      const text = route.rawText ?? JSON.stringify(route.body ?? {});
+      const served = route.bodies ? Math.min(counts.get(route) ?? 0, route.bodies.length - 1) : 0;
+      counts.set(route, (counts.get(route) ?? 0) + 1);
+      const body = route.bodies ? route.bodies[served] : route.body;
+      const text = route.rawText ?? JSON.stringify(body ?? {});
       return Promise.resolve(new Response(text, { status }));
     }
     return Promise.resolve(

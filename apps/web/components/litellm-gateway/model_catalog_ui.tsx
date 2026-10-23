@@ -145,14 +145,24 @@
  * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): an empty project list (a validated 200 `[]`, never a
  * failed or not-yet-run load) shows an `EmptyState` with a reload action; the project row and the
  * component root wrap unbroken names; every request-level error is an `AlertMessage` (announced,
- * localized, with a recovery step), and `networkErrorMessage` is the shared helper in `ui/errors.ts`
+ * localized, with a recovery step), and `networkError` is the shared helper in `ui/errors.ts`
  * (a body that is not JSON shows the localized malformed-response message, never the parser text,
  * and an error with no message shows a localized "unknown error").
  */
 
 import { useRef, useState } from "react";
 
-import { AlertMessage, Button, EmptyState, Pending, networkErrorMessage } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  EmptyState,
+  Pending,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface ProjectSummary {
@@ -260,16 +270,17 @@ export function probeUrl(
   return query ? `${base}?${query}` : base;
 }
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return body.detail;
+      return uiError(body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  return phrase("requestFailedTemplate", locale, { status: response.status });
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -348,7 +359,7 @@ export function ModelCatalogUI({
   // True only after a validated, successful project listing: an empty list is shown as an empty
   // state only when the server really answered with zero projects, never before or after a failure.
   const [projectsLoaded, setProjectsLoaded] = useState(false);
-  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [projectsError, setProjectsError] = useState<UiError | null>(null);
   // Deliberately starts null, never pre-selected -- this task's own real
   // "explicit project selection" requirement.
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -357,18 +368,24 @@ export function ModelCatalogUI({
   const [metadataFilter, setMetadataFilter] = useState("");
   const [catalog, setCatalog] = useState<CatalogSnapshot | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogError, setCatalogError] = useState<UiError | null>(null);
 
   const [probeKind, setProbeKind] = useState<ProbeKind>("chat");
   const [probingModelId, setProbingModelId] = useState<string | null>(null);
   const [probeResults, setProbeResults] = useState<Record<string, ProbeResult>>({});
-  const [probeError, setProbeError] = useState<string | null>(null);
+  const [probeError, setProbeError] = useState<UiError | null>(null);
   // FTF-UX05 finding #9 (severity 3): a real, paid, irreversible call is never fired from the
   // first click. `confirmProbeModelId` names the entry a confirm is open for; nothing calls the
   // live route until its own "Run probe" button inside the confirm is clicked.
   const [confirmProbeModelId, setConfirmProbeModelId] = useState<string | null>(null);
 
+  // A load trigger disables itself while busy and would drop keyboard focus to <body>: give it back
+  // afterwards (to the trigger if the control that had it was unmounted, e.g. an EmptyState action).
+  const armProjectsFocus = useRefocusAfter(loadingProjects);
+  const armCatalogFocus = useRefocusAfter(loadingCatalog);
+
   async function handleLoadProjects() {
+    armProjectsFocus(() => triggerOf("load-projects-button"));
     setLoadingProjects(true);
     setProjectsError(null);
     setProjectsLoaded(false);
@@ -383,13 +400,13 @@ export function ModelCatalogUI({
       }
       const body: unknown = await response.json();
       if (!Array.isArray(body) || !body.every(isProjectSummary)) {
-        setProjectsError(phrase("catalogMalformedProjectListing", locale));
+        setProjectsError(uiError(phrase("catalogMalformedProjectListing", locale)));
         return;
       }
       setProjects(body);
       setProjectsLoaded(true);
     } catch (caught) {
-      setProjectsError(networkErrorMessage(caught, locale));
+      setProjectsError(networkError(caught, locale));
     } finally {
       setLoadingProjects(false);
     }
@@ -401,9 +418,10 @@ export function ModelCatalogUI({
       // disabled until a project is explicitly selected (see below); the
       // live route itself does not require project_id on the catalog
       // read, but this component never sends the request without one.
-      setCatalogError(phrase("catalogSelectProjectFirst", locale));
+      setCatalogError(uiError(phrase("catalogSelectProjectFirst", locale), "input"));
       return;
     }
+    armCatalogFocus(() => triggerOf("load-catalog-button"));
     setLoadingCatalog(true);
     setCatalogError(null);
     setConfirmProbeModelId(null);
@@ -420,17 +438,20 @@ export function ModelCatalogUI({
         { method: "GET", credentials: "include" },
       );
       if (!response.ok) {
+        setCatalog(null);
         setCatalogError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isCatalogSnapshot(body)) {
-        setCatalogError(phrase("catalogMalformedCatalog", locale));
+        setCatalog(null);
+        setCatalogError(uiError(phrase("catalogMalformedCatalog", locale)));
         return;
       }
       setCatalog(body);
     } catch (caught) {
-      setCatalogError(networkErrorMessage(caught, locale));
+      setCatalog(null);
+      setCatalogError(networkError(caught, locale));
     } finally {
       setLoadingCatalog(false);
     }
@@ -438,7 +459,7 @@ export function ModelCatalogUI({
 
   async function handleProbe(modelId: string) {
     if (!selectedProjectId) {
-      setProbeError(phrase("catalogSelectProjectFirst", locale));
+      setProbeError(uiError(phrase("catalogSelectProjectFirst", locale), "input"));
       return;
     }
     setProbingModelId(modelId);
@@ -463,14 +484,14 @@ export function ModelCatalogUI({
         typeof body.state !== "string" ||
         !(body.usage === null || body.usage === undefined || isProbeUsage(body.usage))
       ) {
-        setProbeError(phrase("catalogMalformedProbe", locale));
+        setProbeError(uiError(phrase("catalogMalformedProbe", locale), "verify-state"));
         return;
       }
       setProbeResults((prev) => ({ ...prev, [modelId]: body }));
     } catch (caught) {
       // Nothing is recorded as a result unless the probe genuinely
       // returned -- a network failure never fabricates a probe outcome.
-      setProbeError(networkErrorMessage(caught, locale));
+      setProbeError(networkError(caught, locale, { write: true }));
     } finally {
       setProbingModelId(null);
     }
@@ -481,6 +502,9 @@ export function ModelCatalogUI({
   // (`mandate_editor_and_conflict_resolution_ui.tsx`'s discard-confirm) both move focus to the
   // least-destructive action on open and return it to the trigger on cancel.
   const rootRef = useRef<HTMLDivElement>(null);
+  function triggerOf(testId: string): HTMLElement | null {
+    return rootRef.current?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null;
+  }
 
   function openProbeConfirm(modelId: string) {
     setConfirmProbeModelId(modelId);
@@ -535,7 +559,7 @@ export function ModelCatalogUI({
           <Pending label={phrase("catalogLoadProjects", locale)} locale={locale} />
         )}
         {projectsError && (
-          <AlertMessage message={projectsError} locale={locale} testId="projects-error" />
+          <AlertMessage error={projectsError} locale={locale} testId="projects-error" />
         )}
         {projectsLoaded && projects.length === 0 && (
           <EmptyState
@@ -614,9 +638,7 @@ export function ModelCatalogUI({
       </section>
 
       {loadingCatalog && <Pending label={phrase("catalogLoadCatalog", locale)} locale={locale} />}
-      {catalogError && (
-        <AlertMessage message={catalogError} locale={locale} testId="catalog-error" />
-      )}
+      {catalogError && <AlertMessage error={catalogError} locale={locale} testId="catalog-error" />}
 
       {catalog && (
         <section data-testid="catalog-results">
@@ -679,7 +701,7 @@ export function ModelCatalogUI({
               </option>
             </select>
           </label>
-          {probeError && <AlertMessage message={probeError} locale={locale} testId="probe-error" />}
+          {probeError && <AlertMessage error={probeError} locale={locale} testId="probe-error" />}
 
           {catalog.entries.length === 0 && (
             <EmptyState

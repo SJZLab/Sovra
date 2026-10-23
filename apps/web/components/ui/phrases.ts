@@ -364,6 +364,35 @@ export const PHRASES = {
     en: "Cheapest certified rate unknown: the search has not completed.",
     ar: "السعر المعتمد الأرخص غير معروف: لم يكتمل البحث.",
   },
+  networkErrorUnreachable: {
+    en: "could not reach the server",
+    ar: "تعذّر الوصول إلى الخادم",
+  },
+  malformedWriteResponseMessage: {
+    en: "The server answered, but this page could not read the result.",
+    ar: "ردّ الخادم، لكن تعذّر على هذه الصفحة قراءة النتيجة.",
+  },
+  recoveryVerifyState: {
+    en: "Reload to check the current state before trying again.",
+    ar: "أعد التحميل للتحقق من الحالة الحالية قبل المحاولة مرة أخرى.",
+  },
+  recoveryPermission: {
+    en: "You do not have permission for this action. Ask an administrator for access.",
+    ar: "ليست لديك صلاحية لهذا الإجراء. اطلب الوصول من المسؤول.",
+  },
+  recoveryConflict: {
+    en: "The data changed since you loaded it. Reload, then try again.",
+    ar: "تغيّرت البيانات منذ تحميلها. أعد التحميل ثم حاول مرة أخرى.",
+  },
+  recoveryInput: {
+    en: "Complete the missing step, then try again.",
+    ar: "أكمل الخطوة الناقصة ثم حاول مرة أخرى.",
+  },
+  mappingNoChangesTitle: { en: "No mapping changes recorded", ar: "لم تُسجَّل تغييرات في الربط" },
+  mappingNoChangesWhy: {
+    en: "This model alias has not been mapped, changed or removed yet. Reload the history after the first change.",
+    ar: "لم يتم ربط اسم هذا النموذج أو تغييره أو إزالته بعد. أعد تحميل السجل بعد أول تغيير.",
+  },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 /** `{name}` placeholders in a catalogue string are replaced from `vars`; nothing else is touched

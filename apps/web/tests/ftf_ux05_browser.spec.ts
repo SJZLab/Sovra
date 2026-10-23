@@ -476,6 +476,66 @@ const STATES: UiState[] = [
     steps: [{ click: "load-changes-button" }],
     ready: '[data-testid="changes-empty"]',
   },
+  {
+    id: "0214 probe non-JSON 200 (a paid write whose result is unreadable)",
+    kind: "catalog",
+    routes: [
+      { method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS },
+      { method: "GET", path: CATALOG_PATH, body: catalogBody() },
+      { method: "POST", path: PROBE_PATH, rawText: "<html>proxy</html>" },
+    ],
+    steps: [
+      ...CATALOG_BASE_STEPS,
+      { click: `probe-button-${MODEL_A}` },
+      { click: `confirm-probe-button-${MODEL_A}` },
+    ],
+    ready: '[data-testid="probe-error"]',
+  },
+  {
+    id: "0214 probe 403",
+    kind: "catalog",
+    routes: [
+      { method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS },
+      { method: "GET", path: CATALOG_PATH, body: catalogBody() },
+      { method: "POST", path: PROBE_PATH, status: 403, body: { detail: "role_not_authorized" } },
+    ],
+    steps: [
+      ...CATALOG_BASE_STEPS,
+      { click: `probe-button-${MODEL_A}` },
+      { click: `confirm-probe-button-${MODEL_A}` },
+    ],
+    ready: '[data-testid="probe-error"]',
+  },
+  // ----------------------------------------------------------------------------- 0308 more
+  {
+    id: "0308 mapping network error",
+    kind: "mapping",
+    routes: [{ method: "GET", path: MAP_PATH, reject: true }],
+    steps: [{ click: "load-mapping-button" }],
+    ready: '[data-testid="mapping-error"]',
+  },
+  {
+    id: "0308 write non-JSON 200 (a write whose result is unreadable)",
+    kind: "mapping",
+    routes: [
+      { method: "GET", path: MAP_PATH, body: mappingBody(2, ART_A) },
+      { method: "GET", path: ARTIFACTS_PATH, body: ARTIFACT_LIST },
+      { method: "POST", path: MAP_PATH, rawText: "<html>gateway</html>" },
+    ],
+    steps: [...MAPPED_FLOW, { click: "confirm-change-button" }],
+    ready: '[data-testid="write-error"]',
+  },
+  {
+    id: "0308 write 409 conflict",
+    kind: "mapping",
+    routes: [
+      { method: "GET", path: MAP_PATH, body: mappingBody(2, ART_A) },
+      { method: "GET", path: ARTIFACTS_PATH, body: ARTIFACT_LIST },
+      { method: "POST", path: MAP_PATH, status: 409, body: { detail: "catalog_version_conflict" } },
+    ],
+    steps: [...MAPPED_FLOW, { click: "confirm-change-button" }],
+    ready: '[data-testid="write-error"]',
+  },
   // ----------------------------------------------------------------------------- 0309 compat
   { id: "0309 idle", kind: "compat", routes: [], ready: "button" },
   {
@@ -505,6 +565,13 @@ const STATES: UiState[] = [
     id: "0309 error 503",
     kind: "compat",
     routes: [{ method: "GET", path: CAP_PATH, status: 503, body: {} }],
+    steps: [{ click: "__compat-check" }],
+    ready: '[role="alert"]',
+  },
+  {
+    id: "0309 network error",
+    kind: "compat",
+    routes: [{ method: "GET", path: CAP_PATH, reject: true }],
     steps: [{ click: "__compat-check" }],
     ready: '[role="alert"]',
   },
@@ -576,6 +643,25 @@ const STATES: UiState[] = [
         body: searchBody({ results: [], current_cheapest_certified: null }),
       },
       { method: "POST", path: COST_BASE, reject: true },
+    ],
+    steps: [
+      { fill: ["cost-profile-label-input", "My rate"] },
+      { fill: ["cost-profile-rate-amount-input", "0.5"] },
+      { fill: ["cost-profile-source-input", "https://example.com"] },
+      { click: "cost-profile-submit-button" },
+    ],
+    ready: '[data-testid="cost-profile-form-error"]',
+  },
+  {
+    id: "1301 create non-JSON 200 (a write whose result is unreadable)",
+    kind: "cost",
+    routes: [
+      {
+        method: "GET",
+        path: SEARCH_PATH,
+        body: searchBody({ results: [], current_cheapest_certified: null }),
+      },
+      { method: "POST", path: COST_BASE, rawText: "<html>proxy</html>" },
     ],
     steps: [
       { fill: ["cost-profile-label-input", "My rate"] },
@@ -1027,21 +1113,21 @@ describe("[UX05-BROWSER] round 3, point 2: OVERFLOW-LONG-NAMES, each named site 
 
 describe("[UX05-BROWSER] round 3, point 1: ERRORS-SILENT, every 1301 case in real Chromium", () => {
   test.each([
-    ["1301 search network error", "network error: Failed to fetch"],
+    ["1301 search network error", "network error: could not reach the server"],
     [
       "1301 search non-JSON 200",
       "The server sent a response this page cannot read. Nothing was changed.",
     ],
-    ["1301 create network error", "network error: Failed to fetch"],
-    ["1301 verify network error", "network error: Failed to fetch"],
+    ["1301 create network error", "network error: could not reach the server"],
+    ["1301 verify network error", "network error: could not reach the server"],
   ])("%s: one role=alert, a recovery step, no unhandled rejection", async (id, expected) => {
     const { page, uncaught } = await openState(byId(id), "en", "light");
     try {
       const alerts = page.locator('[role="alert"]');
       expect(await alerts.count()).toBe(1);
       expect(await alerts.innerText()).toBe(expected);
-      expect(await page.getByTestId("cost-profile-form-error-recovery").innerText()).toContain(
-        "try again",
+      expect(await page.getByTestId("cost-profile-form-error-recovery").innerText()).toMatch(
+        /again/,
       );
       expect(uncaught).toEqual([]);
       expect(await unhandled(page)).toEqual([]);
@@ -1213,6 +1299,320 @@ describe("[UX05-BROWSER] round 3: focus after the confirm dialogs (keyboard-only
       } finally {
         await page.close();
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Pre-review round 1 (independent L2 reviewer): focus after loads, fetch failure under ar, writes
+// ---------------------------------------------------------------------------------------------
+const activeTestId = (page: Page) =>
+  page.evaluate(
+    () => document.activeElement?.getAttribute("data-testid") ?? document.activeElement?.tagName,
+  );
+
+describe("[UX05-BROWSER] focus is never dropped to <body> after a load (keyboard-only: focus the trigger, press Enter)", () => {
+  interface Case {
+    name: string;
+    kind: Kind;
+    routes: Route[];
+    pre?: Step[];
+    props?: Record<string, unknown>;
+    trigger: string;
+    /** A selector that is only visible once the load has finished. */
+    done: string;
+    expectActive: string;
+  }
+  const cases: Case[] = [
+    {
+      name: "0214 Load projects, success",
+      kind: "catalog",
+      routes: [{ method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS }],
+      trigger: "load-projects-button",
+      done: `[data-testid="project-row-${PROJECT}"]`,
+      expectActive: "load-projects-button",
+    },
+    {
+      name: "0214 Load projects, failure",
+      kind: "catalog",
+      routes: [{ method: "GET", path: PROJECTS_PATH, status: 503, body: {} }],
+      trigger: "load-projects-button",
+      done: '[data-testid="projects-error"]',
+      expectActive: "load-projects-button",
+    },
+    {
+      name: "0214 Load projects from the empty state's action",
+      kind: "catalog",
+      routes: [{ method: "GET", path: PROJECTS_PATH, body: [] }],
+      pre: [{ click: "load-projects-button" }],
+      trigger: "projects-reload-button",
+      done: '[data-testid="projects-reload-button"]',
+      expectActive: "load-projects-button",
+    },
+    {
+      name: "0214 Load catalog, success",
+      kind: "catalog",
+      routes: [
+        { method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS },
+        { method: "GET", path: CATALOG_PATH, body: catalogBody() },
+      ],
+      pre: [{ click: "load-projects-button" }, { click: `project-select-button-${PROJECT}` }],
+      trigger: "load-catalog-button",
+      done: `[data-testid="catalog-entry-${MODEL_A}"]`,
+      expectActive: "load-catalog-button",
+    },
+    {
+      name: "0214 Load catalog, failure",
+      kind: "catalog",
+      routes: [
+        { method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS },
+        { method: "GET", path: CATALOG_PATH, reject: true },
+      ],
+      pre: [{ click: "load-projects-button" }, { click: `project-select-button-${PROJECT}` }],
+      trigger: "load-catalog-button",
+      done: '[data-testid="catalog-error"]',
+      expectActive: "load-catalog-button",
+    },
+    {
+      name: "0308 Load mapping, success",
+      kind: "mapping",
+      routes: [{ method: "GET", path: MAP_PATH, body: mappingBody(2, ART_A) }],
+      trigger: "load-mapping-button",
+      done: '[data-testid="mapped-artifact-details"]',
+      expectActive: "load-mapping-button",
+    },
+    {
+      name: "0308 Load mapping, failure",
+      kind: "mapping",
+      routes: [{ method: "GET", path: MAP_PATH, status: 500, body: {} }],
+      trigger: "load-mapping-button",
+      done: '[data-testid="mapping-error"]',
+      expectActive: "load-mapping-button",
+    },
+    {
+      name: "0308 Load artifacts, success",
+      kind: "mapping",
+      routes: [{ method: "GET", path: ARTIFACTS_PATH, body: ARTIFACT_LIST }],
+      trigger: "load-artifacts-button",
+      done: `[data-testid="artifact-row-${ART_A}"]`,
+      expectActive: "load-artifacts-button",
+    },
+    {
+      name: "0308 Load artifacts from the empty state's action",
+      kind: "mapping",
+      routes: [{ method: "GET", path: ARTIFACTS_PATH, body: [] }],
+      pre: [{ click: "load-artifacts-button" }],
+      trigger: "artifacts-reload-button",
+      done: '[data-testid="artifacts-reload-button"]',
+      expectActive: "load-artifacts-button",
+    },
+    {
+      name: "0308 Load change history, success",
+      kind: "mapping",
+      routes: [{ method: "GET", path: CHANGES_PATH, body: { changes: [] } }],
+      trigger: "load-changes-button",
+      done: '[data-testid="changes-empty"]',
+      expectActive: "load-changes-button",
+    },
+    {
+      name: "0309 Check compatibility, success",
+      kind: "compat",
+      routes: [{ method: "GET", path: CAP_PATH, body: capabilityBody(ALIAS) }],
+      trigger: "__compat",
+      done: "table",
+      expectActive: "BUTTON",
+    },
+    {
+      name: "0309 Check compatibility, failure",
+      kind: "compat",
+      routes: [{ method: "GET", path: CAP_PATH, status: 503, body: {} }],
+      trigger: "__compat",
+      done: '[role="alert"]',
+      expectActive: "BUTTON",
+    },
+    {
+      name: "1301 Record rate, failure (503)",
+      kind: "cost",
+      routes: [
+        {
+          method: "GET",
+          path: SEARCH_PATH,
+          body: searchBody({ results: [], current_cheapest_certified: null }),
+        },
+        { method: "POST", path: COST_BASE, status: 503, body: {} },
+      ],
+      pre: [
+        { fill: ["cost-profile-label-input", "My rate"] },
+        { fill: ["cost-profile-rate-amount-input", "0.5"] },
+        { fill: ["cost-profile-source-input", "https://example.com"] },
+      ],
+      trigger: "cost-profile-submit-button",
+      done: '[data-testid="cost-profile-form-error"]',
+      expectActive: "cost-profile-submit-button",
+    },
+    {
+      name: "1301 Record rate, success",
+      kind: "cost",
+      routes: [
+        {
+          method: "GET",
+          path: SEARCH_PATH,
+          body: searchBody({ results: [], current_cheapest_certified: null }),
+        },
+        { method: "POST", path: COST_BASE, status: 201, body: rate() },
+      ],
+      pre: [
+        { fill: ["cost-profile-label-input", "My rate"] },
+        { fill: ["cost-profile-rate-amount-input", "0.5"] },
+        { fill: ["cost-profile-source-input", "https://example.com"] },
+      ],
+      trigger: "cost-profile-submit-button",
+      done: '[data-testid="cost-profile-reload-button"]',
+      expectActive: "cost-profile-submit-button",
+    },
+    {
+      name: "1301 Reload after a failed search",
+      kind: "cost",
+      routes: [{ method: "GET", path: SEARCH_PATH, status: 503, body: {} }],
+      trigger: "cheapest-rate-retry-button",
+      done: '[data-testid="cheapest-rate-retry-button"]',
+      expectActive: "cost-per-success-search-results",
+    },
+    {
+      name: "1301 Verify, success (the Verify button unmounts)",
+      kind: "cost",
+      routes: [
+        {
+          method: "GET",
+          path: SEARCH_PATH,
+          bodies: [
+            searchBody(),
+            {
+              results: [
+                {
+                  ...rate({ verified_at: "2026-10-02T00:00:00+00:00" }),
+                  certifiable_cheapest: true,
+                  disqualified_reason: null,
+                },
+              ],
+              current_cheapest_certified: rate({ verified_at: "2026-10-02T00:00:00+00:00" }),
+            },
+          ],
+        },
+        { method: "POST", path: `${COST_BASE}/${RATE}/verify`, body: {} },
+      ],
+      trigger: `cost-profile-verify-${RATE}`,
+      done: `[data-testid="cost-profile-result-${RATE}"]`,
+      expectActive: `cost-profile-result-${RATE}`,
+    },
+  ];
+  for (const c of cases) {
+    test(`${c.name}: focus stays on the page's own control`, async () => {
+      const state: UiState = {
+        id: c.name,
+        kind: c.kind,
+        routes: c.routes,
+        props: c.props,
+        steps: c.pre,
+        ready: ROOT_SELECTOR[c.kind],
+      };
+      const { page, uncaught } = await openState(state, "en", "light");
+      try {
+        const trigger =
+          c.trigger === "__compat"
+            ? page.locator("section button").first()
+            : page.getByTestId(c.trigger);
+        await trigger.waitFor({ state: "visible", timeout: 10_000 });
+        // 1301's Reload-after-failed-search and the empty-state actions need the first load to land.
+        await page.waitForTimeout(150);
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        // the retry/reload cases re-run the same selector: wait for the request to settle
+        await page.waitForTimeout(400);
+        await page.waitForSelector(c.done, { state: "visible", timeout: 10_000 });
+        await expect
+          .poll(() => activeTestId(page), { timeout: 5_000, message: `${c.name}: active element` })
+          .toBe(c.expectActive);
+        expect(uncaught).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+  }
+});
+
+describe("[UX05-BROWSER] pre-review round 1: fetch failure under ar, unreadable writes, recovery that fits", () => {
+  test.each([
+    ["0214 catalog network error", "catalog-error"],
+    ["0308 mapping network error", "mapping-error"],
+    ["1301 search network error", "cost-profile-form-error"],
+  ])("%s under ar never shows the browser's English 'Failed to fetch'", async (id, testId) => {
+    const { page } = await openState(byId(id), "ar", "light");
+    try {
+      const text = await page.getByTestId(testId).innerText();
+      expect(text).toBe("خطأ في الشبكة: تعذّر الوصول إلى الخادم");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("0309 network error under ar never shows 'Failed to fetch'", async () => {
+    const { page } = await openState(byId("0309 network error"), "ar", "light");
+    try {
+      expect(await page.getByRole("alert").innerText()).toBe(
+        "خطأ في الشبكة: تعذّر الوصول إلى الخادم",
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
+  test.each([
+    ["0214 probe non-JSON 200 (a paid write whose result is unreadable)", "probe-error"],
+    ["0308 write non-JSON 200 (a write whose result is unreadable)", "write-error"],
+    ["1301 create non-JSON 200 (a write whose result is unreadable)", "cost-profile-form-error"],
+  ])(
+    "%s: it says the result could not be read and to check before retrying (never 'nothing was changed')",
+    async (id, testId) => {
+      for (const [locale, message, recovery] of [
+        [
+          "en",
+          "The server answered, but this page could not read the result.",
+          "Reload to check the current state before trying again.",
+        ],
+        [
+          "ar",
+          "ردّ الخادم، لكن تعذّر على هذه الصفحة قراءة النتيجة.",
+          "أعد التحميل للتحقق من الحالة الحالية قبل المحاولة مرة أخرى.",
+        ],
+      ] as const) {
+        const { page } = await openState(byId(id), locale, "light");
+        try {
+          expect(await page.getByTestId(testId).innerText()).toBe(message);
+          expect(await page.getByTestId(`${testId}-recovery`).innerText()).toBe(recovery);
+        } finally {
+          await page.close();
+        }
+      }
+    },
+  );
+
+  test("a 403 probe and a 409 mapping conflict get their own recovery sentences", async () => {
+    const probe = await openState(byId("0214 probe 403"), "en", "light");
+    try {
+      expect(await probe.page.getByTestId("probe-error-recovery").innerText()).toBe(
+        "You do not have permission for this action. Ask an administrator for access.",
+      );
+    } finally {
+      await probe.page.close();
+    }
+    const write = await openState(byId("0308 write 409 conflict"), "ar", "light");
+    try {
+      expect(await write.page.getByTestId("write-error-recovery").innerText()).toBe(
+        "تغيّرت البيانات منذ تحميلها. أعد التحميل ثم حاول مرة أخرى.",
+      );
+    } finally {
+      await write.page.close();
     }
   });
 });

@@ -100,7 +100,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { AlertMessage, Button, EmptyState, Pending, networkErrorMessage } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  EmptyState,
+  Pending,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface MappedArtifact {
@@ -199,19 +209,20 @@ const ERROR_PHRASE_KEYS = {
   invalid_model_name: "mappingErrorInvalidModelName",
 } as const satisfies Record<string, keyof typeof PHRASES>;
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
       const key = ERROR_PHRASE_KEYS[body.detail as keyof typeof ERROR_PHRASE_KEYS];
       // An unrecognized code is raw backend data (its language is the backend's choice, not this
       // component's) and is returned verbatim, never mistranslated.
-      return key ? phrase(key, locale) : body.detail;
+      return uiError(key ? phrase(key, locale) : body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  return phrase("requestFailedTemplate", locale, { status: response.status });
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function shown(value: unknown, locale: Locale): string {
@@ -283,11 +294,11 @@ export function ModelToArtifactMappingUI({
   locale = "en",
 }: ModelToArtifactMappingUIProps) {
   const [mapping, setMapping] = useState<TrainingArtifactMapping | null>(null);
-  const [mappingError, setMappingError] = useState<string | null>(null);
+  const [mappingError, setMappingError] = useState<UiError | null>(null);
   const [loadingMapping, setLoadingMapping] = useState(false);
 
   const [artifacts, setArtifacts] = useState<MappedArtifact[]>([]);
-  const [artifactsError, setArtifactsError] = useState<string | null>(null);
+  const [artifactsError, setArtifactsError] = useState<UiError | null>(null);
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
   // True only after a validated, successful listing (an empty list is then a real empty state).
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
@@ -296,14 +307,20 @@ export function ModelToArtifactMappingUI({
 
   const [pending, setPending] = useState<"map" | "unmap" | null>(null);
   const [writing, setWriting] = useState(false);
-  const [writeError, setWriteError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<UiError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const [changes, setChanges] = useState<MappingChange[] | null>(null);
-  const [changesError, setChangesError] = useState<string | null>(null);
+  const [changesError, setChangesError] = useState<UiError | null>(null);
   const [loadingChanges, setLoadingChanges] = useState(false);
 
+  // Load triggers disable themselves while busy and would drop keyboard focus to <body>.
+  const armMappingFocus = useRefocusAfter(loadingMapping);
+  const armArtifactsFocus = useRefocusAfter(loadingArtifacts);
+  const armChangesFocus = useRefocusAfter(loadingChanges);
+
   async function handleLoadMapping() {
+    armMappingFocus(() => triggerOf("load-mapping-button"));
     setLoadingMapping(true);
     setMappingError(null);
     try {
@@ -315,24 +332,28 @@ export function ModelToArtifactMappingUI({
         },
       );
       if (!response.ok) {
+        setMapping(null);
         setMappingError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isMapping(body)) {
-        setMappingError(phrase("mappingMalformedMapping", locale));
+        setMapping(null);
+        setMappingError(uiError(phrase("mappingMalformedMapping", locale)));
         return;
       }
       setMapping(body);
       setPending(null);
     } catch (caught) {
-      setMappingError(networkErrorMessage(caught, locale));
+      setMapping(null);
+      setMappingError(networkError(caught, locale));
     } finally {
       setLoadingMapping(false);
     }
   }
 
   async function handleLoadArtifacts() {
+    armArtifactsFocus(() => triggerOf("load-artifacts-button"));
     setArtifactsError(null);
     setArtifactsLoaded(false);
     setLoadingArtifacts(true);
@@ -347,19 +368,20 @@ export function ModelToArtifactMappingUI({
       }
       const body: unknown = await response.json();
       if (!Array.isArray(body) || !body.every(isMappedArtifact)) {
-        setArtifactsError(phrase("mappingMalformedArtifactListing", locale));
+        setArtifactsError(uiError(phrase("mappingMalformedArtifactListing", locale)));
         return;
       }
       setArtifacts(body);
       setArtifactsLoaded(true);
     } catch (caught) {
-      setArtifactsError(networkErrorMessage(caught, locale));
+      setArtifactsError(networkError(caught, locale));
     } finally {
       setLoadingArtifacts(false);
     }
   }
 
   async function handleLoadChanges() {
+    armChangesFocus(() => triggerOf("load-changes-button"));
     setChangesError(null);
     setLoadingChanges(true);
     try {
@@ -377,12 +399,12 @@ export function ModelToArtifactMappingUI({
         !Array.isArray(body.changes) ||
         !body.changes.every(isMappingChange)
       ) {
-        setChangesError(phrase("mappingMalformedChangeHistory", locale));
+        setChangesError(uiError(phrase("mappingMalformedChangeHistory", locale)));
         return;
       }
       setChanges(body.changes);
     } catch (caught) {
-      setChangesError(networkErrorMessage(caught, locale));
+      setChangesError(networkError(caught, locale));
     } finally {
       setLoadingChanges(false);
     }
@@ -392,14 +414,14 @@ export function ModelToArtifactMappingUI({
   // has just lost focus to <body>: put keyboard focus on the announced error instead, next to the
   // retry (the same recovery as a successful write, which moves focus to the changed state).
   const focusWriteError = useRef(false);
-  function failWrite(message: string) {
+  function failWrite(error: UiError) {
     focusWriteError.current = true;
-    setWriteError(message);
+    setWriteError(error);
   }
 
   async function submit(artifactId: string | null) {
     if (!mapping) {
-      failWrite(phrase("mappingLoadFirst", locale));
+      failWrite(uiError(phrase("mappingLoadFirst", locale), "input"));
       return;
     }
     setWriting(true);
@@ -425,7 +447,7 @@ export function ModelToArtifactMappingUI({
       }
       const body: unknown = await response.json();
       if (!isMapping(body) || typeof (body as MappingResult).changed !== "boolean") {
-        failWrite(phrase("mappingMalformedMapping", locale));
+        failWrite(uiError(phrase("mappingMalformedMapping", locale), "verify-state"));
         return;
       }
       const result = body as MappingResult;
@@ -446,7 +468,7 @@ export function ModelToArtifactMappingUI({
       );
     } catch (caught) {
       // Nothing is shown as mapped unless the route genuinely answered.
-      failWrite(networkErrorMessage(caught, locale));
+      failWrite(networkError(caught, locale, { write: true }));
     } finally {
       setWriting(false);
     }
@@ -461,6 +483,9 @@ export function ModelToArtifactMappingUI({
     selectedArtifact.id !== mapping.trainable_artifact_id;
 
   const rootRef = useRef<HTMLDivElement>(null);
+  function triggerOf(testId: string): HTMLElement | null {
+    return rootRef.current?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null;
+  }
 
   useEffect(() => {
     if (writeError && focusWriteError.current) {
@@ -521,7 +546,7 @@ export function ModelToArtifactMappingUI({
         </Button>
         {loadingMapping && <Pending label={phrase("mappingLoadMapping", locale)} locale={locale} />}
         {mappingError && (
-          <AlertMessage message={mappingError} locale={locale} testId="mapping-error" />
+          <AlertMessage error={mappingError} locale={locale} testId="mapping-error" />
         )}
         {mapping && (
           <div data-testid="mapping-state" tabIndex={-1}>
@@ -561,7 +586,7 @@ export function ModelToArtifactMappingUI({
           <Pending label={phrase("mappingLoadArtifacts", locale)} locale={locale} />
         )}
         {artifactsError && (
-          <AlertMessage message={artifactsError} locale={locale} testId="artifacts-error" />
+          <AlertMessage error={artifactsError} locale={locale} testId="artifacts-error" />
         )}
         {artifactsLoaded && artifacts.length === 0 && (
           <EmptyState
@@ -653,7 +678,7 @@ export function ModelToArtifactMappingUI({
         )}
 
         {writeError && (
-          <AlertMessage message={writeError} locale={locale} testId="write-error" focusable />
+          <AlertMessage error={writeError} locale={locale} testId="write-error" focusable />
         )}
         {notice && (
           <p role="status" data-testid="mapping-notice">
@@ -675,10 +700,20 @@ export function ModelToArtifactMappingUI({
           <Pending label={phrase("mappingLoadChangeHistory", locale)} locale={locale} />
         )}
         {changesError && (
-          <AlertMessage message={changesError} locale={locale} testId="changes-error" />
+          <AlertMessage error={changesError} locale={locale} testId="changes-error" />
         )}
         {changes && changes.length === 0 && (
-          <p data-testid="changes-empty">{phrase("mappingNoChangesRecorded", locale)}</p>
+          <div data-testid="changes-empty">
+            <EmptyState
+              title={phrase("mappingNoChangesTitle", locale)}
+              why={phrase("mappingNoChangesWhy", locale)}
+              action={
+                <Button data-testid="changes-reload-button" onClick={handleLoadChanges}>
+                  {phrase("mappingLoadChangeHistory", locale)}
+                </Button>
+              }
+            />
+          </div>
         )}
         {changes && changes.length > 0 && (
           <ul data-testid="changes-list">
