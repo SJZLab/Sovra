@@ -2131,8 +2131,8 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "r2 only the first base shard header is read",
-        "        if e.relative_path.endswith(_SAFETENSORS_SUFFIX)\n    ]",
-        "        if e.relative_path.endswith(_SAFETENSORS_SUFFIX)\n    ][:1]",
+        "        for e in base_manifest.entries\n        if e.relative_path.endswith(_SAFETENSORS_SUFFIX)\n    ]",
+        "        for e in [x for x in base_manifest.entries if x.relative_path.endswith(_SAFETENSORS_SUFFIX)][:1]\n    ]",
         1,
     ),
     (
@@ -2277,7 +2277,7 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "terminal artifact re-read dropped",
-        "if _artifact_unchanged(session, context, inputs.artifact):",
+        "if _inputs_unchanged(session, context, inputs, adapter=adapter):",
         "if True:",
         1,
     ),
@@ -2390,14 +2390,19 @@ def group_l(m: Any) -> None:
         with Env(m).patched() as env:
             base = weights_files()
             base.pop("model.safetensors")
-            base["model-00001-of-00002.safetensors"] = first
-            base["model-00002-of-00002.safetensors"] = second
+            # distinct tensors per shard (a duplicate name would fail the adapter by itself)
+            shard_a = safetensors_bytes(BASE_TENSORS[:1])
+            shard_b = safetensors_bytes(BASE_TENSORS[1:])
+            base["model-00001-of-00002.safetensors"] = shard_a if first is good else shard_a + b"\0"
+            base["model-00002-of-00002.safetensors"] = (
+                shard_b if second is good else shard_b + b"\0"
+            )
             fx = env.adapter_job(base_files=base)
             outcome = env.run(ADAPTER, fx)
             check(
                 "L2",
                 f"L2 adapter base, {label}: ({outcome_pair(outcome)})",
-                outcome_pair(outcome)[0] == "failed",
+                outcome_pair(outcome) == ("failed", "weights_header_invalid"),
             )
             check("L2", f"L2 adapter base, {label}: no new ModelVersion", len(env.versions()) == 1)
 
