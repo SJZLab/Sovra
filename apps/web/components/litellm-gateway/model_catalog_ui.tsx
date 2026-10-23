@@ -392,6 +392,8 @@ export function ModelCatalogUI({
   function clearProjects() {
     setProjects([]);
     setSelectedProjectId(null);
+    // the catalog was loaded for the selection that is now gone
+    setCatalog(null);
   }
 
   async function handleLoadProjects() {

@@ -1892,3 +1892,123 @@ describe("round 2: pins for the last GREEN faults", () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe("round 2b: pins for the reviewer's advisory variants", () => {
+  const fillRate = () => {
+    fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+      target: { value: "My rate" },
+    });
+    fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+      target: { value: "0.5" },
+    });
+    fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+      target: { value: "https://x" },
+    });
+  };
+  const posts = () => calls.filter((c) => c.method === "POST").length;
+
+  test("R3-V03/V04 Verify works again after a failed verify (HTTP error, then rejected fetch)", async () => {
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody() },
+      { method: "POST", path: `${COST_BASE}/${RATE_ID}/verify`, status: 500, body: {} },
+    );
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId(`cost-profile-verify-${RATE_ID}`)).toBeTruthy());
+    fireEvent.click(screen.getByTestId(`cost-profile-verify-${RATE_ID}`));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody() },
+      { method: "POST", path: `${COST_BASE}/${RATE_ID}/verify`, reject: new TypeError("x") },
+    );
+    fireEvent.click(screen.getByTestId(`cost-profile-verify-${RATE_ID}`));
+    await waitFor(() => expect(posts()).toBe(1));
+    await waitFor(() =>
+      expect(screen.getByTestId("cost-profile-form-error").textContent).toContain("network error"),
+    );
+    fireEvent.click(screen.getByTestId(`cost-profile-verify-${RATE_ID}`));
+    await waitFor(() => expect(posts()).toBe(2));
+  });
+
+  test("R3-V05 Reload search works repeatedly after repeated failures", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, status: 503, body: {} });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cheapest-rate-retry-button")).toBeTruthy());
+    const gets = () => calls.filter((c) => c.pathname.endsWith(SEARCH_PATH)).length;
+    const base = gets();
+    fireEvent.click(screen.getByTestId("cheapest-rate-retry-button"));
+    await waitFor(() => expect(gets()).toBe(base + 1));
+    await waitFor(() => expect(screen.getByTestId("cheapest-rate-retry-button")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("cheapest-rate-retry-button"));
+    await waitFor(() => expect(gets()).toBe(base + 2));
+  });
+
+  test("R3-V06/V08 a second create works after the first, and the old notice is gone when a later create fails", async () => {
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) },
+      { method: "POST", path: COST_BASE, status: 201, body: rate() },
+    );
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+    fillRate();
+    fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-created-notice")).toBeTruthy());
+    await waitFor(() =>
+      expect((screen.getByTestId("cost-profile-submit-button") as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) },
+      { method: "POST", path: COST_BASE, status: 422, body: { detail: "bad" } },
+    );
+    fillRate();
+    fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+    await waitFor(() => expect(posts()).toBe(1));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    expect(screen.queryByTestId("cost-profile-created-notice")).toBeNull();
+  });
+
+  test("R3-V24 a NETWORK failure on the project reload clears the list, the selection and the catalog", async () => {
+    await loadCatalogReady();
+    expect(screen.getByTestId("catalog-results")).toBeTruthy();
+    stub({ method: "GET", path: PROJECTS_PATH, reject: new Error("down") });
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+    expect(screen.queryByTestId(`project-row-${PROJECT}`)).toBeNull();
+    expect(screen.getByTestId("no-project-selected")).toBeTruthy();
+    expect(screen.queryByTestId("catalog-results")).toBeNull();
+  });
+
+  test("R3-V25/V39 two project loads / two mapping loads in the same tick send one GET each", () => {
+    stub({ method: "GET", path: PROJECTS_PATH, pending: true });
+    renderCatalog();
+    const projects = screen.getByTestId("load-projects-button");
+    act(() => {
+      projects.click();
+      projects.click();
+    });
+    expect(calls).toHaveLength(1);
+    cleanup();
+    stub({ method: "GET", path: MAP_PATH, pending: true });
+    renderMapping();
+    const mapping = screen.getByTestId("load-mapping-button");
+    act(() => {
+      mapping.click();
+      mapping.click();
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  test("R3-V35 the Arabic created notice", async () => {
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) },
+      { method: "POST", path: COST_BASE, status: 201, body: rate() },
+    );
+    renderCost("ar");
+    await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+    fillRate();
+    fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-created-notice")).toBeTruthy());
+    expect(screen.getByTestId("cost-profile-created-notice").textContent).toBe("تم تسجيل السعر.");
+  });
+});
