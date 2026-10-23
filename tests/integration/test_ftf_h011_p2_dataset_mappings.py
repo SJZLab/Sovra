@@ -1193,6 +1193,65 @@ def section_resolve(env: Env) -> None:
         i=t.conns["all"],
     )
 
+    # L2 return round 2: an explicit rejection wins; reuse needs the prior approval's grant live
+    rj = env.world("resolve-reject")
+    r1 = env.dataset(rj, "rej", "training", b"q,a\nwhat,this\n", content_type="text/csv")
+    rm, _ = env.propose(rj, r1, csv_mapping())
+    env.approve(rj, rm)
+    r2 = env.dataset(rj, "rej", "training", b"q,a\nfoo,bar\n", content_type="text/csv")
+    check("RET2 positive control: v2 reuses v1", env.resolve(rj, r2)[1] is None)
+    rm2, _ = env.propose(rj, r2, csv_mapping())
+    _, error = env.run(
+        rj.ctx,
+        lambda s: store.reject_dataset_mapping(
+            s, rj.ctx, project_id=rj.project_id, mapping_id=rm2.id, actor=env.admin
+        ),
+    )
+    check(f"RET2 v2's own mapping is rejected ({code_of(error)})", error is None)
+    refuses(
+        env,
+        "an explicit rejection is never overridden by a reuse",
+        "mapping_reapproval_required",
+        lambda: env.resolve(rj, r2),
+    )
+    rm3, _ = env.propose(rj, r2, csv_mapping())
+    refuses(
+        env,
+        "a newer pending proposal does not mask the rejection",
+        "mapping_reapproval_required",
+        lambda: env.resolve(rj, r2),
+    )
+
+    rc = env.world("resolve-revoked-prior")
+    c1x = env.dataset(rc, "rc", "training", b"q,a\nwhat,this\n", content_type="text/csv")
+    cm1, _ = env.propose(rc, c1x, csv_mapping())
+    env.approve(rc, cm1)
+    c2x = env.dataset(
+        rc, "rc", "training", b"q,a\nfoo,bar\n", content_type="text/csv", connection="train"
+    )
+    check("RET2 positive control: reuse across live grants", env.resolve(rc, c2x)[1] is None)
+    env.execute(
+        "UPDATE dataset_source_connections SET connection_status='revoked' WHERE id=:i",
+        i=rc.conns["all"],
+    )
+    refuses(
+        env,
+        "a prior approval under a revoked connection is not reused",
+        "mapping_reapproval_required",
+        lambda: env.resolve(rc, c2x),
+    )
+    env.execute(
+        "UPDATE dataset_source_connections SET connection_status='active', "
+        "allowed_purposes_json=CAST('[\"evaluation\"]' AS jsonb) WHERE id=:i",
+        i=rc.conns["all"],
+    )
+    refuses(
+        env,
+        "a prior approval whose grant no longer allows the purpose is not reused",
+        "mapping_reapproval_required",
+        lambda: env.resolve(rc, c2x),
+    )
+
     # JSONL never reuses
     j = env.world("resolve-jsonl")
     j1 = env.dataset(j, "log", "training", jsonl(convo()))
