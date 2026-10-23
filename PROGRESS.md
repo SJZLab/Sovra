@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T04:03Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T05:02Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-23T04:03Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T05:02Z:**
+  - CERTIFIED (child slice): FTF-UX07 after 3 rounds - the sign-in button is rebuilt on the shared accessible design: bilingual (English/Arabic), keyboard-reachable with a clearly visible focus ring, no overflow from phone to 400% zoom, 0 automated accessibility violations in light and dark, checked in a real browser in CI. The certified sign-in route still passes all its tests.
 - **2026-10-23T04:03Z:**
   - Returned: FTF-H010-P3 r1 (validating imported model weights and adapters): it never loads unsafe pickle files and rejects every crafted bad file tried, but if the base model's licence is revoked while an adapter is being checked, the adapter is still marked as successfully imported. Round 2 fixes that and adds three missing tests.
 - **2026-10-22T23:27Z:**
@@ -30718,3 +30720,36 @@ item found. Full detail: `docs/progress/2026-10-22T1450Z-relay.md`.
 STEP 3: this file and the shift log (plain docs-only PR, not `[relay]`-titled; QUEUE.md and
 `docs/certifications/queue.md` untouched). STEP 4: routine saturation, not a blocker -- no new
 `BLOCKER.md` entry, no new "Owner actions" line, no item claimed.
+
+## 2026-10-23T0457Z -- Scheduled relay shift -- returned-work CI diagnosis, no new claim
+
+STEP 0/0.1/0.2 clean (hash matched, `BLOCKER.md` has no live entry, no `cognee-cli`). Returned-work
+sweep over all 13 open PRs found one genuine red finding: PR #971 (`relay/FTF-R006-P1b-r2`, QUEUE.md
+Active item 0c) has a failed `storage-semantics-integration` job on its current head. Confirmed via
+`get_files` that the PR's own diff (Argilla/identity files only) does not touch the S3/SeaweedFS
+module or test file, then read the job's log and the test's own source: `test_multipart` genuinely
+raised `TimeoutError('timed out')` with the SeaweedFS container logging "no writable volumes" for
+its test collection -- the same resource-exhaustion signature already diagnosed in QUEUE.md's Parked
+`FTF-1602 round 5` entry for a *different* job sharing the same docker-compose `s3` fixture, not a
+defect in PR #971's own changes. Attempted the one sanctioned confirmation re-run
+(`rerun_failed_jobs`); rejected because the run's own long sequential `gate` job was still
+`in_progress` (`403 This workflow is already running`). Left a full diagnosis comment on PR #971
+(https://github.com/SJZLab/Sovra/pull/971#issuecomment-6357729880) and a dated addendum on the Parked
+`FTF-1602` entry recording the second occurrence. Every other open PR was green, mid-run with no
+failure yet, or the already-documented Parked `FTF-UX02` draft (#947).
+
+Cross-checked QUEUE.md's "## Active" list against live GitHub state: items 0b/0d/0e/0f/0g are all
+already merged from concurrent sessions (0f's FTF-UX06 round 1+2 via #964/#975/#979; 0g's
+FTF-H011-P2 round 1+2 via #934/#977/#978, which is why P3 is already claimed as draft PR #974); 0c
+is PR #971 (handled above); 0k is the already-Parked PR #947. No genuinely unclaimed, non-parked
+item found anywhere in Active or Backlog this shift.
+
+Full detail: `docs/progress/2026-10-23T0457Z-relay.md`.
+
+STEP 3: this file, the shift log, and a dated addendum to QUEUE.md's Parked `FTF-1602` entry (plain
+docs-only PR, not `[relay]`-titled; `docs/certifications/queue.md` untouched -- nothing here is a
+certification action). STEP 4: no item claimed (frontier already covered); PR #971's CI finding was
+diagnosed and documented, not fixed in place, since nothing in that PR's own diff needed fixing and
+no landed fix for the shared SeaweedFS-fixture issue exists yet to port. No new `BLOCKER.md` entry
+(not systemic -- every other PR and job is unaffected). No new "Owner actions" line. Certified/
+product-true counts unchanged.
