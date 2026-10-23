@@ -42,6 +42,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -4181,11 +4182,46 @@ def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, st
     return result.returncode != 0, (result.stdout + result.stderr)[-300:]
 
 
+def _fault_shard() -> tuple[int, int]:
+    """`FTF0904_FAULT_SHARD=k/n` runs every n-th fault starting at the k-th (1-based), so n CI
+    jobs together run every fault exactly once; unset means all faults in this process."""
+    raw = os.environ.get("FTF0904_FAULT_SHARD", "1/1")
+    k, _, n = raw.partition("/")
+    shard, total = int(k), int(n)
+    if not 1 <= shard <= total:
+        raise SystemExit(f"FTF0904_FAULT_SHARD={raw!r}: expected k/n with 1 <= k <= n")
+    return shard, total
+
+
+def _shard_faults(shard: int, total: int) -> list[tuple[str, str, str, int]]:
+    return FAULTS[shard - 1 :: total]
+
+
+def test_fault_shards_partition_the_matrix() -> None:
+    ids = [fault_id for fault_id, _, _, _ in FAULTS]
+    check("FTF-0904-F", "fault ids are unique", len(ids) == len(set(ids)))
+    for total in (1, 2, 8):
+        picked = [f[0] for k in range(1, total + 1) for f in _shard_faults(k, total)]
+        check(
+            "FTF-0904-F",
+            f"{total} shards run every fault exactly once",
+            sorted(picked) == sorted(ids) and len(picked) == len(ids),
+        )
+
+
 def test_zz_fault_injection_turns_checks_red() -> None:
     if BEHAVIOUR_ONLY:
         return
-    for fault_id, old, new, count in FAULTS:
-        killed, detail = _run_mutant(fault_id, old, new, count)
+    shard, total = _fault_shard()
+    mine = _shard_faults(shard, total)
+    workers = max(1, int(os.environ.get("FTF0904_FAULT_WORKERS", "1")))
+    print(
+        f"FTF-0904 fault shard {shard}/{total}: {len(mine)} of {len(FAULTS)} faults, "
+        f"{workers} worker(s)"
+    )
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(lambda f: (f[0], *_run_mutant(*f)), mine))
+    for fault_id, killed, detail in results:
         check("FTF-0904-F", f"fault {fault_id} stayed GREEN ({detail})", killed)
 
 
