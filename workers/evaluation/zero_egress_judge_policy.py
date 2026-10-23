@@ -599,7 +599,9 @@ class JudgePlan:
     approval_defect: str | None = None
     human_reviewer_roles: frozenset[Role] = frozenset()
     approval: PrivateJudgeApproval | None = None
-    _issued: object = field(default=None, repr=False, compare=False)
+    # init=False: `dataclasses.replace` / `copy.replace` rebuild through __init__, so they cannot carry
+    # the issuer sentinel across (a replaced plan is refused by `run_private_judge`).
+    _issued: object = field(default=None, init=False, repr=False, compare=False)
 
 
 def _plan(
@@ -623,7 +625,7 @@ def _plan(
             "organization_id": str(organization_id),
         },
     )
-    return JudgePlan(
+    plan = JudgePlan(
         mode,
         reason,
         profile,
@@ -633,8 +635,9 @@ def _plan(
         approval_defect,
         human_reviewer_roles,
         approval,
-        _ISSUER,
     )
+    object.__setattr__(plan, "_issued", _ISSUER)
+    return plan
 
 
 def _attestation_defect(
@@ -848,6 +851,10 @@ def run_private_judge(
             base_url=base_url,
             judge_model_id=approval.judge_model_id,
             candidate_model_id=candidate_model_id,
+            # Design deviation (recorded in QUEUE.md/PROGRESS.md, default resolution rule): the design
+            # text approves `judge_model_id` only, but FTF-0616 refuses an echo outside this set, so an
+            # alias (echo == resolved_model) could never succeed. The echo must still equal
+            # `approval.resolved_model` below and be a calibration alias.
             approved_judge_model_ids=frozenset({approval.judge_model_id, approval.resolved_model}),
             rubric=rubric,
             candidate_response=candidate_response,

@@ -26,6 +26,8 @@ Run directly: python3 tests/tasks/test_ftf_0617.py
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import json
 import os
 import sys
@@ -1032,6 +1034,22 @@ def sc_admission_fail_closed(mod) -> list[str]:
     plan = decide(mod, policy=h._policy_for(PORT + 1))  # a port the policy does not allow
     if _is_private(plan) or plan.approval_defect != "judge_route_identity_unverified":
         problems.append("destination denied by outbound policy was not fail-closed")
+    # The guard error escaping `_attestation_defect` itself (not caught inside attest_route) must
+    # still refuse the plan rather than issue a private one with no attestation.
+    reset()
+    add_all_roles()
+    original = mod._attestation_defect
+
+    def _raise(*args, **kwargs):
+        raise mod.OutboundGuardError("blocked")
+
+    mod._attestation_defect = _raise
+    try:
+        plan = decide(mod)
+    finally:
+        mod._attestation_defect = original
+    if _is_private(plan) or plan.approval_defect != "judge_route_identity_unverified":
+        problems.append("a guard error escaping the attestation issued a private plan")
     return problems
 
 
@@ -1220,13 +1238,25 @@ def sc_run_plan_guards(mod) -> list[str]:
         None,
         frozenset(),
         plan.approval,
-        object(),
     )
+    object.__setattr__(forged2, "_issued", object())
+    strict_blocked = decide(mod, approval=None)
+    replaced_blocked = dataclasses.replace(
+        strict_blocked, mode=plan.mode, approval=plan.approval, approval_defect=None
+    )
+    replaced_private = dataclasses.replace(plan, reason="x")
     for label, candidate in (
         ("hand-built plan", forged),
         ("plan with a made-up issuer", forged2),
+        ("dataclasses.replace of a blocked plan into a private one", replaced_blocked),
+        ("dataclasses.replace of an issued private plan", replaced_private),
         ("not a plan", {"mode": "private"}),
         ("None", None),
+        *(
+            [("copy.replace of an issued private plan", copy.replace(plan, reason="x"))]
+            if hasattr(copy, "replace")
+            else []
+        ),
     ):
         if (
             code_of_mod(mod, lambda candidate=candidate: run(mod, candidate))
@@ -2337,6 +2367,18 @@ fault(
     "    if type(plan) is not JudgePlan or plan._issued is not _ISSUER:",
     "    if type(plan) is not JudgePlan:",
     [sc_run_plan_guards],
+)
+fault(
+    "F14b issuer sentinel copyable through dataclasses.replace",
+    "field(default=None, init=False, repr=False, compare=False)",
+    "field(default=_ISSUER, repr=False, compare=False)",
+    [sc_run_plan_guards],
+)
+fault(
+    "F14c guard error during attestation leaves no defect",
+    '            except (OutboundGuardError, OutboundPolicyError):\n                defect = "judge_route_identity_unverified"',
+    "            except (OutboundGuardError, OutboundPolicyError):\n                defect = None",
+    [sc_admission_fail_closed],
 )
 fault(
     "F15 plan organization check removed",
