@@ -340,6 +340,72 @@ export const PHRASES = {
     en: "The gateway could not be reached, so compatibility could not be determined. No recommendation is made.",
     ar: "تعذّر الوصول إلى البوابة، فلم يتمكن من تحديد التوافق. لا يُقدَّم أي توصية.",
   },
+  // FTF-UX05 round 3 (shared by the 0214/0308/0309/1301 components).
+  networkErrorUnknown: { en: "unknown error", ar: "خطأ غير معروف" },
+  malformedResponseMessage: {
+    en: "The server sent a response this page cannot read. Nothing was changed.",
+    ar: "أرسل الخادم استجابة لا تستطيع هذه الصفحة قراءتها. لم يتم تغيير أي شيء.",
+  },
+  errorRecoveryStep: {
+    en: "Check your connection and try again. If it keeps failing, contact an administrator.",
+    ar: "تحقق من اتصالك ثم حاول مرة أخرى. إذا استمر الفشل، تواصل مع المسؤول.",
+  },
+  catalogNoProjectsTitle: { en: "No projects found", ar: "لم يتم العثور على مشاريع" },
+  catalogNoProjectsWhy: {
+    en: "This organization has no projects yet, so no catalog can be loaded. Create a project, then load projects again.",
+    ar: "لا تحتوي هذه المؤسسة على مشاريع بعد، لذلك لا يمكن تحميل أي كتالوج. أنشئ مشروعًا ثم حمّل المشاريع مرة أخرى.",
+  },
+  mappingNoArtifactsTitle: { en: "No trainable artifacts", ar: "لا توجد مصنفات قابلة للتدريب" },
+  mappingNoArtifactsWhy: {
+    en: "This organization has no registered trainable artifacts, so there is nothing to map this model to. Register an artifact, then load artifacts again.",
+    ar: "لا تحتوي هذه المؤسسة على مصنفات قابلة للتدريب مسجَّلة، لذلك لا يوجد ما يمكن ربط هذا النموذج به. سجّل مصنفًا ثم حمّل المصنفات مرة أخرى.",
+  },
+  costProfileCheapestUnknown: {
+    en: "Cheapest certified rate unknown: the search has not completed.",
+    ar: "السعر المعتمد الأرخص غير معروف: لم يكتمل البحث.",
+  },
+  networkErrorUnreachable: {
+    en: "could not reach the server",
+    ar: "تعذّر الوصول إلى الخادم",
+  },
+  malformedWriteResponseMessage: {
+    en: "The server answered, but this page could not read the result.",
+    ar: "ردّ الخادم، لكن تعذّر على هذه الصفحة قراءة النتيجة.",
+  },
+  recoveryVerifyState: {
+    en: "Reload to check the current state before trying again.",
+    ar: "أعد التحميل للتحقق من الحالة الحالية قبل المحاولة مرة أخرى.",
+  },
+  recoveryPermission: {
+    en: "You do not have permission for this action. Ask an administrator for access.",
+    ar: "ليست لديك صلاحية لهذا الإجراء. اطلب الوصول من المسؤول.",
+  },
+  recoveryConflict: {
+    en: "The data changed since you loaded it. Reload, then try again.",
+    ar: "تغيّرت البيانات منذ تحميلها. أعد التحميل ثم حاول مرة أخرى.",
+  },
+  recoveryInput: {
+    en: "Complete the missing step, then try again.",
+    ar: "أكمل الخطوة الناقصة ثم حاول مرة أخرى.",
+  },
+  mappingNoChangesTitle: { en: "No mapping changes recorded", ar: "لم تُسجَّل تغييرات في الربط" },
+  mappingNoChangesWhy: {
+    en: "This model alias has not been mapped, changed or removed yet. Reload the history after the first change.",
+    ar: "لم يتم ربط اسم هذا النموذج أو تغييره أو إزالته بعد. أعد تحميل السجل بعد أول تغيير.",
+  },
+  recoverySignIn: {
+    en: "Your session may have expired. Sign in again, or ask an administrator for access.",
+    ar: "ربما انتهت جلستك. سجّل الدخول مرة أخرى أو اطلب الوصول من المسؤول.",
+  },
+  recoveryRejected: {
+    en: "The server did not accept this request. Reload the page and check what you entered.",
+    ar: "لم يقبل الخادم هذا الطلب. أعد تحميل الصفحة وتحقق مما أدخلته.",
+  },
+  recoveryThrottled: {
+    en: "Too many requests. Wait a moment, then try again.",
+    ar: "طلبات كثيرة جدًا. انتظر قليلًا ثم حاول مرة أخرى.",
+  },
+  costProfileCreated: { en: "Rate recorded.", ar: "تم تسجيل السعر." },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 /** `{name}` placeholders in a catalogue string are replaced from `vars`; nothing else is touched
