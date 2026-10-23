@@ -54,6 +54,10 @@ const STRINGS = {
     ar: "تم إنهاء جلسة الرفع هذه والتحقق منها بالفعل؛ مجموعة البيانات موجودة. لا شيء آخر للرفع.",
   },
   checkStatus: { en: "Check upload status", ar: "فحص حالة الرفع" },
+  connectionCreated: {
+    en: "Connection created. Choose a purpose to check its authorization.",
+    ar: "تم إنشاء الاتصال. اختر غرضًا لفحص تفويضه.",
+  },
   newUpload: { en: "Start a new upload", ar: "ابدأ رفعًا جديدًا" },
   uploadAnother: { en: "Upload another dataset", ar: "ارفع مجموعة بيانات أخرى" },
   back: { en: "Back", ar: "رجوع" },

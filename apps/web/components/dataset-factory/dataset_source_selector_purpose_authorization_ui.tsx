@@ -66,7 +66,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button, EmptyState, Field, PendingView } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
-import { classificationWord, purposeWord, sourceTypeWord } from "./strings_0501";
+import { classificationWord, purposeWord, sourceTypeWord, t0501 } from "./strings_0501";
 
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
@@ -319,6 +319,15 @@ function DatasetSourceSelectorInner({
   const wasCheckingRef = useRef(false);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
+  // Round-3 L2 finding 1: a successful create unmounts the focused Confirm button; focus the new
+  // connection's option and announce it (role=status) instead of dropping focus on <body>.
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!justCreatedId) return;
+    document
+      .querySelector<HTMLElement>(`[data-testid="dataset-source-option-${justCreatedId}"]`)
+      ?.focus();
+  }, [justCreatedId]);
 
   useEffect(() => {
     if (wasCheckingRef.current && authorizeState !== "checking") {
@@ -466,6 +475,7 @@ function DatasetSourceSelectorInner({
       }
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
+      setJustCreatedId(created.id);
       setAuthorizeState("idle");
       setAuthorizeMessage(null);
       resetForm();
@@ -481,6 +491,7 @@ function DatasetSourceSelectorInner({
   }
 
   function handleSelectConnection(connection: DatasetSourceConnectionSummary) {
+    setJustCreatedId(null);
     setSelectedConnectionId(connection.id);
     setPurposeToCheck("");
     setAuthorizeState("idle");
@@ -767,6 +778,11 @@ function DatasetSourceSelectorInner({
 
       {selectedConnection && (
         <section data-testid="dataset-source-authorization-section">
+          {justCreatedId === selectedConnection.id && (
+            <p role="status" data-testid="dataset-source-created-status">
+              {t0501("connectionCreated", locale)}
+            </p>
+          )}
           <h2>{phrase("authorizationHeading", locale)}</h2>
           <p data-testid="dataset-source-authorization-selected-connection" style={WRAP}>
             <bdi style={WRAP}>{selectedConnection.display_name}</bdi>

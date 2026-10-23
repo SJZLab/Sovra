@@ -865,6 +865,12 @@ function UploadInner({
     }
   }
 
+  /** Start over from a terminal screen: the clicked button unmounts, so hand focus to the fresh form. */
+  function startOver() {
+    resetToIdle();
+    setNeedsFocusOnIdle(true);
+  }
+
   function resetToIdle() {
     clearDraft(storageKey);
     setResumableDraft(null);
@@ -1575,7 +1581,7 @@ function UploadInner({
             {dataset.id}
           </p>
           <div>
-            <Button data-testid="upload-new-upload-button" onClick={resetToIdle}>
+            <Button data-testid="upload-new-upload-button" onClick={startOver}>
               {t("uploadAnother")}
             </Button>
           </div>
@@ -1583,15 +1589,20 @@ function UploadInner({
       )}
 
       {phase === "already_verified" && (
-        <p
-          role="status"
-          tabIndex={-1}
+        <section
           data-phase-section
-          data-testid="upload-already-verified-text"
-          style={WRAP}
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
         >
-          {t("alreadyVerified")}
-        </p>
+          <p role="status" data-testid="upload-already-verified-text" style={WRAP}>
+            {t("alreadyVerified")}
+          </p>
+          <div>
+            <Button data-testid="upload-new-upload-button" onClick={startOver}>
+              {t("uploadAnother")}
+            </Button>
+          </div>
+        </section>
       )}
 
       {phase === "malformed" && (
@@ -1639,7 +1650,7 @@ function UploadInner({
       {phase === "rejected" && alertFor("upload-rejected-text", errorMessage)}
       {(phase === "expired" || phase === "rejected") && (
         <div>
-          <Button variant="primary" data-testid="upload-new-upload-button" onClick={resetToIdle}>
+          <Button variant="primary" data-testid="upload-new-upload-button" onClick={startOver}>
             {t("newUpload")}
           </Button>
         </div>

@@ -552,6 +552,71 @@ const STATES: UiState[] = [
     steps: [{ click: "upload-abandon-draft-button" }],
     ready: '[data-testid="upload-abandon-confirm"]',
   },
+  {
+    id: "0500A created",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [] },
+      { method: "POST", path: SOURCES, status: 201, body: conn(CONNECTION, "Fresh one") },
+    ],
+    steps: [
+      { fill: ["dataset-source-display-name-input", "Fresh one"] },
+      { click: "dataset-source-purpose-training" },
+      { select: ["dataset-source-security-classification-select", "internal"] },
+      { click: "dataset-source-review-button" },
+      { click: "dataset-source-confirm-button" },
+    ],
+    ready: '[data-testid="dataset-source-created-status"]',
+  },
+  {
+    id: "0501-UI already verified",
+    component: "0501-UI",
+    props: P0501,
+    routes: [{ method: "GET", path: SESSION_P, body: { ...sessionBody, status: "verified" } }],
+    storageItems: { [DRAFT_KEY]: draft("data.jsonl") },
+    steps: [{ files: ["upload-resume-file-input", "data.jsonl", FILE_BYTES] }],
+    ready: '[data-testid="upload-already-verified-text"]',
+  },
+  {
+    id: "0501-UI rejected",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      {
+        method: "GET",
+        path: SESSION_P,
+        body: { ...sessionBody, status: "rejected", rejection_reason: "size_mismatch" },
+      },
+    ],
+    storageItems: { [DRAFT_KEY]: draft("data.jsonl") },
+    steps: [{ files: ["upload-resume-file-input", "data.jsonl", FILE_BYTES] }],
+    ready: '[data-testid="upload-rejected-text"]',
+  },
+  {
+    id: "0501-UI incomplete",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 409, body: { detail: "upload_incomplete" } },
+    ],
+    steps: finalizeAs("my-dataset"),
+    ready: '[data-testid="upload-incomplete-text"]',
+  },
+  {
+    id: "0501-UI finalize retry",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 500, body: {} },
+    ],
+    steps: finalizeAs("my-dataset"),
+    ready: '[data-testid="upload-finalize-retry-text"]',
+  },
   // ---- FTF-0516 ----
   {
     id: "0516 idle",
@@ -1261,6 +1326,103 @@ describe("[UX02-R3-BEHAVIOUR] malformed replies, focus and the empty-state actio
         return { lang: root.lang, dir: root.dir, label: root.getAttribute("aria-label") };
       });
       expect(res).toEqual({ lang: "ar", dir: "rtl", label: "رفع مجموعة بيانات قابل للاستئناف" });
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Round-3 L2 pre-review follow-ups: success focus, start-over focus, Pending pins, short viewport.
+// ---------------------------------------------------------------------------------------------
+describe("[UX02-R3-FOLLOWUP] focus after success, terminal screens, Pending indicators, short viewport", () => {
+  const stateOf = (id: string) => STATES.find((st) => st.id === id)!;
+
+  for (const locale of ["en", "ar"] as Locale[]) {
+    test(`[0500A] [${locale}] a created connection takes focus and is announced (role=status), never <body>`, async () => {
+      const page = await openState(stateOf("0500A created"), locale, "light");
+      try {
+        await page.waitForTimeout(100);
+        const res = await page.evaluate(() => ({
+          focus: document.activeElement?.getAttribute("data-testid") ?? "<body>",
+          status:
+            document.querySelector('[role="status"][data-testid="dataset-source-created-status"]')
+              ?.textContent ?? "",
+        }));
+        expect(res.focus).toBe("dataset-source-option-33333333-3333-3333-3333-333333333333");
+        expect(res.status.length).toBeGreaterThan(10);
+      } finally {
+        await page.close();
+      }
+    });
+
+    for (const id of [
+      "0501-UI expired",
+      "0501-UI rejected",
+      "0501-UI accepted",
+      "0501-UI already verified",
+    ]) {
+      test(`[${id}] [${locale}] the way forward is a button; using it focuses the fresh form, never <body>`, async () => {
+        const page = await openState(stateOf(id), locale, "light", { width: 320, height: 640 });
+        try {
+          await page.getByTestId("upload-new-upload-button").focus();
+          await page.keyboard.press("Enter");
+          await page.waitForSelector('[data-testid="upload-form"]', { state: "visible" });
+          await page.waitForTimeout(100);
+          const focus = await page.evaluate(
+            () => document.activeElement?.getAttribute("data-testid") ?? "<body>",
+          );
+          expect(focus).toBe("upload-purpose-select");
+        } finally {
+          await page.close();
+        }
+      });
+    }
+  }
+
+  test("[0501-UI uploading] the progress indicator is a determinate progressbar inside a status region", async () => {
+    const page = await openState(stateOf("0501-UI uploading"), "en", "light");
+    try {
+      const res = await page.evaluate(() => {
+        const bar = document.querySelector('[role="progressbar"]');
+        return {
+          max: bar?.getAttribute("aria-valuemax") ?? null,
+          now: bar?.getAttribute("aria-valuenow") ?? null,
+          inStatus: bar?.closest('[role="status"]') !== null && bar !== null,
+        };
+      });
+      expect(res).toEqual({ max: "100", now: "0", inStatus: true });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("[0516 loading] after one second a busy indicator (role=status) names what is loading", async () => {
+    const page = await openState(stateOf("0516 loading"), "en", "light");
+    try {
+      await page.waitForSelector('[role="status"][aria-busy="true"]', { timeout: 4000 });
+      const text = await page.locator('[role="status"][aria-busy="true"]').first().textContent();
+      expect(text).toContain("Loading the quality report");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("[Dialog] on a 320x200 viewport with a long body the dialog stays inside the viewport and scrolls", async () => {
+    const page = await openState(stateOf("Dialog probe long text"), "en", "light", {
+      width: 320,
+      height: 200,
+    });
+    try {
+      const res = await page.evaluate(() => {
+        const dlg = document.querySelector<HTMLElement>('[data-testid="probe-dialog"]')!;
+        const r = dlg.getBoundingClientRect();
+        return {
+          inside: r.top >= -0.5 && r.bottom <= window.innerHeight + 0.5,
+          scrolls: getComputedStyle(dlg).overflowY === "auto",
+        };
+      });
+      expect(res).toEqual({ inside: true, scrolls: true });
     } finally {
       await page.close();
     }

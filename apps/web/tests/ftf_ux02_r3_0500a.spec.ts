@@ -215,3 +215,13 @@ test("[UX02-R3-A9] the empty state's 'New connection' action really moves focus 
   fireEvent.click(screen.getByTestId("dataset-source-empty-state-action"));
   expect(document.activeElement).toBe(screen.getByTestId("dataset-source-display-name-input"));
 });
+
+test("[UX02-R3-N1] a successful create focuses the new connection's option and announces it (role=status)", async () => {
+  await createConnection({ ok: true, status: 201, json: async () => GOOD });
+  await waitFor(() => expect(screen.getByTestId("dataset-source-created-status")).toBeTruthy());
+  expect(screen.getByTestId("dataset-source-created-status").getAttribute("role")).toBe("status");
+  expect(document.activeElement).toBe(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+  // choosing another connection clears the announcement
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+  expect(screen.queryByTestId("dataset-source-created-status")).toBeNull();
+});
