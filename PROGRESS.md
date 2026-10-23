@@ -30808,3 +30808,48 @@ untouched -- no certification action taken this shift). STEP 4 stop condition: s
 (PR #996 opened, PROVISIONAL, awaiting Control-plane L2 review) -- nothing further for relay on this
 item until that review lands. No new `BLOCKER.md` entry. No new "Owner actions" line. Certified/
 product-true counts unchanged (nothing merged or certified this shift).
+
+## 2026-10-23T1318Z -- Scheduled relay shift -- FTF-UX02 round 2 (PR #947): round-3 closed, regression fixed, pushed for CI
+
+STEP 0/0.1/0.2 clean (hash matched, no cognee-cli). Control plane's PR #995 (merged 12:06:30Z,
+head `2e69212`, already on `main` before this shift) unparked QUEUE.md item 0k (FTF-UX02 round 2,
+PR #947) with explicit next steps: close pre-review round 3's two remaining items, check
+`docs/operations/l2-review-brief.md` item 8, merge main, mark ready, merge on green -- no new
+independent-reviewer round, since round 3 already found "the code is correct on every user-facing
+path I probed". Confirmed PR #947 was still untouched since the park (head `c61e406`) -- genuinely
+unclaimed.
+
+Closed round 3's two items on `relay/FTF-UX02-r2`: 4 exact-string assertions for the Arabic
+retry-family phrases (`retry`, `networkErrorRetryable`, `requestFailedRetryable`,
+`responseMalformedRetryable`), each confirmed RED on a mutated string and GREEN restored; and
+corrected the submission's stale FTF-0500A H1/H9 table cells to reflect round 2's own fixes, not
+just round 1's.
+
+Merged current `main` in (one real, purely-additive conflict in `phrases.ts`, 0 duplicate keys).
+Re-running the FULL `apps/web` suite after the merge (not just this item's own three parent
+suites, per l2-review-brief item 6's Law 15 regression check) surfaced a real cross-area
+regression: round 1's own `Field.tsx` fix (shared `<label>` `display: block`) left `Field`'s
+`<input>` without the `--target-min` floor every other raw input/select in this repo already
+applies by hand, so it fell under the WCAG 2.2 2.5.8 24x24 CSS px minimum -- caught by
+`ftf_ux06_browser.spec.ts`'s real-Chromium axe check on FTF-UX06's `#field-category` (6/52
+failing). Independently confirmed real (reproduces on the merged head, not on a clean, unmodified
+`main` checkout in the same sandbox, 3/3 runs) before fixing: `Field`'s `<input>` now carries
+`minBlockSize: "var(--target-min)"` (caller style wins), with two new regression tests in the
+shared-component suite `ftf_ux01_r4.spec.ts`, each confirmed RED on the pre-fix code and GREEN
+restored. `ftf_ux06_browser.spec.ts`: 52/52 again.
+
+Full verification on the merged head (gitignored `dist/` removed first, this item's own documented
+precedent for this failure class): typecheck/lint/format all clean; `product_truth_check.py
+--fail-on-unwired` 49/49 unchanged; full repo `pnpm exec vitest run` -- 32 test files, 3069/3069
+tests passing, with only the 2 already-known pre-existing/environment-dependent `ftf_ux01*`
+CSS-parse failures (0 tests each), independently reconfirmed on a clean main checkout in this same
+sandbox. Pushed (`c61e406` -> `449d32e`), updated PR #947's body with the full writeup, marked it
+ready for review (was draft), subscribed to its activity. `ci-verdict` is running on the new head
+as of this shift's end -- not yet green, so not merged this shift; this session stays subscribed
+to merge on green or diagnose any red job.
+
+STEP 3: this file and the shift log `docs/progress/2026-10-23T1318Z-relay.md` (plain docs-only PR,
+not `[relay]`-titled; `docs/certifications/queue.md` and PR #947 itself untouched by this branch).
+STEP 4: no stop condition reached yet -- CI still running on PR #947; staying subscribed to finish
+"merge on green" per the Control-plane instruction. No new `BLOCKER.md` entry. No new "Owner
+actions" line. Certified/product-true counts unchanged (PR #947 still PROVISIONAL, unmerged).
