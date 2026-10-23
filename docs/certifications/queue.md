@@ -25223,3 +25223,4 @@ different session.
 - **Returned:** FTF-H010-P3 r1 -> r2 (0h): re-read the base artifact FOR SHARE at the terminal write; pin every-shard, share-lock and adapter-header binding.
 - **Certified:** FTF-UX07 (#982, merge 2aa77912), round 3; FTF-0101 requalified.
 - **Certified:** FTF-UX05 (#983, merge 5d793fb8), round 3; parents and FTF-UX01 requalified; follow-ups FTF-UX01-F1, FTF-1301-F1 queued.
+- **Certified:** FTF-H010-P3 (#989, merge e5474526), round 2; P3a/P2 requalified.
