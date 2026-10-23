@@ -48,7 +48,7 @@ export function Field({
         aria-describedby={describedBy}
       />
       {trimmedError ? (
-        <div id={errorId} role="alert">
+        <div id={errorId} role="alert" style={{ overflowWrap: "anywhere" }}>
           {trimmedError}
         </div>
       ) : null}

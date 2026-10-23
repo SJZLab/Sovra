@@ -12234,3 +12234,153 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   400-500 - the key never appeared in str/repr/args/notes/cause/context/traceback. Advisory GREEN variants (no such echo in
   production): list page-bound / malformed-list / non-dict / api_key-missing / empty-name messages. Gates: product_truth
   49/49, validate_spec --strict, data_exposure OK, CLAUDE.md hash OK. UNWIRED until P1b.
+## 2026-10-22T05:03Z — RETURNED: FTF-UX03 (r2)
+- **FTF-UX03: RETURNED** (child slice of the FTF-UX program; round 2 → 3; PR #943, merge
+  80e66433e2de56ab0e8f370089fd230b75b96ec2, head a2727c6c). Producer session_01684Hcc2CByC85zkyNi7HQi ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 80/80, ci-verdict 119616043756; gate 119600491144 installed Chromium and ran the
+  TypeScript unit tests incl. the UX03 browser spec (step-level evidence; log host 403). Met: rebuild on UX01, en/ar with
+  dir/lang on all 34 states, error handling (84 probes, one role=alert each, axe 0 light/dark), loading/empty states,
+  the 8 round-1 pins, REQUIRED severity-2 decisions; parents 04A03/04A04/04A18/04A21/04A22 REQUALIFIED (vitest 2357/2357).
+  Return: horizontal overflow at 390/320 px with realistic unbroken names in 04A03/04A04/04A22 (severity 3, WCAG 1.4.10);
+  04A18/04A21 role=alert and the 04A03 failed-submit focus unpinned (C5/C5b/R4/R4b/C8/C8b GREEN); checklist abbreviated
+  and stale submission statements. Law 9: the 04A22 parent pair rewrite is a tightening. Faults: round-1 8/8 RED, own
+  41 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T11:23Z — CERTIFIED (child slice): FTF-UX03
+- **FTF-UX03: CERTIFIED (L2)** (round 3 under the stopping rule; PR #956, merge 369decc2c817b93b740ee6ee40da8a6dda6b8eb6, head e6ec2b76). Producer
+  session_01Tc9f9M7VSNCCVAoNdSa4UB ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 80/80, ci-verdict 119700816292;
+  gate 119689270693 installed Chromium and ran vitest (step-level evidence; log host refused). Local vitest 2422/2422
+  (UX03 browser harness 161 in real Chromium). Overflow: every round-2 reproduction now 0 px at 1280/768/390/320, 200 % and
+  400 %, en and ar; wrap removal per site RED (W1-W10). Announce: C5/C5b/R4/R4b RED; 44 Chromium failure pages each one
+  role=alert, axe 0. Focus: C8/C8b RED; Chromium focus on ErrorSummary after blank/whitespace/repeat submit. Evidence: 39
+  pro-rules items, stale statements corrected. Faults 33/35 RED (GREEN: two equivalent wrap variants, no overflow). Law 15:
+  FTF-UX01 REQUALIFIED (two CSS-only lines; UX01 65/65, its earlier faults RED); parents 04A03/04A04/04A18/04A21/04A22
+  REQUALIFIED (no assertion weakened); UX02 parents pass. No severity 3-4. Gates: product_truth 49/49, validate_spec
+  --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T11:23Z — CERTIFIED (child slice): FTF-1505-F1 — certifier of record session_01RgxRM92WR9EPsUX9K1QWH7
+- **FTF-1505-F1: CERTIFIED (L2)** (round 3 under the stopping rule; PR #958, merge 24f1672f2ca4e4538fa9600195c45f9a13052876, head 7721996a). Producer of
+  rounds 1-3: the Control-plane session session_01QVznorVMjnmcttUhyDnoGR; certifier of record: the separate cloud session
+  session_01RgxRM92WR9EPsUX9K1QWH7 (named in no commit). Round 1 (#944, merge 59ba166c): production change in
+  `_iter_archive_members` (a .tar.gz is decompressed whole, CRC-checked and bounded, then opened as a plain tar) found sound
+  by session_01AoheU1Chq4VUrFdB9Yw9sB, returned for QUICK-GATE-SUFFIX-CAP and GZIP-SALVAGE pins; round 2 (#951, merge
+  052475fa) returned by session_017Gk8f2Yuv2S56CqTraqKu8 for HEX-GATE-SUFFIX-CAP-2MiB and
+  GZIP-TRUNCATION-AT-MEMBER-BOUNDARY (no production violation either round). Round 3: head-secret runs exactly
+  MAX_SCAN_BYTES with the secret on decoded byte 0; trailer-only and full-flush member-boundary cuts. CI: ci-verdict
+  119723041245; gate 119702086040 step 65 "FTF-1505 negative-test proof" passed; secret-scanning 119702086072 "11166
+  unit(s) scanned, 14200 finding(s), 0 blocking -- clean". Local: full suite all checks passed; real full-history scan
+  11,166 units, 0 blocking. Faults: every suffix cap to decoded-1 RED in hex gate, base64 gate and _could_match_any_rule
+  (exact-length controls GREEN); decompressor variants (zlib wbits=31 without eof check, EOFError swallowed, salvage) RED;
+  ~490 cut probes all blocking. Advisory A1 MULTI-MEMBER-DROP (outside the DoD). Law 9: tests + docs only in rounds 2-3.
+  FTF-1505 REQUALIFIED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T15:33Z — RETURNED: FTF-R006-P1b (r1)
+- **FTF-R006-P1b: RETURNED** (child slice of FTF-R006; round 1 → 2; PR #953, merge
+  4f8624f0fd895713b74f406de6ae3e1ea970efd2, head 7bf19fbb). Producers session_014L3iBhSokxUmSbndiY87dR,
+  session_01GBU5fBaKmzGz3QC41U9Bac, session_01DKLGL61DSskQBox4jjAGy7, session_0175QVqBvpzGXzRUwAn3GT1V ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119776851962; argilla-identity-scope-integration 119722224951
+  "All FTF-R006-P1b integration checks passed" (real PG + OpenBao, FAKE Argilla); mutation-gate 113/113 killed; the gate job
+  does not run test_ftf_r006_p1b.py. Local: task script 103/0; integration 56/0 on PG16; one head 0034. Real argilla-server
+  2.8.0 run locally by the verifier: store flows correct, but REPRODUCED (1) a cross-tenant Argilla write before the DB check
+  (org1 annotator reads org2's dataset, HTTP 200) and (2) a revoke/sync race leaving a revoked identity with access. Also
+  F13-F16 (Law 17 outage paths) GREEN, concurrent sync IntegrityError, table-wide UPDATE grant allows resurrecting a revoked
+  identity, and DoD items (real-Argilla CI, R002 /validate, compose, gate step) missing without approval. Code is UNWIRED
+  (proving_symbol blank): nothing reachable from a live route. Governance note: the PR touched ci.yml (additive) under a
+  [relay] title. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX07 (r1)
+- **FTF-UX07: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #966, merge
+  b1597be08e1404a3be361524f619606a631f40d9, head 98110f7a). Producer session_013YxyzTt9T2gAhF4H2eASsZ ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119877541833; gate 119849495129 ran vitest and the FTF-0101
+  negative-test proof (step-level; log host 403). Local vitest 2464/2464; FTF-0101 REQUALIFIED (spec unchanged). Real-Chromium
+  probes: axe 0, 0 px overflow to 400 %, visible focus, en/ar. Return: no real-browser UX07 spec (deferred against the
+  ruling); F7/F20/F8/F9 GREEN; §4 evidence absent; blank label renders an unnamed link (severity 2). Faults 11/20 RED.
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX05 (r1)
+- **FTF-UX05: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #962, merge
+  10ef83511feeaf179253f963b8da6490bb7d241b, head f40fa2b3). Producer session_013MQz6mrcx4MQbctyaWFF73 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119894071816; gate 119877854432 ran vitest (step-level) and the
+  parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 2464/2464; parents FTF-0214/0308/
+  0309/1301 REQUALIFIED; FTF-UX01 REQUALIFIED (phrases.ts additive). 208 real-Chromium probe pages. Return (severity 3):
+  UX01 components unused (target-size fails), 1301 errors silent and a `{}` 200 shown as a real empty result (Law 17),
+  malformed items unmount the component, overflow up to 1495 px, 0308 confirm focus lost, missing empty/loading states,
+  English residue under ar, 7 GREEN faults, no browser harness in CI. Faults 26/33 RED. Gates: product_truth 49/49,
+  validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:10Z — RETURNED: FTF-UX06 (r1)
+- **FTF-UX06: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #964, merge
+  26424fee86d4f768890f37df733a44d13666ba3b, head 3ef9c45d). Producers session_01BHMq1m2dSmysowCKLwSknh,
+  session_01XvphxpD8rnAPaR6yRyxRrs ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119937341448; gate
+  119909327102 ran vitest and FTF-0602-P1 (step-level). Local 2491/2491; FTF-0602 REQUALIFIED (spec byte-identical). 76
+  real-Chromium probe runs: axe 0, lang/dir, announced errors without unmount, aria-busy loading. Return: overflow up to 729
+  px with max-length names, focus lost to <body> after a failed save, English system text under ar (severity 3 each); no
+  recovery steps, empty state without action, Field unused; 16/24 faults GREEN; no browser harness in CI; §4 evidence
+  absent and contradicted. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:49Z — RETURNED: FTF-H011-P2 (r1)
+- **FTF-H011-P2: RETURNED** (child slice of FTF-H011; round 1 → 2; PR #934, merge
+  935f14d91405d3ec3f8fdcbb47e1728dc3118722, head c21103b6). Producers session_01RjchJLT6vbaC5fk5YQ8Mkm (9 commits, PR body,
+  merge), session_01CW9VbWz9eetvnP9HPVM6qF, session_01CPgHHbKiqLhRdkb5jSkvWo, session_01DKLGL61DSskQBox4jjAGy7 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 119980460557; dataset-mapping-store-integration 119861606434 and gate
+  119854196879 "all checks passed". Local: task script 735/0, PG16 integration 227/0, one head 0035, uncapped mutation
+  320/320; FTF-H011-P1 REQUALIFIED. 101 probes: RLS/grants/trigger/CHECKs/tenancy/concurrency/Law 17 all hold. Return:
+  (1) an explicit admin rejection is overridden by reusing a prior version's approval (fail-open, reproduced); (2) reuse of
+  an approval made under a now-revoked connection (Control-plane ruling: fail closed, Law 16). Faults 63/64 RED (1
+  equivalent). ci.yml change additive (under a [relay] title). Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK. UNWIRED (P3 wires it).
+## 2026-10-22T23:27Z — RETURNED: FTF-UX07 (r2)
+- **FTF-UX07: RETURNED** (round 2 → 3, evidence only; PR #973, merge 4b3df045e8fed9234acc2ad5d4f0c6a62568e40f, head
+  46e57439). Producer session_01JmTeL9WgrMwRcFe8xps1Dd ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict
+  120112718390; gate 120094672209 installed Chromium and ran vitest incl. the new 43-test browser spec (step-level; log
+  host 403). Local 2564/2564; FTF-0101 REQUALIFIED. Points 1, 2, 4, 5 met (F7/F20/F8/F9 RED in Chromium; blank-label fix
+  pinned). Return: §4 evidence incomplete (checklist grouped, skill output paraphrased, no severity column, two wrong
+  claims). Faults 25/30 RED (5 GREEN equivalent or hand-picked). No severity 3-4. Gates: product_truth 49/49,
+  validate_spec --strict, data_exposure OK.
+## 2026-10-22T23:27Z — RETURNED: FTF-UX05 (r2)
+- **FTF-UX05: RETURNED** (round 2 → 3; PR #976, merge 921e4ef2b349bcd9761f31bfd6a8cadb7b73caec, head 512a383d). Producer
+  session_01Dac8RABSVdB4a7cCQoFhKN ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 120066646812; gate
+  120033439138 ran vitest (step-level) and the parent task scripts. Local 2564/2564; parents FTF-0214/0308/0309/1301 and
+  FTF-UX01 REQUALIFIED. 440 real-Chromium pages: axe 0, lang/dir, malformed 200 never unmounts, 0308 confirm focus correct.
+  Return: round-2 points 2 (1301 silent errors, fabricated empty state - Law 17), 4 (overflow up to 1131 px), 8 (all 7
+  named faults still GREEN) and 9 (no browser spec, no §4 evidence) not done, points 6/7 partial; the submission's claims
+  contradict the code. Faults 24/40 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T04:03Z — RETURNED: FTF-H010-P3 (r1)
+- **FTF-H010-P3: RETURNED** (child slice of FTF-H010; round 1 → 2; PR #948, merge
+  a2982f23942b29af8ecf447a05ca9fbe01a7fada, head 52b83ecb). Producer session_01Wsq53ciagmBnxqZppFLCuR ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 83/83, ci-verdict 120172060906; gate 120078476534 "16306 checks in 26 suite runs,
+  25 faults RED"; model-weights-import-integration 120078612098 "all checks passed" on PG16. Local: task suite, P3
+  integration, P3a (129592 checks) and P2 (42547) suites, P1/P2 integrations all pass; uncapped mutation 194/194. 107
+  probes: no pickle path, crafted safetensors and archives all refused. Return: (1) base licence revoked or base archived
+  during validation still commits the adapter as succeeded (reproduced on PG16); (2)-(4) every-shard check, the terminal
+  share lock and the adapter header hash binding unpinned (faults GREEN). ci.yml additive (under a [relay] title).
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T05:02Z — CERTIFIED (child slice): FTF-UX07
+- **FTF-UX07: CERTIFIED (L2)** (round 3, evidence only, under the stopping rule; PR #982, merge 2aa77912727f66268fcbc5e5bac2a339fd447505, head f581a717).
+  Producer session_01PDKdVZqtr7bzUPWph2JqMg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict
+  120207928267; gate 120206345291 installed Chromium, type-checked and ran vitest incl. ftf_ux07_browser.spec.ts (46
+  tests; step-level, log host 403) and FTF-0101. Production unchanged since round 2 (diff empty). Evidence: 39-item
+  checklist matches pro-rules.md one for one, 14 rows spot-checked true against code and 56 Chromium renders (incl.
+  375x667, 667x375, 1024x768); skill output verbatim; a severity in all 50 H1-H10 x state cells (max 2); claims corrected.
+  Local 57/57 UX07+0101 specs, vitest 2663/2663. Faults: N11a/b, focus token, F7/F8/F9, B1 RED; N2 GREEN (pin ignores
+  alpha; optional variant). FTF-0101 REQUALIFIED. No severity 3-4. Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK.
+## 2026-10-23T09:10Z — CERTIFIED (child slice): FTF-UX05
+- **FTF-UX05: CERTIFIED (L2)** (round 3 under the stopping rule; PR #983, merge 5d793fb8d1d8b84306ec48cc52c740a2ceebafbf, head 6bf6a604). Producer
+  session_01FSq4kMCexAgMEGEk8MYndX ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict
+  120297554117; gate 120279605755 installed Chromium and ran vitest incl. ftf_ux05_browser.spec.ts (step-level; log host
+  403) and the parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 3014/3014 (browser
+  spec 251 in real Chromium); parent and UX01/02/03/07 specs byte-identical (Law 9). 624 real-Chromium pages: axe 0,
+  lang/dir, 0 px overflow at 1280/768/390/320 and 200 % (every round-2 culprit), 1301 failures announced with recovery and
+  never a fabricated empty result, malformed bodies never unmount, no English or body echo under ar, focus never to
+  <body>, single-flight writes. Faults 65/66 RED incl. all 16 earlier GREEN (V33 kindForStatus(400) GREEN, hand-picked).
+  Point-to-commit map verified. Parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED. No severity 3-4. Follow-ups
+  FTF-UX01-F1 and FTF-1301-F1 queued. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T10:08Z — CERTIFIED (child slice): FTF-H010-P3
+- **FTF-H010-P3: CERTIFIED (L2)** (round 2 under the stopping rule; PR #989, merge e54745261e66d8799f5fc3ad5f76fedf6795c414, head fae0606f). Producer
+  session_01KCUWZomH33bcWZ49kEP1ff ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict 120325097697;
+  gate 120301810206 "OK -- 21490 checks in 32 suite runs, 31 faults RED, 0 failing (FTF-H010-P3)";
+  model-weights-import-integration 120302019685 "all checks passed" on PG 16. `_finish` re-reads the base artifact FOR
+  SHARE (licence accepted, ready, digest and revision unchanged; missing base fails closed). Local: task suite 21490/31 RED,
+  P3 integration 7 fresh runs, P3a 129592/69 RED, P2 42547/98 RED, P1/P2 integrations pass; uncapped mutation 202/202.
+  Round-1 PG-M1/M2 now fail `artifact_changed_during_validation`; real two-session PG races confirm both rows share-locked
+  to commit. Faults: VF10/VF14/VF20 and own variants RED; GREEN only advisory/equivalent/hand-picked. Gates: product_truth
+  49/49, validate_spec --strict, data_exposure OK. UNWIRED.
+## 2026-10-23T10:54Z — OWNER DECISION: Radix Dialog approved; FTF-UX02 r2 unparked
+- The owner approved `@radix-ui/react-dialog@1.3.1` (exact-pinned) live in the Control-plane session ("Go for both",
+  then "the decision is yours" for must-haves); the "Owner actions - current" ask is removed and the FTF-UX01 Dialog park
+  resolved. `@radix-ui/react-progress` was not asked for and is not approved. FTF-UX02 round 2 (#947, item 0k) is
+  unparked: close the round-3 pre-review's two items on the same PR, then L2 (which also requalifies the UX01 Dialog).
