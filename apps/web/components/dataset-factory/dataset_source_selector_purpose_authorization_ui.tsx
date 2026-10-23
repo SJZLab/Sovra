@@ -205,6 +205,25 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   return phrase("requestFailedRetryable", locale);
 }
 
+/**
+ * FTF-UX02 round-3 finding 2 (MALFORMED-200, Law 17): a list item or a create reply is shown as a
+ * real connection only when it carries every field the screen renders or acts on. A `null` item,
+ * `{}` or a wrongly typed field becomes ONE localized, retryable alert -- never a crash, a blank
+ * "(, , )" item or a fabricated, selectable connection.
+ */
+function isConnectionSummary(value: unknown): value is DatasetSourceConnectionSummary {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const text = (x: unknown) => typeof x === "string" && x.trim().length > 0;
+  return (
+    text(v.id) &&
+    text(v.display_name) &&
+    text(v.source_type) &&
+    text(v.security_classification) &&
+    text(v.connection_status)
+  );
+}
+
 function networkErrorMessage(caught: unknown, locale: Locale): string {
   // Distinguish from the above only for logging/debugging; the user-facing text is the same
   // bilingual, retryable message either way (Law 17: never silent, never a crash).
@@ -331,7 +350,7 @@ function DatasetSourceSelectorInner({
       // an array (an object like `{items: []}`, `null`, a string, ...) used to crash the component
       // outright (`connections?.find is not a function`) or spin the loading state forever -- a
       // malformed 2xx is never success (Law 17), so it becomes a typed, retryable, announced error.
-      if (!Array.isArray(body)) {
+      if (!Array.isArray(body) || !body.every(isConnectionSummary)) {
         failed(phrase("responseMalformedRetryable", locale));
         return;
       }
@@ -413,8 +432,13 @@ function DatasetSourceSelectorInner({
         setCreateError(await readErrorDetail(response, locale));
         return;
       }
-      const created: DatasetSourceConnectionSummary = await response.json();
+      const created: unknown = await response.json().catch(() => null);
       if (!aliveRef.current) return;
+      if (!isConnectionSummary(created)) {
+        // A 2xx that is not a real connection is never success (Law 17): keep the draft, say so.
+        setCreateError(phrase("responseMalformedRetryable", locale));
+        return;
+      }
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
       setAuthorizeState("idle");
@@ -442,6 +466,7 @@ function DatasetSourceSelectorInner({
     if (!selectedConnectionId || !purposeToCheck) {
       return;
     }
+    const purposeSent = purposeToCheck;
     setAuthorizeState("checking");
     setAuthorizeMessage(null);
     try {
@@ -451,7 +476,7 @@ function DatasetSourceSelectorInner({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ purpose: purposeToCheck }),
+          body: JSON.stringify({ purpose: purposeSent }),
         },
       );
       if (!aliveRef.current) return;
@@ -463,6 +488,16 @@ function DatasetSourceSelectorInner({
       if (!response.ok) {
         setAuthorizeState("idle");
         setAuthorizeMessage(await readErrorDetail(response, locale));
+        return;
+      }
+      // FTF-UX02 round-3 finding 2: "Authorized" only for `{authorized: true, purpose: <sent>}`.
+      // `{}`, `{"authorized": false}`, a non-JSON reply or another purpose is never a grant.
+      const grant: unknown = await response.json().catch(() => null);
+      if (!aliveRef.current) return;
+      const g = grant as { authorized?: unknown; purpose?: unknown } | null;
+      if (!g || typeof g !== "object" || g.authorized !== true || g.purpose !== purposeSent) {
+        setAuthorizeState("idle");
+        setAuthorizeMessage(phrase("responseMalformedRetryable", locale));
         return;
       }
       setAuthorizeState("authorized");

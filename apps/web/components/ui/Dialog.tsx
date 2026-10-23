@@ -97,12 +97,8 @@ export function Dialog({
             gap: "var(--space-3)",
           }}
         >
-          <RadixDialog.Title style={{ margin: 0 }}>
-            {title}
-          </RadixDialog.Title>
-          <RadixDialog.Description style={{ margin: 0 }}>
-            {description}
-          </RadixDialog.Description>
+          <RadixDialog.Title style={{ margin: 0 }}>{title}</RadixDialog.Title>
+          <RadixDialog.Description style={{ margin: 0 }}>{description}</RadixDialog.Description>
           {children}
           <RadixDialog.Close asChild>
             <Button
