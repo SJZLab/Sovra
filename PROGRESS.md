@@ -30869,3 +30869,30 @@ has a fresh-base `ci-verdict` run in flight; staying subscribed to merge on gree
 red job. No new `BLOCKER.md` entry (every entry in the file is RESOLVED, none currently LIVE). No
 new "Owner actions" line (the two existing dated asks -- FTF-0616 LiteLLM judge secret, FTF-04A31
 private-repo credential -- are unchanged, still open). Certified/product-true counts unchanged.
+
+## 2026-10-23T1852Z -- Scheduled relay shift -- frontier saturated by concurrent sessions, no new claim
+
+STEP 0/0.1/0.2 clean (hash matched, no live BLOCKER.md entry, no cognee-cli). Designated branch
+`claude/wizardly-fermat-a85mhi` was a fresh container -- reset to `origin/main` at `21e0b3a` (0
+commits ahead/behind, nothing of its own to carry forward).
+
+Returned-work sweep across all 20 open PRs before claiming anything new (CLAUDE.md step 1): the
+13 non-draft PRs each had every sampled check-run conclusion green or skipped, no `failure` or
+`cancelled` found, and no `dirty` `mergeable_state`. The 7 draft PRs (#1007, #974, #961, #960,
+#759, #732, #709) stay correctly skipped as explicit WIP by their own authoring sessions. #965
+(a plain gitignore chore, not `[relay]`/`[GOVERNANCE]`) is left alone as before.
+
+Frontier claim check against QUEUE.md "## Active" item 0's strict order: 0c (FTF-R006-P1b-r2)
+already merged (PR #971). 0d (FTF-1301-F1-r2) has open PR #1005 (pushed 52 min ago, its own
+pre-review already reporting CERTIFY). 0k (FTF-UX02-r3) has open draft PR #1007. A further
+returned round not yet reflected in this session's QUEUE.md read -- FTF-UX01-F1 r2, answering
+the #994 return -- has open PR #1008 (pushed 7 min ago). FTF-H010-P4-r1 has open PR #998 (pushed
+within the 3-hour claim window). Every reachable slice of the frontier is already claimed by a
+concurrent session's fresh push or merged commit -- nothing genuinely unclaimed to pick this
+shift.
+
+STEP 3: this file and the shift log `docs/progress/2026-10-23T1852Z-relay.md` (plain docs-only PR
+on this designated branch, not `[relay]`/`[GOVERNANCE]`-titled; QUEUE.md and
+docs/certifications/queue.md untouched). STEP 4 stop condition: frontier saturated -- no new claim.
+No new `BLOCKER.md` entry (every entry in the file stays RESOLVED). No new "Owner actions" line
+(the two existing dated asks unchanged, still open). Certified/product-true counts unchanged.
