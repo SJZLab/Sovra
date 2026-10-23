@@ -1527,6 +1527,12 @@ def store_suite(crud: Any) -> None:
         base.origin = "imported_weights"
         e.session.flush()
         # the early guards cost no query
+        e.statements.clear()
+        check(
+            "F0",
+            "no artifact id -> no artifact and no query",
+            crud._artifact_of(e.session, e.ctx, None) is None and e.statements == [],
+        )
         art = e.session.query(TrainableArtifact).first()
         e.statements.clear()
         no_parent = SimpleNamespace(
