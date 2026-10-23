@@ -149,6 +149,22 @@ test.each([
   ["an empty object", { ok: true, status: 200, json: async () => ({}) }],
   ["authorized:false", { ok: true, status: 200, json: async () => ({ authorized: false }) }],
   [
+    "authorized:false with the matching purpose",
+    {
+      ok: true,
+      status: 200,
+      json: async () => ({ authorized: false, purpose: "training" }),
+    },
+  ],
+  [
+    "authorized as a string",
+    {
+      ok: true,
+      status: 200,
+      json: async () => ({ authorized: "true", purpose: "training" }),
+    },
+  ],
+  [
     "a different purpose",
     { ok: true, status: 200, json: async () => ({ authorized: true, purpose: "validation" }) },
   ],
