@@ -74,6 +74,24 @@ test("[UX01-F1-2] a non-fetch Error's English message is never shown under local
   expect(err.kind).toBe("retry");
 });
 
+test("[UX01-F1-2d] an Error subclass's English message is never shown under locale=ar", () => {
+  class UpstreamError extends Error {
+    override name = "UpstreamError";
+  }
+  const inherited = Object.create(Error.prototype) as Error;
+  inherited.message = "socket hang up";
+  const expected = `${phrase("networkErrorPrefix", "ar")} ${phrase("networkErrorUnknown", "ar")}`;
+  for (const caught of [
+    new RangeError("Invalid array length"),
+    new UpstreamError("ECONNRESET while talking to upstream"),
+    inherited,
+  ]) {
+    const message = networkError(caught, "ar").message;
+    expect(message).toBe(expected);
+    expect(message).not.toMatch(/[A-Za-z]/);
+  }
+});
+
 test("[UX01-F1-2b] under locale=en the existing 'network error: <reason>' form is kept", () => {
   expect(networkError(new Error("ECONNRESET"), "en").message).toBe("network error: ECONNRESET");
   expect(networkError(new Error(""), "en").message).toBe("network error: unknown error");
