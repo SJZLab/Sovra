@@ -1042,3 +1042,71 @@ test("FTF-1301-F1 round 2 (P8): a Verify error from the project open when it was
   });
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+test("FTF-1301-F1 round 2 (P8, Create): a Create error from the project open when it was clicked never surfaces after switching project", async () => {
+  const PROJECT_B = "40404040-4040-4040-4040-404040404040";
+  const calls: Array<{ url: string; resolve: (value: unknown) => void }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          calls.push({ url, resolve });
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(1)); // initial search(project A)
+  await act(async () => {
+    calls[0]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+    target: { value: "On-prem A100 node" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "2.5000000000" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+    target: { value: "internal TCO worksheet v3" },
+  });
+  fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+  await waitFor(() => expect(calls.length).toBe(2)); // create POST, in flight, still project A's click
+
+  // Switch to project B while that create write is still in flight.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(3)); // search(project B), triggered by the switch
+  await act(async () => {
+    calls[2]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  // The Create POST (submitted on project A) now resolves with a 409, well after the switch to B.
+  await act(async () => {
+    calls[1]!.resolve({ ok: false, status: 409, json: async () => ({ detail: "conflict" }) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
