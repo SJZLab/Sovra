@@ -12369,3 +12369,13 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   <body>, single-flight writes. Faults 65/66 RED incl. all 16 earlier GREEN (V33 kindForStatus(400) GREEN, hand-picked).
   Point-to-commit map verified. Parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED. No severity 3-4. Follow-ups
   FTF-UX01-F1 and FTF-1301-F1 queued. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T10:08Z — CERTIFIED (child slice): FTF-H010-P3
+- **FTF-H010-P3: CERTIFIED (L2)** (round 2 under the stopping rule; PR #989, merge e54745261e66d8799f5fc3ad5f76fedf6795c414, head fae0606f). Producer
+  session_01KCUWZomH33bcWZ49kEP1ff ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict 120325097697;
+  gate 120301810206 "OK -- 21490 checks in 32 suite runs, 31 faults RED, 0 failing (FTF-H010-P3)";
+  model-weights-import-integration 120302019685 "all checks passed" on PG 16. `_finish` re-reads the base artifact FOR
+  SHARE (licence accepted, ready, digest and revision unchanged; missing base fails closed). Local: task suite 21490/31 RED,
+  P3 integration 7 fresh runs, P3a 129592/69 RED, P2 42547/98 RED, P1/P2 integrations pass; uncapped mutation 202/202.
+  Round-1 PG-M1/M2 now fail `artifact_changed_during_validation`; real two-session PG races confirm both rows share-locked
+  to commit. Faults: VF10/VF14/VF20 and own variants RED; GREEN only advisory/equivalent/hand-picked. Gates: product_truth
+  49/49, validate_spec --strict, data_exposure OK. UNWIRED.
