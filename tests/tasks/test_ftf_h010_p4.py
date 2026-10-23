@@ -615,11 +615,11 @@ def _jsonb_as_json(element: Any, compiler: Any, **kw: Any) -> str:
 import app.auth.organization_workspace_schema  # noqa: E402,F401  (FK targets in the metadata)
 import app.auth.resource_authorization as resource_authorization  # noqa: E402
 import app.litellm.connection_schema  # noqa: E402,F401
-import app.projects.project_schema  # noqa: E402,F401
 import app.model_versions.model_role_crud as real_crud  # noqa: E402
 import app.model_versions.model_role_routes as real_routes  # noqa: E402
 import app.model_versions.model_role_schema as role_schema  # noqa: E402
 import app.model_versions.model_version_crud as version_crud  # noqa: E402
+import app.projects.project_schema  # noqa: E402,F401
 from app.artifacts.artifact_schema import TrainableArtifact  # noqa: E402
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.db.tenant_context import TenantContext  # noqa: E402
