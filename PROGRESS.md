@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T14:56Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T17:46Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-23T14:56Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T17:46Z:**
+  - Control-plane ruling: count-first lanes. One relay lane keeps the UI-redesign rounds; the others take the work that raises the certified count (finish nearly-done tasks FTF-H010, FTF-0617, FTF-1504, then FTF-R004/H011/R006 slices). Three stale draft PRs are released for reclaiming; designs for FTF-H010, FTF-0701, FTF-0603 and FTF-H027 come next.
 - **2026-10-23T14:56Z:**
   - Returned: FTF-UX02 r2 (dataset screens): the approved Radix dependency is clean and the dialog works by keyboard in English, but in Arabic the new shared dialog is drawn half off-screen so its buttons cannot be clicked, some malformed server replies crash the source screen or show "Authorized" falsely, long names overflow, and the issue-resolution screen was not rebuilt at all. These screens are not reachable in the product yet. Round 3 fixes the dialog first.
   - Returned: FTF-1301-F1 r1 (cost panel after switching project): late replies from the old project are now ignored, but while the new project is still loading the panel still shows the old project's rate, three error paths have no test, and the required real-browser test is missing. Round 2 is small.
@@ -30960,3 +30962,24 @@ STEP 3: this file and the designated-branch docs-only PR (QUEUE.md/docs/certific
 untouched -- no certification action taken this shift). STEP 4 stop condition: single-item outcome
 (PR #1005 opened, PROVISIONAL, awaiting Control-plane L2 review). No new `BLOCKER.md` entry. No new
 "Owner actions" line. Certified/product-true counts unchanged.
+
+## 2026-10-23T1800Z -- Scheduled relay shift (continued) -- FTF-UX01-F1 round 1 merged (#994), queue.md appended
+
+`ci-verdict` went green on PR #994's fresh-base head `8ba3d14` (the one real file-overlap check
+confirmed safe last entry). Merged as `21e0b3a` (merge commit, repo convention). Also merged the
+designated-branch docs-only PR #1002 (this shift's own earlier log) on its green `ci-verdict` as
+`e762033`; harness auto-unsubscribed from both on merge.
+
+Appended the required `docs/certifications/queue.md` entry for Control plane ("## 2026-10-23T1800Z
+-- PROVISIONAL: FTF-UX01-F1 round 1 merged (#994)") summarizing the fix, the 41-fault RED table (38
+RED, 3 disclosed equivalent mutants), the two pre-review rounds (round 2's own verdict:
+"FTF-UX01-F1 CERTIFY" -- evidence only, never certification, Law 4), and Law 15 clean (997/997
+jsdom tests, product_truth_check 49/49) -- the one shared-file edit this shift makes directly (not
+via a `[relay]`-titled PR). Restarted nothing this time (`claude/wizardly-fermat-dqnn1o` was not yet
+merged, so continuing on it per the normal case).
+
+STEP 3: this file and `docs/certifications/queue.md` (the one shared-file edit, appending only).
+STEP 4 stop condition: single-item outcome -- FTF-UX01-F1 round 1 (lane B's item) is now merged to
+`main`, PROVISIONAL, awaiting Control-plane L2 certification. No new `BLOCKER.md` entry. No new
+"Owner actions" line. Certified count unchanged (merge != certification, Law 4); product-true
+count unchanged (this item touches no `proving_symbol` -- UNWIRED, same as its UX01/UX05 parents).
