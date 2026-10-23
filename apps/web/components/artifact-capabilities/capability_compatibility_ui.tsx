@@ -55,10 +55,20 @@
  * internal identifier, not visible copy) while its *visible* heading text is now translated.
  * Default `locale="en"` rendering, every `getByRole`/`getByText` query in the certified suite, and
  * every existing `data-testid` are byte-identical to round 1.
+ *
+ * FTF-UX05 round 2 (2026-10-22, second L2 return, PR #972): the independent review of this area
+ * found no new defect specific to this component (its response is already strictly validated by
+ * `isCapabilities`, and every authored string already routes through `phrase()`), but flagged the
+ * same two cross-cutting issues every sibling component in this area had: no minimum target size
+ * on its two buttons (WCAG 2.2 §2.5.8 -- both now render through the shared `Button` component,
+ * the §72.1-fixed component, not a new style) and two long raw values with no wrap
+ * (`weights_digest`, the declared-GPU-profile JSON blob -- both now carry
+ * `style={{ overflowWrap: "anywhere" }}`).
  */
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
@@ -412,9 +422,9 @@ export function CapabilityCompatibilityUI({
       <h2>
         {phrase("compatibilityHeadingPrefix", locale)} <bdi>{modelName}</bdi>
       </h2>
-      <button type="button" onClick={handleLoad} disabled={loading} aria-busy={loading}>
+      <Button onClick={handleLoad} disabled={loading} aria-busy={loading}>
         {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
-      </button>
+      </Button>
       {error ? (
         <p role="alert" dir={dirFor(locale)}>
           <bdi>{error}</bdi>
@@ -446,7 +456,9 @@ export function CapabilityCompatibilityUI({
                 ? phrase("compatApproved", locale)
                 : phrase("compatNotApproved", locale)}
               ; {phrase("compatWeightsPrefix", locale)}{" "}
-              <bdi>{shown(capabilities.artifact.weights_digest, locale)}</bdi>
+              <bdi style={{ overflowWrap: "anywhere" }}>
+                {shown(capabilities.artifact.weights_digest, locale)}
+              </bdi>
             </dd>
             <dt>{phrase("compatDiscoveryChecked", locale)}</dt>
             {/* Not wrapped in <bdi> (unlike other data values in this component): a certified
@@ -479,7 +491,7 @@ export function CapabilityCompatibilityUI({
               ))}
             </tbody>
           </table>
-          <p data-testid="declared-vram">
+          <p data-testid="declared-vram" style={{ overflowWrap: "anywhere" }}>
             {phrase("compatDeclaredVramPrefix", locale)}{" "}
             {capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile ? (
               <bdi>{JSON.stringify(capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile)}</bdi>
@@ -494,8 +506,7 @@ export function CapabilityCompatibilityUI({
               ))}
             </ul>
           ) : null}
-          <button
-            type="button"
+          <Button
             disabled={!trainEnabled}
             onClick={() => {
               if (!trainEnabled || !onTrain) return;
@@ -504,7 +515,7 @@ export function CapabilityCompatibilityUI({
             }}
           >
             {phrase("compatTrainButton", locale)}
-          </button>
+          </Button>
           {started ? (
             <p role="status">
               {phrase("compatTrainingRequestedPrefix", locale)} <bdi>{modelName}</bdi>.

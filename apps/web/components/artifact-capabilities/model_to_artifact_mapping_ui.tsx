@@ -64,10 +64,36 @@
  * convention `candidate_selection_ui_no_auto_selection.tsx` already established). A `detail` string
  * surfaced raw from the live backend for an unrecognized error code is the same kind of data.
  * Default `locale="en"` rendering is byte-identical to round 1.
+ *
+ * FTF-UX05 round 2 (2026-10-22, second L2 return, PR #972): fixes four defects an independent
+ * review of the merged round-1+round-2 code found by reproducing each directly.
+ *
+ * - CONFIRM-LOSES-FOCUS (severity 3): the `confirm-change` `role="alertdialog"` never moved focus
+ *   anywhere on open and never returned it anywhere on Cancel (confirmed in jsdom:
+ *   `document.activeElement` stayed on the trigger throughout, which is wrong for a dialog whose
+ *   own trigger can become `disabled`/unmounted underneath it). It now follows this repo's own
+ *   established Dialog convention (`mandate_editor_and_conflict_resolution_ui.tsx`'s own
+ *   discard-confirm, already copied once in this same file's sibling `model_catalog_ui.tsx`):
+ *   opening the confirm moves focus to its own Cancel button; Cancel returns focus to the trigger
+ *   that opened it (`map-button` or `unmap-button`, whichever is still present); Confirm's own
+ *   `confirm-change-button` keeps focus naturally while `writing` (it only becomes `disabled`,
+ *   never unmounted, so no explicit focus move is needed there).
+ * - MALFORMED-ITEM-CRASH: `handleLoadArtifacts`/`handleLoadChanges` accepted any array as the
+ *   artifact/change list with no per-item validation. A malformed artifact (e.g.
+ *   `required_python_packages` sent as a string instead of an array) crashed `ArtifactDetails`'s
+ *   `packages.join(", ")` with no error boundary, unmounting this whole component. Both lists now
+ *   validate every item (`isMappedArtifact`/`isMappingChange`) before accepting the response,
+ *   same discipline `isCapabilities` already uses in the sibling FTF-0309 component; a failed
+ *   parse is the same kind of typed error this component already shows for other shape failures.
+ * - NO-TARGET-SIZE: every native `<button>` had no minimum target size (WCAG 2.2 §2.5.8) -- all
+ *   now render through the shared `Button` component (the §72.1-fixed component, not a new style).
+ * - OVERFLOW: a long source URI/digest/revision value is not wrapped -- each now carries
+ *   `style={{ overflowWrap: "anywhere" }}` in `ArtifactDetails`.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { Button } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 export interface MappedArtifact {
@@ -193,12 +219,57 @@ function shown(value: unknown, locale: Locale): string {
   return String(value);
 }
 
-function isMapping(body: unknown): body is TrainingArtifactMapping {
-  if (!body || typeof body !== "object") return false;
-  const candidate = body as Partial<TrainingArtifactMapping>;
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+const ARTIFACT_STATUSES = ["registered", "ready", "archived"];
+
+/** A malformed artifact (e.g. `required_python_packages` sent as a non-array) previously crashed
+ * `ArtifactDetails`'s `packages.join(", ")` with no error boundary, unmounting this whole
+ * component -- validated up front instead, same discipline `isCapabilities` already uses in the
+ * sibling FTF-0309 component. */
+function isMappedArtifact(value: unknown): value is MappedArtifact {
+  if (!isPlainObject(value)) return false;
   return (
-    (candidate.mapping_state === "mapped" || candidate.mapping_state === "unmapped") &&
-    typeof candidate.catalog_version === "number"
+    typeof value.id === "string" &&
+    typeof value.display_name === "string" &&
+    typeof value.source_type === "string" &&
+    typeof value.source_uri === "string" &&
+    typeof value.model_family === "string" &&
+    typeof value.base_model_revision === "string" &&
+    typeof value.license_id === "string" &&
+    ARTIFACT_STATUSES.includes(value.status as string) &&
+    (value.weights_digest === undefined ||
+      value.weights_digest === null ||
+      typeof value.weights_digest === "string") &&
+    (value.required_python_packages === undefined ||
+      Array.isArray(value.required_python_packages)) &&
+    (value.minimum_gpu_profile === undefined || isPlainObject(value.minimum_gpu_profile))
+  );
+}
+
+function isMappingChange(value: unknown): value is MappingChange {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    (value.previous_trainable_artifact_id === null ||
+      typeof value.previous_trainable_artifact_id === "string") &&
+    (value.new_trainable_artifact_id === null ||
+      typeof value.new_trainable_artifact_id === "string") &&
+    typeof value.previous_catalog_version === "number" &&
+    typeof value.new_catalog_version === "number" &&
+    typeof value.actor === "string" &&
+    typeof value.created_at === "string"
+  );
+}
+
+function isMapping(body: unknown): body is TrainingArtifactMapping {
+  if (!isPlainObject(body)) return false;
+  return (
+    (body.mapping_state === "mapped" || body.mapping_state === "unmapped") &&
+    typeof body.catalog_version === "number" &&
+    (body.artifact === null || body.artifact === undefined || isMappedArtifact(body.artifact))
   );
 }
 
@@ -267,11 +338,11 @@ export function ModelToArtifactMappingUI({
         return;
       }
       const body: unknown = await response.json();
-      if (!Array.isArray(body)) {
+      if (!Array.isArray(body) || !body.every(isMappedArtifact)) {
         setArtifactsError(phrase("mappingMalformedArtifactListing", locale));
         return;
       }
-      setArtifacts(body as MappedArtifact[]);
+      setArtifacts(body);
     } catch (caught) {
       setArtifactsError(networkErrorMessage(caught, locale));
     }
@@ -288,12 +359,16 @@ export function ModelToArtifactMappingUI({
         setChangesError(await readErrorDetail(response, locale));
         return;
       }
-      const body = await response.json();
-      if (!body || !Array.isArray(body.changes)) {
+      const body: unknown = await response.json();
+      if (
+        !isPlainObject(body) ||
+        !Array.isArray(body.changes) ||
+        !body.changes.every(isMappingChange)
+      ) {
         setChangesError(phrase("mappingMalformedChangeHistory", locale));
         return;
       }
-      setChanges(body.changes as MappingChange[]);
+      setChanges(body.changes);
     } catch (caught) {
       setChangesError(networkErrorMessage(caught, locale));
     }
@@ -341,6 +416,11 @@ export function ModelToArtifactMappingUI({
               phrase("mappingNoticeChangedSuffix", locale, { prev: previousVersion })
           : phrase("mappingNoticeNoChange", locale),
       );
+      // The confirm dialog (and its own confirm/cancel buttons) just unmounted -- keep the
+      // keyboard user on the state that just changed, rather than dropping focus to <body>.
+      queueMicrotask(() =>
+        rootRef.current?.querySelector<HTMLElement>('[data-testid="mapping-state"]')?.focus(),
+      );
     } catch (caught) {
       // Nothing is shown as mapped unless the route genuinely answered.
       setWriteError(networkErrorMessage(caught, locale));
@@ -357,9 +437,30 @@ export function ModelToArtifactMappingUI({
     selectedArtifact !== null &&
     selectedArtifact.id !== mapping.trainable_artifact_id;
 
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Focus management for the confirm dialog (L2 return round 2, same convention
+  // `mandate_editor_and_conflict_resolution_ui.tsx`'s own discard-confirm already established):
+  // opening it moves focus to its own Cancel button; Cancel returns focus to whichever trigger
+  // opened it.
+  function openConfirm(which: "map" | "unmap") {
+    setPending(which);
+    queueMicrotask(() =>
+      rootRef.current?.querySelector<HTMLElement>('[data-testid="cancel-change-button"]')?.focus(),
+    );
+  }
+
+  function closeConfirm() {
+    const opener = pending === "map" ? "map-button" : "unmap-button";
+    setPending(null);
+    queueMicrotask(() =>
+      rootRef.current?.querySelector<HTMLElement>(`[data-testid="${opener}"]`)?.focus(),
+    );
+  }
+
   function requestMap() {
     if (isMapped) {
-      setPending("map");
+      openConfirm("map");
       return;
     }
     if (selectedArtifactId) void submit(selectedArtifactId);
@@ -367,6 +468,7 @@ export function ModelToArtifactMappingUI({
 
   return (
     <div
+      ref={rootRef}
       data-testid="model-to-artifact-mapping-ui"
       aria-label={phrase("mappingAriaLabel", locale, { model: modelName })}
       lang={resolveLocale(locale)}
@@ -378,21 +480,20 @@ export function ModelToArtifactMappingUI({
       <p data-testid="mapping-three-steps-notice">{phrase("mappingThreeStepsNotice", locale)}</p>
 
       <section data-testid="mapping-current">
-        <button
-          type="button"
+        <Button
           data-testid="load-mapping-button"
           disabled={loadingMapping}
           onClick={handleLoadMapping}
         >
           {phrase("mappingLoadMapping", locale)}
-        </button>
+        </Button>
         {mappingError && (
           <p role="alert" data-testid="mapping-error">
             <bdi>{mappingError}</bdi>
           </p>
         )}
         {mapping && (
-          <div data-testid="mapping-state">
+          <div data-testid="mapping-state" tabIndex={-1}>
             <p data-testid="mapping-state-label">
               {mapping.mapping_state === "mapped"
                 ? phrase("mappingStateMapped", locale)
@@ -417,9 +518,9 @@ export function ModelToArtifactMappingUI({
       </section>
 
       <section data-testid="mapping-picker">
-        <button type="button" data-testid="load-artifacts-button" onClick={handleLoadArtifacts}>
+        <Button data-testid="load-artifacts-button" onClick={handleLoadArtifacts}>
           {phrase("mappingLoadArtifacts", locale)}
-        </button>
+        </Button>
         {artifactsError && (
           <p role="alert" data-testid="artifacts-error">
             <bdi>{artifactsError}</bdi>
@@ -434,8 +535,7 @@ export function ModelToArtifactMappingUI({
               <span>
                 (<bdi>{artifact.status}</bdi>)
               </span>
-              <button
-                type="button"
+              <Button
                 data-testid={`artifact-select-button-${artifact.id}`}
                 aria-pressed={selectedArtifactId === artifact.id}
                 disabled={artifact.status !== "ready"}
@@ -444,7 +544,7 @@ export function ModelToArtifactMappingUI({
                 {selectedArtifactId === artifact.id
                   ? phrase("selected", locale)
                   : phrase("select", locale)}
-              </button>
+              </Button>
               {artifact.status !== "ready" && (
                 <span data-testid={`artifact-not-ready-${artifact.id}`}>
                   {phrase("mappingArtifactNotReady", locale)}
@@ -460,21 +560,29 @@ export function ModelToArtifactMappingUI({
           <ArtifactDetails artifact={selectedArtifact} prefix="selected" locale={locale} />
         )}
 
-        <button type="button" data-testid="map-button" disabled={!canMap} onClick={requestMap}>
+        <Button data-testid="map-button" disabled={!canMap} onClick={requestMap}>
           {phrase("mappingMapButton", locale)}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
           data-testid="unmap-button"
           disabled={!isMapped || writing}
-          onClick={() => setPending("unmap")}
+          onClick={() => openConfirm("unmap")}
         >
           {phrase("mappingRemoveButton", locale)}
-        </button>
+        </Button>
 
         {pending && mapping && (
-          <div role="alertdialog" data-testid="confirm-change">
-            <p data-testid="confirm-change-text">
+          <div
+            role="alertdialog"
+            aria-labelledby="confirm-change-text"
+            data-testid="confirm-change"
+            lang={resolveLocale(locale)}
+            dir={dirFor(locale)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeConfirm();
+            }}
+          >
+            <p id="confirm-change-text" data-testid="confirm-change-text">
               {pending === "unmap"
                 ? phrase("mappingConfirmRemoving", locale)
                 : phrase("mappingConfirmChanging", locale)}{" "}
@@ -482,21 +590,17 @@ export function ModelToArtifactMappingUI({
                 version: mapping.catalog_version,
               })}
             </p>
-            <button
-              type="button"
+            <Button
+              variant="danger"
               data-testid="confirm-change-button"
               disabled={writing}
               onClick={() => void submit(pending === "unmap" ? null : selectedArtifactId)}
             >
               {phrase("mappingConfirmButton", locale)}
-            </button>
-            <button
-              type="button"
-              data-testid="cancel-change-button"
-              onClick={() => setPending(null)}
-            >
+            </Button>
+            <Button data-testid="cancel-change-button" onClick={closeConfirm}>
               {phrase("cancel", locale)}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -513,9 +617,9 @@ export function ModelToArtifactMappingUI({
       </section>
 
       <section data-testid="mapping-history">
-        <button type="button" data-testid="load-changes-button" onClick={handleLoadChanges}>
+        <Button data-testid="load-changes-button" onClick={handleLoadChanges}>
           {phrase("mappingLoadChangeHistory", locale)}
-        </button>
+        </Button>
         {changesError && (
           <p role="alert" data-testid="changes-error">
             <bdi>{changesError}</bdi>
@@ -559,7 +663,7 @@ function ArtifactDetails({
         <bdi>{artifact.display_name}</bdi>
       </dd>
       <dt>{phrase("artifactDetailSource", locale)}</dt>
-      <dd data-testid={`${prefix}-artifact-source`}>
+      <dd data-testid={`${prefix}-artifact-source`} style={{ overflowWrap: "anywhere" }}>
         <bdi>
           {artifact.source_type}: {artifact.source_uri}
         </bdi>
@@ -573,7 +677,7 @@ function ArtifactDetails({
         <bdi>{shown(artifact.base_model_revision, locale)}</bdi>
       </dd>
       <dt>{phrase("artifactDetailWeightsDigest", locale)}</dt>
-      <dd data-testid={`${prefix}-artifact-digest`}>
+      <dd data-testid={`${prefix}-artifact-digest`} style={{ overflowWrap: "anywhere" }}>
         <bdi>{shown(artifact.weights_digest, locale)}</bdi>
       </dd>
       <dt>{phrase("artifactDetailLicense", locale)}</dt>

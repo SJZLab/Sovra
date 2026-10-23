@@ -25214,3 +25214,9 @@ different session.
 - **Certified:** FTF-UX03 (#956, merge 369decc2), round 3; FTF-UX01 requalified.
 - **Certified:** FTF-1505-F1 (#958, merge 24f1672f), round 3; FTF-1505 requalified.
 - **Returned:** FTF-R006-P1b r1 -> r2 (0c): verify scope before any Argilla call (cross-tenant), serialize revoke/sync, pin Law 17 outage paths, converge concurrent sync, column-limited UPDATE + trigger, real-Argilla CI job + R002 + gate step.
+- **Returned:** FTF-UX07 r1 -> r2 (0d): real-browser spec with F7/F20/F8/F9 RED, §4 evidence, blank-label fix or decision, severity-2 decisions.
+- **Returned:** FTF-UX05 r1 -> r2 (0e): rebuild on UX01, catch + shape-check (no unmount, no fabricated empty), wrap long data, 0308 confirm focus, empty/loading states, phrase() residue, 7 pins, browser harness in CI + §4 evidence.
+- **Returned:** FTF-UX06 r1 -> r2 (0f): browser harness in CI, wrap long names, ErrorSummary focus, full Arabic, recovery steps + empty action, Field/useId, 16 pins, §4 evidence.
+- **Returned:** FTF-H011-P2 r1 -> r2 (0g): an explicit rejection blocks reuse; reuse requires the prior approval's connection to be live.
+- **Returned:** FTF-UX07 r2 -> r3 (0d): evidence only - 39-item checklist item by item, real skill output, severity per H1-H10 cell, two claims corrected.
+- **Returned:** FTF-UX05 r2 -> r3 (0e): 1301 catch + announce, wrap long names, empty/loading states, phrase() residue, 16 pins, browser spec in CI, §4 evidence, corrected claims.

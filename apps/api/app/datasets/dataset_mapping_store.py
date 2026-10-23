@@ -865,6 +865,22 @@ def _approved_for(
     return execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
 
 
+def _latest_decision_status(
+    session: Session, context: TenantContext, dataset: Dataset
+) -> str | None:
+    """The status of this dataset's own most recent decided (approved or rejected) mapping."""
+    statement = (
+        select(DatasetMapping.status)
+        .where(
+            DatasetMapping.project_id == dataset.project_id,
+            DatasetMapping.dataset_id == dataset.id,
+            DatasetMapping.status.in_(("approved", "rejected")),
+        )
+        .order_by(DatasetMapping.mapping_version.desc())
+    )
+    return execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
+
+
 def _verified_mapping(row: DatasetMapping) -> ImportMapping:
     mapping = _parse_document(row.mapping_document)
     if not _same_hash(mapping.mapping_sha256, row.mapping_sha256):
@@ -918,9 +934,19 @@ def resolve_approved_mapping(
             str(own.approved_purpose),
             reused=False,
         )
+    if _latest_decision_status(session, context, dataset) == "rejected":
+        # an explicit rejection of this dataset's own mapping is never overridden by a reuse
+        raise MappingStoreError("mapping_reapproval_required")
     prior = _approved_for(session, context, dataset, earlier=True)
     if prior is None:
         raise MappingStoreError("mapping_not_found")
+    try:
+        # Law 16: the prior approval's own grant must still allow this purpose, now
+        authorize_dataset_source_purpose(
+            session, context, project_id, prior.dataset_source_connection_id, purpose
+        )
+    except (DatasetSourceAuthorizationError, DatasetSourceConnectionNotFoundError):
+        raise MappingStoreError("mapping_reapproval_required") from None
     mapping = _verified_mapping(prior)
     if (prior.importer, importer) not in _REUSABLE_PAIRS:
         raise MappingStoreError("mapping_reapproval_required")

@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-22T15:33Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-22T23:27Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,16 @@ Updated: 2026-10-22T15:33Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-22T23:27Z:**
+  - Returned: FTF-UX05 r2 (models, capabilities and cost screens): the confirmation dialog and malformed replies are now fixed and every certified test still passes, but half of the round-2 list was not done (silent errors on the cost screen, long names still overflow, missing tests, no real-browser checks) while the submission claimed it was. Round 3 must close each point and map it to its test.
+  - Returned: FTF-UX07 r2 (sign-in button): every fix and test from round 2 is correct and verified in a real browser; only the design-review paperwork is still incomplete (the 39-item checklist is grouped instead of item by item). Round 3 is documentation only.
+- **2026-10-22T19:49Z:**
+  - Returned: FTF-H011-P2 r1 (saving dataset field mappings): the database side is solid - locked against edits after approval, tenant-isolated, safe under parallel use - but an approval from an older dataset version could still be reused after an admin explicitly rejected the mapping, or after the connection it was approved under was revoked. Round 2 is a small store fix.
+- **2026-10-22T19:10Z:**
+  - Returned: FTF-UX06 r1 (evaluation case editor): errors are announced, loading works and the certified tests still pass, but long case names overflow on phones, keyboard focus is lost after a failed save, Arabic pages still show English error text, and the real-browser checks were skipped. Round 2 fixes these.
+- **2026-10-22T17:35Z:**
+  - Returned: FTF-UX05 r1 (models, capabilities and cost screens): the four screens still pass all their certified tests, but they do not use the shared accessible components yet, some failures are silent or blank the whole screen, long model names and hashes overflow on phones, a confirmation dialog loses keyboard focus, and the real-browser checks were skipped. These are the same issues UX02/UX03 fixed; round 2 applies those fixes here.
+  - Returned: FTF-UX07 r1 (sign-in button redesign): the button itself is correct, bilingual and accessible, but the real-browser checks were skipped, three ways of breaking it (hidden hint, text overflow, no focus outline) go unnoticed by the tests, and the design-review evidence is missing. Round 2 is tests and evidence only.
 - **2026-10-22T15:33Z:**
   - Returned: FTF-R006-P1b r1 (Argilla reviewer accounts and workspace membership). Run against a real Argilla server, it let a reviewer from one organization be added to another organization's workspace and read its data, and a revoked reviewer could keep access during a race. The code is not reachable from the product yet (no live route), so nothing is exposed. Round 2 must fix both, pin outage handling, tighten database permissions, and test against a real Argilla server in CI.
 - **2026-10-22T11:23Z:**
@@ -30690,3 +30700,19 @@ work is unaffected). No owner ask raised (the pre-existing FTF-UX01 Dialog owner
 QUEUE.md stays open, unchanged, since PR #947 is unmerged). Certified count/product-true count
 unchanged by this shift (PR #947 is PROVISIONAL, unmerged, parked -- Control plane has not
 certified anything here).
+
+## 2026-10-22T1450Z -- Scheduled relay shift -- frontier saturated, no new claim
+
+STEP 0/0.1/0.2 clean (hash matched, BLOCKER.md has no live entry, no cognee-cli). Returned work
+first: all 14 open PRs checked via `list_pull_requests` + `actions_list` (not `pull_request_read`'s
+`get_status`, which returns empty on this repo's Checks-API-based CI) -- no red `ci-verdict`, no
+merge conflict, no `needs-fix` label on any of them. PR #966 (FTF-UX07) merged 19 minutes before
+this shift started, closing out every UX00-UX07 area (certified, merged, claimed-with-green-CI, or
+the already-PARKED FTF-UX02). Active item 0b (#949) and every Backlog UX0x slice already has an
+open PR from a concurrent session inside the claim window; FTF-0519-P2/FTF-0518 are already
+CERTIFIED per `docs/certifications/queue.md` history. No genuinely unclaimed, undeclined, non-parked
+item found. Full detail: `docs/progress/2026-10-22T1450Z-relay.md`.
+
+STEP 3: this file and the shift log (plain docs-only PR, not `[relay]`-titled; QUEUE.md and
+`docs/certifications/queue.md` untouched). STEP 4: routine saturation, not a blocker -- no new
+`BLOCKER.md` entry, no new "Owner actions" line, no item claimed.

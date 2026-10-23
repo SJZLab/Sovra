@@ -12284,3 +12284,57 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   identity, and DoD items (real-Argilla CI, R002 /validate, compose, gate step) missing without approval. Code is UNWIRED
   (proving_symbol blank): nothing reachable from a live route. Governance note: the PR touched ci.yml (additive) under a
   [relay] title. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX07 (r1)
+- **FTF-UX07: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #966, merge
+  b1597be08e1404a3be361524f619606a631f40d9, head 98110f7a). Producer session_013YxyzTt9T2gAhF4H2eASsZ ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119877541833; gate 119849495129 ran vitest and the FTF-0101
+  negative-test proof (step-level; log host 403). Local vitest 2464/2464; FTF-0101 REQUALIFIED (spec unchanged). Real-Chromium
+  probes: axe 0, 0 px overflow to 400 %, visible focus, en/ar. Return: no real-browser UX07 spec (deferred against the
+  ruling); F7/F20/F8/F9 GREEN; §4 evidence absent; blank label renders an unnamed link (severity 2). Faults 11/20 RED.
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T17:35Z — RETURNED: FTF-UX05 (r1)
+- **FTF-UX05: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #962, merge
+  10ef83511feeaf179253f963b8da6490bb7d241b, head f40fa2b3). Producer session_013MQz6mrcx4MQbctyaWFF73 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119894071816; gate 119877854432 ran vitest (step-level) and the
+  parent task scripts ("FTF-0214 tests: all checks passed", 0308-P1, 0309-P1). Local vitest 2464/2464; parents FTF-0214/0308/
+  0309/1301 REQUALIFIED; FTF-UX01 REQUALIFIED (phrases.ts additive). 208 real-Chromium probe pages. Return (severity 3):
+  UX01 components unused (target-size fails), 1301 errors silent and a `{}` 200 shown as a real empty result (Law 17),
+  malformed items unmount the component, overflow up to 1495 px, 0308 confirm focus lost, missing empty/loading states,
+  English residue under ar, 7 GREEN faults, no browser harness in CI. Faults 26/33 RED. Gates: product_truth 49/49,
+  validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:10Z — RETURNED: FTF-UX06 (r1)
+- **FTF-UX06: RETURNED** (child slice of the FTF-UX program; round 1 → 2; PR #964, merge
+  26424fee86d4f768890f37df733a44d13666ba3b, head 3ef9c45d). Producers session_01BHMq1m2dSmysowCKLwSknh,
+  session_01XvphxpD8rnAPaR6yRyxRrs ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 81/81, ci-verdict 119937341448; gate
+  119909327102 ran vitest and FTF-0602-P1 (step-level). Local 2491/2491; FTF-0602 REQUALIFIED (spec byte-identical). 76
+  real-Chromium probe runs: axe 0, lang/dir, announced errors without unmount, aria-busy loading. Return: overflow up to 729
+  px with max-length names, focus lost to <body> after a failed save, English system text under ar (severity 3 each); no
+  recovery steps, empty state without action, Field unused; 16/24 faults GREEN; no browser harness in CI; §4 evidence
+  absent and contradicted. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-22T19:49Z — RETURNED: FTF-H011-P2 (r1)
+- **FTF-H011-P2: RETURNED** (child slice of FTF-H011; round 1 → 2; PR #934, merge
+  935f14d91405d3ec3f8fdcbb47e1728dc3118722, head c21103b6). Producers session_01RjchJLT6vbaC5fk5YQ8Mkm (9 commits, PR body,
+  merge), session_01CW9VbWz9eetvnP9HPVM6qF, session_01CPgHHbKiqLhRdkb5jSkvWo, session_01DKLGL61DSskQBox4jjAGy7 ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 119980460557; dataset-mapping-store-integration 119861606434 and gate
+  119854196879 "all checks passed". Local: task script 735/0, PG16 integration 227/0, one head 0035, uncapped mutation
+  320/320; FTF-H011-P1 REQUALIFIED. 101 probes: RLS/grants/trigger/CHECKs/tenancy/concurrency/Law 17 all hold. Return:
+  (1) an explicit admin rejection is overridden by reusing a prior version's approval (fail-open, reproduced); (2) reuse of
+  an approval made under a now-revoked connection (Control-plane ruling: fail closed, Law 16). Faults 63/64 RED (1
+  equivalent). ci.yml change additive (under a [relay] title). Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK. UNWIRED (P3 wires it).
+## 2026-10-22T23:27Z — RETURNED: FTF-UX07 (r2)
+- **FTF-UX07: RETURNED** (round 2 → 3, evidence only; PR #973, merge 4b3df045e8fed9234acc2ad5d4f0c6a62568e40f, head
+  46e57439). Producer session_01JmTeL9WgrMwRcFe8xps1Dd ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict
+  120112718390; gate 120094672209 installed Chromium and ran vitest incl. the new 43-test browser spec (step-level; log
+  host 403). Local 2564/2564; FTF-0101 REQUALIFIED. Points 1, 2, 4, 5 met (F7/F20/F8/F9 RED in Chromium; blank-label fix
+  pinned). Return: §4 evidence incomplete (checklist grouped, skill output paraphrased, no severity column, two wrong
+  claims). Faults 25/30 RED (5 GREEN equivalent or hand-picked). No severity 3-4. Gates: product_truth 49/49,
+  validate_spec --strict, data_exposure OK.
+## 2026-10-22T23:27Z — RETURNED: FTF-UX05 (r2)
+- **FTF-UX05: RETURNED** (round 2 → 3; PR #976, merge 921e4ef2b349bcd9761f31bfd6a8cadb7b73caec, head 512a383d). Producer
+  session_01Dac8RABSVdB4a7cCQoFhKN ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 120066646812; gate
+  120033439138 ran vitest (step-level) and the parent task scripts. Local 2564/2564; parents FTF-0214/0308/0309/1301 and
+  FTF-UX01 REQUALIFIED. 440 real-Chromium pages: axe 0, lang/dir, malformed 200 never unmounts, 0308 confirm focus correct.
+  Return: round-2 points 2 (1301 silent errors, fabricated empty state - Law 17), 4 (overflow up to 1131 px), 8 (all 7
+  named faults still GREEN) and 9 (no browser spec, no §4 evidence) not done, points 6/7 partial; the submission's claims
+  contradict the code. Faults 24/40 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.

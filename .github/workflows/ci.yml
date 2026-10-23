@@ -567,6 +567,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p2.py
       - name: FTF-H010-P3a negative-test proof (pure import-artifact validators -- file allow-list, strict JSON, safetensors header, adapter/base shapes, fault-injected module copies, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_h010_p3a.py
+      - name: FTF-H010-P3 negative-test proof (full-weight and adapter import validation -- step-by-step failure codes, exact parent base, TOCTOU re-reads, terminal-transaction artifact re-check, claim fencing, META-LEAK, fault-injected module copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p3.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -3860,6 +3862,42 @@ jobs:
       - name: Prove the real import-validation activity against the live database and a local TLS gateway
         run: uv run python3 tests/integration/test_ftf_h010_p2_import_validation.py
 
+  model-weights-import-integration:
+    # FTF-H010-P3: real Postgres for the full-weight and adapter import validation activities over
+    # a real approved-root directory of tiny safetensors fixtures: the real P1 job CRUD and P2
+    # claim, a weights job and an adapter job on that exact parent (every ModelVersion CHECK as
+    # sovra_app), each failure code, fencing on the real trigger, the terminal artifact re-read,
+    # no transaction or job lock held while files are read, tenant isolation and the META-LEAK
+    # markers -- tests/integration/test_ftf_h010_p3_weights_import.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-weights-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p3
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real weights and adapter import validation against the live database
+        run: uv run python3 tests/integration/test_ftf_h010_p3_weights_import.py
+
   csv-import-integration:
     # FTF-0504: the CSV importer (workers/data/csv_importer.py) over PostgreSQL 16 as the
     # restricted sovra_app role and the live SeaweedFS S3 API, through the real FTF-0501 upload
@@ -4169,6 +4207,7 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - model-import-validation-integration
+      - model-weights-import-integration
       - candidate-selection-integration
       - dataset-import-source-integration
       - dataset-mapping-preview-integration

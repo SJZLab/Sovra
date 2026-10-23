@@ -53,10 +53,23 @@
  * value -- are data, not UI copy, and are wrapped in `<bdi>` rather than given a language tag (same
  * convention `candidate_selection_ui_no_auto_selection.tsx` already established). Default
  * `locale="en"` rendering is byte-identical to round 1.
+ *
+ * FTF-UX05 round 2 (2026-10-22, second L2 return, PR #972): `refresh()` set `search` directly from
+ * `await response.json()` with no shape check -- a 200 with an unexpected body (an empty `{}`, a
+ * `results` that is not an array, a malformed result item) was accepted as real data: `{}` rendered
+ * as "zero results, no certified cheapest rate", a quiet success where Law 17 requires a visible
+ * failure. `isSearchResponse`/`isSearchResult` give this response the same strict parse
+ * `isCapabilities` already uses in the sibling FTF-0309 component; a failed parse surfaces the same
+ * kind of error this component already shows for an HTTP failure. Native `<button>`s now render
+ * through the shared `Button` component (WCAG 2.2 §2.5.8 target size, §72.1's fixed component --
+ * `<select>`s keep the repo's established `minBlockSize` convention since there is no `<select>`
+ * design-system component yet); an empty result list now shows `EmptyState` instead of a bare `<ul>`,
+ * and a long label/source/currency value is wrapped (`overflowWrap: "anywhere"`).
  */
 
 import { useEffect, useState } from "react";
 
+import { Button, EmptyState } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
@@ -171,6 +184,47 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   return phrase("requestFailedTemplate", locale, { status: response.status });
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+const DISQUALIFIED_REASONS = ["expired", "unverified", "zero_provider_rate_unconfirmed"];
+
+function isCostProfileRecord(value: unknown): value is CostProfileRecord {
+  return (
+    isPlainObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    typeof value.rate_unit === "string" &&
+    typeof value.rate_amount === "string" &&
+    typeof value.currency === "string" &&
+    typeof value.source === "string" &&
+    (value.verified_at === null || typeof value.verified_at === "string")
+  );
+}
+
+function isSearchResult(value: unknown): value is CostProfileSearchResult {
+  if (!isPlainObject(value) || !isCostProfileRecord(value)) return false;
+  const { certifiable_cheapest, disqualified_reason } = value as unknown as CostProfileSearchResult;
+  return (
+    typeof certifiable_cheapest === "boolean" &&
+    (disqualified_reason === null || DISQUALIFIED_REASONS.includes(disqualified_reason))
+  );
+}
+
+/** Strict parse of the live search response -- an unexpected shape (an empty `{}`, a non-array
+ * `results`, a malformed result item) is a typed error, never a silently-accepted empty result
+ * (Law 17), same discipline `isCapabilities` already uses in the sibling FTF-0309 component. */
+function isSearchResponse(body: unknown): body is CostPerSuccessSearchResponse {
+  if (!isPlainObject(body)) return false;
+  if (!(
+    body.current_cheapest_certified === null || isCostProfileRecord(body.current_cheapest_certified)
+  )) {
+    return false;
+  }
+  return Array.isArray(body.results) && body.results.every(isSearchResult);
+}
+
 export function CostProfileSearchPanel({
   apiBaseUrl,
   organizationId,
@@ -201,7 +255,12 @@ export function CostProfileSearchPanel({
         setError(await readErrorDetail(response, locale));
         return;
       }
-      setSearch(await response.json());
+      const body: unknown = await response.json();
+      if (!isSearchResponse(body)) {
+        setError(phrase("costProfileMalformedSearchResponse", locale));
+        return;
+      }
+      setSearch(body);
     } finally {
       setLoading(false);
     }
@@ -267,6 +326,7 @@ export function CostProfileSearchPanel({
           data-testid="cost-profile-type-select"
           value={profileType}
           onChange={(event) => setProfileType(event.target.value as ProfileType)}
+          style={{ minBlockSize: "var(--target-min)" }}
         >
           <option value="provider">{phrase("costProfileTypeProvider", locale)}</option>
           <option value="local_hardware">{phrase("costProfileTypeLocalHardware", locale)}</option>
@@ -287,6 +347,7 @@ export function CostProfileSearchPanel({
           data-testid="cost-profile-rate-unit-select"
           value={rateUnit}
           onChange={(event) => setRateUnit(event.target.value as RateUnit)}
+          style={{ minBlockSize: "var(--target-min)" }}
         >
           <option value="per_input_token">{phrase("rateUnitPerInputToken", locale)}</option>
           <option value="per_output_token">{phrase("rateUnitPerOutputToken", locale)}</option>
@@ -342,14 +403,14 @@ export function CostProfileSearchPanel({
           </p>
         )}
 
-        <button
+        <Button
           type="submit"
           data-testid="cost-profile-submit-button"
           disabled={saving}
           aria-busy={saving}
         >
           {phrase("costProfileRecordRate", locale)}
-        </button>
+        </Button>
       </form>
 
       <section data-testid="cost-per-success-search-results">
@@ -362,7 +423,7 @@ export function CostProfileSearchPanel({
 
         <div data-testid="current-cheapest-certified">
           {search?.current_cheapest_certified ? (
-            <p>
+            <p style={{ overflowWrap: "anywhere" }}>
               {phrase("costProfileCheapestCertifiedPrefix", locale)}{" "}
               <bdi>{search.current_cheapest_certified.label}</bdi> --{" "}
               <bdi>{search.current_cheapest_certified.rate_amount}</bdi>{" "}
@@ -376,9 +437,25 @@ export function CostProfileSearchPanel({
           )}
         </div>
 
+        {search && search.results.length === 0 && (
+          <EmptyState
+            title={phrase("costProfileNoResultsTitle", locale)}
+            why={phrase("costProfileNoResultsWhy", locale)}
+            action={
+              <Button data-testid="cost-profile-reload-button" onClick={() => void refresh()}>
+                {phrase("costProfileReload", locale)}
+              </Button>
+            }
+          />
+        )}
+
         <ul data-testid="cost-profile-result-list">
           {(search?.results ?? []).map((result) => (
-            <li key={result.id} data-testid={`cost-profile-result-${result.id}`}>
+            <li
+              key={result.id}
+              data-testid={`cost-profile-result-${result.id}`}
+              style={{ overflowWrap: "anywhere" }}
+            >
               <span>
                 <bdi>{result.label}</bdi> -- <bdi>{result.rate_amount}</bdi>{" "}
                 <bdi>{result.currency}</bdi> / <bdi>{result.rate_unit}</bdi>
@@ -395,13 +472,12 @@ export function CostProfileSearchPanel({
                 </span>
               )}
               {result.verified_at === null && (
-                <button
-                  type="button"
+                <Button
                   data-testid={`cost-profile-verify-${result.id}`}
                   onClick={() => handleVerify(result.id)}
                 >
                   {phrase("costProfileVerify", locale)}
-                </button>
+                </Button>
               )}
             </li>
           ))}
