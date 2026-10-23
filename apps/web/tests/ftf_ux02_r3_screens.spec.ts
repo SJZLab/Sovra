@@ -47,7 +47,7 @@ for (const [name, keys, table] of [
       if (entry.ar.trim() === "") bad.push(`${key}: empty ar`);
       else if (entry.ar === entry.en && /[A-Za-z]{4,}/.test(entry.en.replace(/\{\w+\}/g, "")))
         bad.push(`${key}: ar === en`);
-      else if (!ARABIC.test(entry.ar) && !/^#?[{}\w\s#]*$/.test(entry.ar))
+      else if (!ARABIC.test(entry.ar) && /[A-Za-z]/.test(entry.ar.replace(/\{\w+\}/g, "")))
         bad.push(`${key}: no Arabic`);
       if (placeholders(entry.en) !== placeholders(entry.ar))
         bad.push(`${key}: placeholders differ`);
