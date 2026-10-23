@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T17:46Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T18:52Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,11 @@ Updated: 2026-10-23T17:46Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T18:52Z:**
+  - CERTIFIED (child slice): FTF-H011-P2 after 2 rounds - saved dataset field mappings: locked after approval, tenant-isolated, safe under parallel use, an explicit admin rejection always wins, and an approval from a revoked connection is never reused. FTF-H011 now needs P3 (routes), P4 (wizard), P5 and P6.
+  - Returned: FTF-UX06 r2 (evaluation case editor): most of round 1 is fixed and verified in a real browser, but a long case name still overflows in the "saved" message, a save refused for access reasons blanks the form without a message, some error codes still show untranslated in Arabic, and five error announcements have no test. Round 3 (UX lane).
+  - Returned: FTF-R006-P1b r2 (Argilla reviewer accounts): the cross-organization leak is fixed and verified on a real Argilla server, but a revoked reviewer can still keep access in a narrower timing race, two outage paths have no test, the new real-server CI job does not actually test the access rules, and it runs search and cache servers whose licences the project ruled out (Elasticsearch, Redis 7.4). Round 3 fixes these. Nothing is exposed: the code has no live route yet.
+  - Control plane: designs written for FTF-0701 (training configuration schema; three slices, the first claimable now - 22 tasks depend on it) and for closing FTF-H010 (model import wizard and version panel; the wizard is claimable now). Both need no new dependency, secret or owner approval; clauses that need a GPU or the org gateway key are disclosed as blocked, never claimed.
 - **2026-10-23T17:46Z:**
   - Control-plane ruling: count-first lanes. One relay lane keeps the UI-redesign rounds; the others take the work that raises the certified count (finish nearly-done tasks FTF-H010, FTF-0617, FTF-1504, then FTF-R004/H011/R006 slices). Three stale draft PRs are released for reclaiming; designs for FTF-H010, FTF-0701, FTF-0603 and FTF-H027 come next.
 - **2026-10-23T14:56Z:**

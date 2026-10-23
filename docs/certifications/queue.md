@@ -25256,3 +25256,6 @@ different session.
   Shift log: `docs/progress/2026-10-23T1318Z-relay.md`.
 - **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
 - **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.
+- **Returned:** FTF-R006-P1b r2 -> r3 (0c): revoke-first or row lock (R11b/R11c), pin F14/F16, real-Argilla CI that exercises the store, OpenSearch + Redis 7.2 per the licence rulings, gate step, [GOVERNANCE] title.
+- **Returned:** FTF-UX06 r2 -> r3 (0f): wrap at the root, 403 save announced with focus, Arabic codes/catalogue/bdi, pin F1/F12/F13/F18/F23/N24, access recovery, useId, evidence.
+- **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
