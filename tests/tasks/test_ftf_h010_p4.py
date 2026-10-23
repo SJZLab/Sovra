@@ -468,6 +468,71 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
             got["continue_tuning"].plan.run_id == other_run,
         )
 
+    lower_ckpt = m.CheckpointFact(checkpoint_id=CKPT, step=7, run_id="run-alpha")
+    for other_run in ("RUN-ALPHA", "Run-Alpha", " run-alpha", "run-alpha "):
+        got = m.evaluate_model_actions(
+            make_facts(m, origin="factory_trained", checkpoint=lower_ckpt, new_run_id=other_run)
+        )
+        check(
+            "C1",
+            f"run id {other_run!r} is not the lower-case checkpoint run id",
+            got["continue_tuning"].plan.run_id == other_run,
+        )
+    for ref, ok in (
+        ("provider/model a", True),
+        ("a b", True),
+        ("a\x1fb", False),
+        ("a\x7fb", False),
+        ("a~b", True),
+        ("a\x00b", False),
+        ("a\tb", False),
+        ("a\nb", False),
+    ):
+        try:
+            make_facts(m, origin="external_endpoint", model_ref=ref)
+            check("D1", f"model_ref {ref!r} accepted={ok}", ok)
+        except m.ContinuationFactsError:
+            check("D1", f"model_ref {ref!r} refused (accepted={ok})", not ok)
+    good = make_facts(m)
+
+    class Sub(m.ModelActionFacts):
+        pass
+
+    for bad_facts in (
+        None,
+        {},
+        SimpleNamespace(validated=True),
+        "facts",
+        Sub(
+            model_version_id=VID,
+            origin="imported_weights",
+            validated=True,
+            license_accepted=True,
+            base_compatible=None,
+            roles=frozenset(),
+            new_run_id=RUN_NEW,
+        ),
+    ):
+        try:
+            m.evaluate_model_actions(bad_facts)
+            check("D1", f"evaluate_model_actions refuses {type(bad_facts).__name__}", False)
+        except m.ContinuationFactsError as exc:
+            check(
+                "D1",
+                f"evaluate_model_actions refuses {type(bad_facts).__name__} with facts_invalid",
+                str(exc) == "facts_invalid",
+            )
+        try:
+            m.require_action_allowed(bad_facts, "evaluate")
+            check("D2", "require_action_allowed refuses non-facts", False)
+        except m.ContinuationFactsError:
+            check("D2", "require_action_allowed refuses non-facts", True)
+    check(
+        "D1",
+        "a real facts object still evaluates",
+        m.evaluate_model_actions(good)["evaluate"].allowed,
+    )
+
     # ---- D1 -------------------------------------------------------------------------------
     def refused(label: str, **kwargs: Any) -> None:
         try:
@@ -1452,6 +1517,24 @@ def store_suite(crud: Any) -> None:
             check("R1", "a wrong project is refused", False)
         except version_crud.ModelVersionNotFoundError:
             check("R1", "a wrong project -> ModelVersionNotFoundError", True)
+        for variant in ("TEACHER", "Teacher", "teacher ", " teacher"):
+            try:
+                crud.revoke_role(
+                    e.session,
+                    e.ctx,
+                    project_id=PROJECT,
+                    model_version_id=v.id,
+                    role=variant,
+                    actor=e.actor,
+                )
+                check("R1", f"revoke role {variant!r} must not match 'teacher'", False)
+            except crud.RoleConflictError as exc:
+                check(
+                    "R1",
+                    f"revoke role {variant!r} -> role_not_assigned",
+                    exc.code == "role_not_assigned",
+                )
+        check("R1", "the active teacher row is untouched", other_role.revoked_at is None)
         again = e.assign(v, "current_production", "r-4")
         check(
             "R1",
@@ -2766,8 +2849,8 @@ CRUD_FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "idempotency-name-casefolded",
-        "if name == _IDEMPOTENCY_INDEX:",
-        'if (name or "").strip().lower() == _IDEMPOTENCY_INDEX:',
+        "code = _CONFLICT_BY_NAME.get(name) if name is not None else None",
+        'code = _CONFLICT_BY_NAME.get((name or "").strip().lower())',
     ),
     (
         "race-with-nothing-stored-swallowed",

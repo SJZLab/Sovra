@@ -69,14 +69,16 @@ __all__ = [
     "revoke_role",
 ]
 
+_IDEMPOTENCY_INDEX = "uq_model_role_assignments_idempotency"
+_IDEMPOTENCY_RACE = "idempotency_race"
 # violated index / trigger CONSTRAINT -> the stable conflict code (the DB is the authority)
 _CONFLICT_BY_NAME = {
     "uq_model_role_assignments_active": "role_already_assigned",
     "uq_model_role_assignments_incumbent": "incumbent_exists",
     "tr_model_role_assignments_self_judging": "self_judging_role_conflict",
     "tr_model_role_assignments_insert_guard_validated": "import_not_validated",
+    _IDEMPOTENCY_INDEX: _IDEMPOTENCY_RACE,
 }
-_IDEMPOTENCY_INDEX = "uq_model_role_assignments_idempotency"
 
 
 class RoleConflictError(Exception):
@@ -176,12 +178,12 @@ def assign_role(
             session.flush()
     except (IntegrityError, DBAPIError) as exc:
         name = _violated_name(exc)
-        if name == _IDEMPOTENCY_INDEX:
+        code = _CONFLICT_BY_NAME.get(name) if name is not None else None
+        if code is _IDEMPOTENCY_RACE:
             raced = _find_by_idempotency_key(session, context, project_id, idempotency_key)
             if raced is None:
                 raise
             return _replay_or_reuse(raced, digest)
-        code = _CONFLICT_BY_NAME.get(name) if name is not None else None
         if code is None:
             raise
         raise RoleConflictError(code) from None
