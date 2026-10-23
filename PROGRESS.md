@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T09:10Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T10:54Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,8 @@ Updated: 2026-10-23T09:10Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T10:54Z:**
+  - Owner decision (live): `@radix-ui/react-dialog@1.3.1` approved (exact-pinned), so FTF-UX02 round 2 (#947) is unparked and finishes on its open PR, bringing the accessible Dialog with it.
 - **2026-10-23T09:10Z:**
   - CERTIFIED (child slice): FTF-UX05 after 3 rounds - the models, capabilities and cost screens are rebuilt on the shared accessible design: every failure is announced with a recovery step and never shown as a fake empty result, no overflow from phone width to 200% zoom even with very long names, keyboard focus never lost, fully bilingual, 0 automated accessibility violations over 624 real-browser pages. Two small follow-ups queued (shared library hardening; a stale cost reply after switching project).
 - **2026-10-23T05:02Z:**

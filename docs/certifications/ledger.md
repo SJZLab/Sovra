@@ -12369,3 +12369,8 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   <body>, single-flight writes. Faults 65/66 RED incl. all 16 earlier GREEN (V33 kindForStatus(400) GREEN, hand-picked).
   Point-to-commit map verified. Parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED. No severity 3-4. Follow-ups
   FTF-UX01-F1 and FTF-1301-F1 queued. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T10:54Z — OWNER DECISION: Radix Dialog approved; FTF-UX02 r2 unparked
+- The owner approved `@radix-ui/react-dialog@1.3.1` (exact-pinned) live in the Control-plane session ("Go for both",
+  then "the decision is yours" for must-haves); the "Owner actions - current" ask is removed and the FTF-UX01 Dialog park
+  resolved. `@radix-ui/react-progress` was not asked for and is not approved. FTF-UX02 round 2 (#947, item 0k) is
+  unparked: close the round-3 pre-review's two items on the same PR, then L2 (which also requalifies the UX01 Dialog).
