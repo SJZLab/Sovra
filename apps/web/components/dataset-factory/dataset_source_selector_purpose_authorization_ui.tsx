@@ -66,6 +66,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button, EmptyState, Field, PendingView } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
+import { classificationWord, purposeWord, sourceTypeWord, t0501 } from "./strings_0501";
 
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
@@ -205,12 +206,55 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<stri
   return phrase("requestFailedRetryable", locale);
 }
 
+/**
+ * FTF-UX02 round-3 finding 2 (MALFORMED-200, Law 17): a list item or a create reply is shown as a
+ * real connection only when it carries every field the screen renders or acts on. A `null` item,
+ * `{}` or a wrongly typed field becomes ONE localized, retryable alert -- never a crash, a blank
+ * "(, , )" item or a fabricated, selectable connection.
+ */
+function isConnectionSummary(value: unknown): value is DatasetSourceConnectionSummary {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const text = (x: unknown) => typeof x === "string" && x.trim().length > 0;
+  return (
+    text(v.id) &&
+    text(v.display_name) &&
+    text(v.source_type) &&
+    text(v.security_classification) &&
+    text(v.connection_status)
+  );
+}
+
 function networkErrorMessage(caught: unknown, locale: Locale): string {
   // Distinguish from the above only for logging/debugging; the user-facing text is the same
   // bilingual, retryable message either way (Law 17: never silent, never a crash).
   void caught;
   return phrase("networkErrorRetryable", locale);
 }
+
+// FTF-UX02 round-3 finding 4 (real Chromium): native selects measured 19 px high and checkboxes
+// 13 px, under the 24 px WCAG 2.5.8 minimum. Same `--target-min` token Button and Field use.
+const SELECT_STYLE = {
+  minBlockSize: "var(--target-min)",
+  maxInlineSize: "100%",
+  boxSizing: "border-box",
+} as const;
+const CHECK_LABEL_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  minBlockSize: "var(--target-min)",
+} as const;
+// FTF-UX02 round-3 finding 3 (OVERFLOW-LONG-NAMES, severity 3): a 100-character unbroken connection
+// name made the list scroll 407-588 px at 390/320 px. Names wrap anywhere and never widen the page.
+const WRAP = { overflowWrap: "anywhere", minInlineSize: 0, maxInlineSize: "100%" } as const;
+const OPTION_STYLE = {
+  ...WRAP,
+  whiteSpace: "normal",
+  textAlign: "start",
+  boxSizing: "border-box",
+} as const;
+const CHECK_STYLE = { inlineSize: "var(--target-min)", blockSize: "var(--target-min)" } as const;
 
 export function DatasetSourceSelectorPurposeAuthorizationUi(
   props: DatasetSourceSelectorPurposeAuthorizationProps,
@@ -275,6 +319,18 @@ function DatasetSourceSelectorInner({
   const wasCheckingRef = useRef(false);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
+  // Round-3 pre-review 3 finding 1: Retry unmounts as soon as the error clears; when the retry
+  // SUCCEEDS hand focus to the first connection (or the empty-state action), never <body>.
+  const retrySucceededFocusRef = useRef(false);
+  // Round-3 L2 finding 1: a successful create unmounts the focused Confirm button; focus the new
+  // connection's option and announce it (role=status) instead of dropping focus on <body>.
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!justCreatedId) return;
+    document
+      .querySelector<HTMLElement>(`[data-testid="dataset-source-option-${justCreatedId}"]`)
+      ?.focus();
+  }, [justCreatedId]);
 
   useEffect(() => {
     if (wasCheckingRef.current && authorizeState !== "checking") {
@@ -307,6 +363,15 @@ function DatasetSourceSelectorInner({
     }
   }, [listError]);
 
+  useEffect(() => {
+    if (!retrySucceededFocusRef.current || connections === null) return;
+    retrySucceededFocusRef.current = false;
+    (
+      document.querySelector<HTMLElement>('[data-testid^="dataset-source-option-"]') ??
+      document.querySelector<HTMLElement>('[data-testid="dataset-source-empty-state-action"]')
+    )?.focus();
+  }, [connections]);
+
   async function refreshConnections(options?: { focusRetryOnFailure?: boolean }) {
     setListError(null);
     const failed = (message: string) => {
@@ -331,11 +396,12 @@ function DatasetSourceSelectorInner({
       // an array (an object like `{items: []}`, `null`, a string, ...) used to crash the component
       // outright (`connections?.find is not a function`) or spin the loading state forever -- a
       // malformed 2xx is never success (Law 17), so it becomes a typed, retryable, announced error.
-      if (!Array.isArray(body)) {
+      if (!Array.isArray(body) || !body.every(isConnectionSummary)) {
         failed(phrase("responseMalformedRetryable", locale));
         return;
       }
       setConnections(body);
+      if (options?.focusRetryOnFailure) retrySucceededFocusRef.current = true;
     } catch (caught) {
       if (!aliveRef.current) return;
       // A thrown fetch (offline, DNS failure, a dropped connection) used to leave the loading
@@ -365,16 +431,34 @@ function DatasetSourceSelectorInner({
   const formIsReadyForReview =
     displayName.trim().length > 0 && purposes.size > 0 && securityClassification !== "";
 
+  // Round-3 L2 pre-review 2 finding 1: Review / Back unmount the clicked button; hand focus to the
+  // step that appears (the preview region, or the form's first field) instead of <body>.
+  const stepFocusRef = useRef<"preview" | "form" | null>(null);
+  useEffect(() => {
+    const want = stepFocusRef.current;
+    if (!want || want !== formStep) return;
+    stepFocusRef.current = null;
+    document
+      .querySelector<HTMLElement>(
+        want === "preview"
+          ? '[data-testid="dataset-source-preview"]'
+          : '[data-testid="dataset-source-display-name-input"]',
+      )
+      ?.focus();
+  }, [formStep]);
+
   function handleReview(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!formIsReadyForReview) {
       return;
     }
     setCreateError(null);
+    stepFocusRef.current = "preview";
     setFormStep("preview");
   }
 
   function handleBackToEdit() {
+    stepFocusRef.current = "form";
     setFormStep("form");
   }
 
@@ -413,10 +497,16 @@ function DatasetSourceSelectorInner({
         setCreateError(await readErrorDetail(response, locale));
         return;
       }
-      const created: DatasetSourceConnectionSummary = await response.json();
+      const created: unknown = await response.json().catch(() => null);
       if (!aliveRef.current) return;
+      if (!isConnectionSummary(created)) {
+        // A 2xx that is not a real connection is never success (Law 17): keep the draft, say so.
+        setCreateError(phrase("responseMalformedRetryable", locale));
+        return;
+      }
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
+      setJustCreatedId(created.id);
       setAuthorizeState("idle");
       setAuthorizeMessage(null);
       resetForm();
@@ -432,6 +522,7 @@ function DatasetSourceSelectorInner({
   }
 
   function handleSelectConnection(connection: DatasetSourceConnectionSummary) {
+    setJustCreatedId(null);
     setSelectedConnectionId(connection.id);
     setPurposeToCheck("");
     setAuthorizeState("idle");
@@ -442,6 +533,7 @@ function DatasetSourceSelectorInner({
     if (!selectedConnectionId || !purposeToCheck) {
       return;
     }
+    const purposeSent = purposeToCheck;
     setAuthorizeState("checking");
     setAuthorizeMessage(null);
     try {
@@ -451,7 +543,7 @@ function DatasetSourceSelectorInner({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ purpose: purposeToCheck }),
+          body: JSON.stringify({ purpose: purposeSent }),
         },
       );
       if (!aliveRef.current) return;
@@ -463,6 +555,16 @@ function DatasetSourceSelectorInner({
       if (!response.ok) {
         setAuthorizeState("idle");
         setAuthorizeMessage(await readErrorDetail(response, locale));
+        return;
+      }
+      // FTF-UX02 round-3 finding 2: "Authorized" only for `{authorized: true, purpose: <sent>}`.
+      // `{}`, `{"authorized": false}`, a non-JSON reply or another purpose is never a grant.
+      const grant: unknown = await response.json().catch(() => null);
+      if (!aliveRef.current) return;
+      const g = grant as { authorized?: unknown; purpose?: unknown } | null;
+      if (!g || typeof g !== "object" || g.authorized !== true || g.purpose !== purposeSent) {
+        setAuthorizeState("idle");
+        setAuthorizeMessage(phrase("responseMalformedRetryable", locale));
         return;
       }
       setAuthorizeState("authorized");
@@ -487,7 +589,12 @@ function DatasetSourceSelectorInner({
   }
 
   return (
-    <div data-testid="dataset-source-selector" lang={resolveLocale(locale)} dir={dirFor(locale)}>
+    <div
+      data-testid="dataset-source-selector"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere", minInlineSize: 0 }}
+    >
       <section data-testid="dataset-source-list-section">
         <h2>{phrase("datasetSourceHeading", locale)}</h2>
         {listError && (
@@ -534,10 +641,12 @@ function DatasetSourceSelectorInner({
                 variant="secondary"
                 data-testid={`dataset-source-option-${connection.id}`}
                 aria-pressed={selectedConnectionId === connection.id}
+                style={OPTION_STYLE}
                 onClick={() => handleSelectConnection(connection)}
               >
-                <bdi>{connection.display_name}</bdi> ({connection.source_type},{" "}
-                {connection.security_classification},{" "}
+                <bdi style={WRAP}>{connection.display_name}</bdi> (
+                {sourceTypeWord(connection.source_type, locale)},{" "}
+                {classificationWord(connection.security_classification, locale)},{" "}
                 {connectionStatusLabel(connection.connection_status)})
               </Button>
             </li>
@@ -565,13 +674,14 @@ function DatasetSourceSelectorInner({
             </label>
             <select
               id="dataset-source-type"
+              style={SELECT_STYLE}
               data-testid="dataset-source-type-select"
               value={sourceType}
               onChange={(event) => setSourceType(event.target.value as DatasetSourceType)}
             >
               {DATASET_SOURCE_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {sourceTypeWord(type, locale)}
                 </option>
               ))}
             </select>
@@ -601,14 +711,15 @@ function DatasetSourceSelectorInner({
             <fieldset data-testid="dataset-source-purposes-fieldset">
               <legend>{phrase("allowedPurposesLegend", locale)}</legend>
               {DATASET_SOURCE_PURPOSES.map((purpose) => (
-                <label key={purpose}>
+                <label key={purpose} style={CHECK_LABEL_STYLE}>
                   <input
                     type="checkbox"
+                    style={CHECK_STYLE}
                     data-testid={`dataset-source-purpose-${purpose}`}
                     checked={purposes.has(purpose)}
                     onChange={() => togglePurpose(purpose)}
                   />
-                  {purpose}
+                  {purposeWord(purpose, locale)}
                 </label>
               ))}
             </fieldset>
@@ -621,6 +732,7 @@ function DatasetSourceSelectorInner({
             </label>
             <select
               id="dataset-source-security-classification"
+              style={SELECT_STYLE}
               data-testid="dataset-source-security-classification-select"
               value={securityClassification}
               onChange={(event) =>
@@ -632,7 +744,7 @@ function DatasetSourceSelectorInner({
               <option value="">{phrase("selectPlaceholder", locale)}</option>
               {DATASET_SOURCE_SECURITY_CLASSIFICATIONS.map((classification) => (
                 <option key={classification} value={classification}>
-                  {classification}
+                  {classificationWord(classification, locale)}
                 </option>
               ))}
             </select>
@@ -648,14 +760,20 @@ function DatasetSourceSelectorInner({
         )}
 
         {formStep === "preview" && (
-          <div data-testid="dataset-source-preview">
+          <div
+            data-testid="dataset-source-preview"
+            tabIndex={-1}
+            aria-label={phrase("previewNotice", locale)}
+          >
             <p data-testid="dataset-source-preview-notice">{phrase("previewNotice", locale)}</p>
             <dl>
               <dt>{phrase("previewSourceTypeLabel", locale)}</dt>
-              <dd data-testid="dataset-source-preview-source-type">{sourceType}</dd>
+              <dd data-testid="dataset-source-preview-source-type">
+                {sourceTypeWord(sourceType, locale)}
+              </dd>
               <dt>{phrase("previewDisplayNameLabel", locale)}</dt>
-              <dd data-testid="dataset-source-preview-display-name">
-                <bdi>{displayName}</bdi>
+              <dd data-testid="dataset-source-preview-display-name" style={WRAP}>
+                <bdi style={WRAP}>{displayName}</bdi>
               </dd>
               <dt>{phrase("previewCredentialScopeLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-credential">
@@ -665,11 +783,13 @@ function DatasetSourceSelectorInner({
               </dd>
               <dt>{phrase("previewPurposesLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-purposes">
-                {Array.from(purposes).join(", ")}
+                {Array.from(purposes)
+                  .map((purpose) => purposeWord(purpose, locale))
+                  .join(", ")}
               </dd>
               <dt>{phrase("previewPrivacyBoundaryLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-security-classification">
-                {securityClassification}
+                {classificationWord(securityClassification, locale)}
               </dd>
             </dl>
             <Button
@@ -693,9 +813,14 @@ function DatasetSourceSelectorInner({
 
       {selectedConnection && (
         <section data-testid="dataset-source-authorization-section">
+          {justCreatedId === selectedConnection.id && (
+            <p role="status" data-testid="dataset-source-created-status">
+              {t0501("connectionCreated", locale)}
+            </p>
+          )}
           <h2>{phrase("authorizationHeading", locale)}</h2>
-          <p data-testid="dataset-source-authorization-selected-connection">
-            <bdi>{selectedConnection.display_name}</bdi>
+          <p data-testid="dataset-source-authorization-selected-connection" style={WRAP}>
+            <bdi style={WRAP}>{selectedConnection.display_name}</bdi>
           </p>
           {/* FTF-UX02 round-2 pre-review round 2 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK): this
               label was missed when the other four got the same block-layout fix last round --
@@ -708,6 +833,7 @@ function DatasetSourceSelectorInner({
           </label>
           <select
             id="dataset-source-purpose-to-check"
+            style={SELECT_STYLE}
             data-testid="dataset-source-purpose-to-check-select"
             value={purposeToCheck}
             onChange={(event) => setPurposeToCheck(event.target.value as DatasetSourcePurpose | "")}
@@ -715,7 +841,7 @@ function DatasetSourceSelectorInner({
             <option value="">{phrase("selectPlaceholder", locale)}</option>
             {DATASET_SOURCE_PURPOSES.map((purpose) => (
               <option key={purpose} value={purpose}>
-                {purpose}
+                {purposeWord(purpose, locale)}
               </option>
             ))}
           </select>

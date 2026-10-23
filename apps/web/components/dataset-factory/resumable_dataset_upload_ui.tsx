@@ -74,10 +74,20 @@
  * FTF-H029.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
-import { Button, Dialog } from "../ui";
-import { dirFor, type Locale, phrase } from "../ui/phrases";
+import {
+  AlertMessage,
+  Button,
+  Dialog,
+  Field,
+  PendingView,
+  networkError,
+  uiError,
+  type RecoveryKind,
+} from "../ui";
+import { dirFor, resolveLocale, type Locale, phrase } from "../ui/phrases";
+import { isKnownErrorCode, purposeWord, t0501, type Key0501 } from "./strings_0501";
 
 // Redeclared from the server's own closed vocabularies (no shared TS/Python
 // contract package for domain enums exists yet -- see this file's docstring).
@@ -581,34 +591,6 @@ function chunk<T>(items: T[], size: number): T[][] {
 // Typed HTTP failures (UI CHECKLIST e, Law 17)
 // ---------------------------------------------------------------------------
 
-const ERROR_MESSAGES: Record<string, string> = {
-  upload_session_not_open: "This upload session is no longer open.",
-  upload_incomplete: "Not every part has been uploaded yet.",
-  dataset_version_conflict:
-    "A dataset with this name and version already exists; choose another name. The upload is kept.",
-  upload_expired: "This upload session expired before it was finalized.",
-  size_mismatch: "The uploaded bytes do not match the declared size; nothing was created.",
-  sha256_mismatch: "The uploaded bytes do not match the declared SHA-256; nothing was created.",
-  content_type_mismatch:
-    "The uploaded content does not match the declared type; nothing was created.",
-  part_size_mismatch: "One or more uploaded parts have the wrong size; nothing was created.",
-  unsafe_archive: "The uploaded spreadsheet archive was refused as unsafe; nothing was created.",
-  unexpected_part: "An unexpected part was found in storage; nothing was created.",
-  unsupported_content_type: "The declared content type is not supported; nothing was created.",
-  source_revoked:
-    "The dataset source connection no longer grants this purpose; nothing was created.",
-  verification_mismatch: "Verification failed; nothing was created.",
-  storage_unavailable: "Storage is temporarily unavailable; this upload can be retried.",
-  storage_not_configured: "Storage is not configured; this upload can be retried once it is.",
-  invalid_body: "The request was rejected as malformed.",
-  invalid_part_numbers: "The requested part numbers were rejected.",
-  not_found: "The upload session was not found.",
-  purpose_forbidden: "Your role may not upload for this purpose.",
-  purpose_not_granted: "The dataset source connection does not grant this purpose.",
-  not_an_upload_source: "The dataset source connection is not an upload source.",
-  unsupported_media_type: "The declared content type is not supported.",
-};
-
 // Codes after which the server has closed (or never had) the session: the
 // draft no longer points at anything resumable.
 const CLOSED_CODES = new Set([
@@ -649,17 +631,21 @@ async function readDetail(response: Response): Promise<string | null> {
   return null;
 }
 
-function describeFailure(status: number, detail: string | null): string {
-  return detail !== null && ERROR_MESSAGES[detail] !== undefined
-    ? ERROR_MESSAGES[detail]
-    : `request failed (${status}); this can be retried`;
+function describeFailure(status: number, detail: string | null, locale: Locale): string {
+  return detail !== null && isKnownErrorCode(detail)
+    ? t0501(detail, locale)
+    : t0501("requestFailed", locale, { status });
 }
 
 /** Only the server's own known (status, code) pairs are terminal or typed.
  * Everything else -- 5xx, 401/403/429, a non-JSON body, an unknown code, a
  * known code on an unexpected status -- is retryable and keeps all state. */
-export function classifyFailure(status: number, detail: string | null): Failure {
-  const message = describeFailure(status, detail);
+export function classifyFailure(
+  status: number,
+  detail: string | null,
+  locale: Locale = "en",
+): Failure {
+  const message = describeFailure(status, detail, locale);
   if (detail === null) return { kind: "retryable", message };
   if (status === 410 && detail === "upload_expired") return { kind: "expired", message };
   if (status === 503 && (detail === "storage_unavailable" || detail === "storage_not_configured")) {
@@ -680,13 +666,9 @@ export function classifyFailure(status: number, detail: string | null): Failure 
   return { kind: "retryable", message };
 }
 
-function networkErrorMessage(caught: unknown): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
+function networkErrorMessage(caught: unknown, locale: Locale): string {
+  return networkError(caught, locale).message;
 }
-
-const MALFORMED_MESSAGE =
-  "The server's reply could not be verified against what was requested, so it was not used.";
 
 type Phase =
   | "idle"
@@ -723,6 +705,86 @@ export function ResumableDatasetUploadUI(props: ResumableDatasetUploadUIProps) {
       key={`${props.apiBaseUrl}|${props.organizationId}|${props.projectId}|${props.datasetSourceConnectionId}|${props.storageOrigin ?? ""}`}
       {...props}
     />
+  );
+}
+
+const WRAP = { overflowWrap: "anywhere", minInlineSize: 0 } as const;
+const CONTROL = {
+  boxSizing: "border-box",
+  inlineSize: "100%",
+  maxInlineSize: "100%",
+  minBlockSize: "var(--target-min)",
+} as const;
+const BLOCK_LABEL = { display: "block", marginBlockEnd: "var(--space-1)" } as const;
+
+/** A labelled native `<select>` on UX01 spacing: block label above, minimum target size, no overflow. */
+function SelectField({
+  id,
+  label,
+  testId,
+  value,
+  onChange,
+  children,
+}: {
+  id: string;
+  label: string;
+  testId: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div style={{ minInlineSize: 0 }}>
+      <label htmlFor={id} style={BLOCK_LABEL}>
+        {label}
+      </label>
+      <select
+        id={id}
+        data-testid={testId}
+        value={value}
+        style={CONTROL}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {children}
+      </select>
+    </div>
+  );
+}
+
+/** A labelled file input (a native file input has no UX01 equivalent). */
+function FileField({
+  id,
+  label,
+  helper,
+  testId,
+  onPick,
+}: {
+  id: string;
+  label: string;
+  helper?: string;
+  testId: string;
+  onPick: (file: File | null) => void;
+}) {
+  const helperId = helper ? `${id}-helper` : undefined;
+  return (
+    <div style={{ minInlineSize: 0 }}>
+      <label htmlFor={id} style={BLOCK_LABEL}>
+        {label}
+      </label>
+      {helper ? (
+        <p id={helperId} style={{ margin: 0, ...WRAP }}>
+          {helper}
+        </p>
+      ) : null}
+      <input
+        id={id}
+        type="file"
+        data-testid={testId}
+        aria-describedby={helperId}
+        style={CONTROL}
+        onChange={(event) => onPick(event.target.files?.[0] ?? null)}
+      />
+    </div>
   );
 }
 
@@ -803,6 +865,12 @@ function UploadInner({
     }
   }
 
+  /** Start over from a terminal screen: the clicked button unmounts, so hand focus to the fresh form. */
+  function startOver() {
+    resetToIdle();
+    setNeedsFocusOnIdle(true);
+  }
+
   function resetToIdle() {
     clearDraft(storageKey);
     setResumableDraft(null);
@@ -816,7 +884,7 @@ function UploadInner({
   }
 
   function showMalformed() {
-    setErrorMessage(MALFORMED_MESSAGE);
+    setErrorMessage(t0501("malformed", locale));
     setPhase("malformed");
   }
 
@@ -847,7 +915,7 @@ function UploadInner({
       if (!partsResponse.ok) {
         const detail = await readDetail(partsResponse);
         if (!aliveRef.current) return;
-        applyUploadFailure(classifyFailure(partsResponse.status, detail));
+        applyUploadFailure(classifyFailure(partsResponse.status, detail, locale));
         return;
       }
       const listing =
@@ -877,7 +945,7 @@ function UploadInner({
         if (!grantResponse.ok) {
           const detail = await readDetail(grantResponse);
           if (!aliveRef.current) return;
-          applyUploadFailure(classifyFailure(grantResponse.status, detail));
+          applyUploadFailure(classifyFailure(grantResponse.status, detail, locale));
           return;
         }
         const parsed =
@@ -908,7 +976,9 @@ function UploadInner({
           const putResponse = await fetch(grant.url, { method: "PUT", body: slice });
           if (!aliveRef.current) return;
           if (!putResponse.ok) {
-            setErrorMessage(`part ${grant.part_number} upload failed (${putResponse.status})`);
+            setErrorMessage(
+              t0501("partFailed", locale, { n: grant.part_number, status: putResponse.status }),
+            );
             setPhase("interrupted");
             return;
           }
@@ -918,7 +988,7 @@ function UploadInner({
         }
       }
       if (uploaded.size !== activeSession.part_count) {
-        setErrorMessage("not every part was uploaded");
+        setErrorMessage(t0501("notEveryPart", locale));
         setPhase("interrupted");
         return;
       }
@@ -927,14 +997,14 @@ function UploadInner({
       // A thrown fetch is a dropped connection, not a rejection: the
       // session and its draft both stay in place so Resume can continue.
       if (!aliveRef.current) return;
-      setErrorMessage(networkErrorMessage(caught));
+      setErrorMessage(networkErrorMessage(caught, locale));
       setPhase("interrupted");
     }
   }
 
   async function startUpload() {
     if (!file) {
-      setErrorMessage("choose a file first");
+      setErrorMessage(t0501("chooseFile", locale));
       return;
     }
     setPhase("creating");
@@ -959,7 +1029,7 @@ function UploadInner({
       if (!response.ok) {
         const detail = await readDetail(response);
         if (!aliveRef.current) return;
-        setErrorMessage(classifyFailure(response.status, detail).message);
+        setErrorMessage(classifyFailure(response.status, detail, locale).message);
         setPhase("idle");
         return;
       }
@@ -998,7 +1068,7 @@ function UploadInner({
       await uploadMissingParts(created, file);
     } catch (caught) {
       if (!aliveRef.current) return;
-      setErrorMessage(networkErrorMessage(caught));
+      setErrorMessage(networkErrorMessage(caught, locale));
       setPhase("idle");
     }
   }
@@ -1018,7 +1088,7 @@ function UploadInner({
     if (!response.ok) {
       const detail = await readDetail(response);
       if (!aliveRef.current) return;
-      const failure = classifyFailure(response.status, detail);
+      const failure = classifyFailure(response.status, detail, locale);
       setErrorMessage(failure.message);
       if (failure.kind === "closed") {
         clearDraft(storageKey);
@@ -1058,7 +1128,7 @@ function UploadInner({
     }
     if (current.status === "expired") {
       clearDraft(storageKey);
-      setErrorMessage(ERROR_MESSAGES.upload_expired ?? null);
+      setErrorMessage(t0501("upload_expired", locale));
       setPhase("expired");
       return;
     }
@@ -1066,7 +1136,11 @@ function UploadInner({
       clearDraft(storageKey);
       const reason = current.rejection_reason;
       setErrorMessage(
-        reason !== null ? (ERROR_MESSAGES[reason] ?? `rejected: ${reason}`) : "rejected",
+        reason !== null
+          ? isKnownErrorCode(reason)
+            ? t0501(reason, locale)
+            : t0501("rejectedReason", locale, { reason })
+          : t0501("rejected", locale),
       );
       setPhase("rejected");
       return;
@@ -1092,17 +1166,14 @@ function UploadInner({
         recomputed !== resumableDraft.declaredSha256 ||
         pickedFile.size !== resumableDraft.declaredSizeBytes
       ) {
-        setErrorMessage(
-          "the selected file does not match the upload in progress; choose the original file, " +
-            "or abandon this draft to start a new upload",
-        );
+        setErrorMessage(t0501("fileMismatch", locale));
         setPhase("resumable");
         return;
       }
       await loadSessionFromDraft(resumableDraft, pickedFile, "resumable");
     } catch (caught) {
       if (!aliveRef.current) return;
-      setErrorMessage(networkErrorMessage(caught));
+      setErrorMessage(networkErrorMessage(caught, locale));
       setPhase("resumable");
     }
   }
@@ -1128,7 +1199,7 @@ function UploadInner({
       );
     } catch (caught) {
       if (!aliveRef.current) return;
-      setErrorMessage(networkErrorMessage(caught));
+      setErrorMessage(networkErrorMessage(caught, locale));
       setPhase(phase);
     }
   }
@@ -1145,6 +1216,7 @@ function UploadInner({
       setPhase("resumable");
     } else {
       setPhase("idle");
+      setNeedsFocusOnIdle(true);
     }
   }
 
@@ -1187,7 +1259,7 @@ function UploadInner({
       }
       const detail = await readDetail(response);
       if (!aliveRef.current) return;
-      const failure = classifyFailure(response.status, detail);
+      const failure = classifyFailure(response.status, detail, locale);
       setErrorMessage(failure.message);
       switch (failure.kind) {
         case "incomplete":
@@ -1214,7 +1286,7 @@ function UploadInner({
       }
     } catch (caught) {
       if (!aliveRef.current) return;
-      setErrorMessage(networkErrorMessage(caught));
+      setErrorMessage(networkErrorMessage(caught, locale));
       setPhase("finalize_retry");
     }
   }
@@ -1224,28 +1296,68 @@ function UploadInner({
   const allPartsUploaded = partCount > 0 && uploadedCount >= partCount;
   const isFinalizing = phase === "finalizing";
 
+  const t = (key: Key0501, vars?: Record<string, string | number>) => t0501(key, locale, vars);
+  const idBase = useId();
+  const rootRef = useRef<HTMLElement | null>(null);
+
+  // What the user should do next after each failure (UX01 recovery steps): never "retry" for a
+  // write whose outcome is unknown, never a dead end.
+  const errorKind: RecoveryKind =
+    phase === "finalize_retry" || phase === "malformed"
+      ? "verify-state"
+      : phase === "expired" || phase === "rejected"
+        ? "rejected"
+        : phase === "conflict" || phase === "resumable" || phase === "idle"
+          ? "input"
+          : "retry";
+  const alertFor = (testId: string, message: string | null) =>
+    message ? (
+      <AlertMessage error={uiError(message, errorKind)} locale={locale} testId={testId} focusable />
+    ) : null;
+
+  // After a request ends a failed step must not strand a keyboard user on <body> (the control that
+  // was clicked has unmounted with its section): focus the new failure alert, or the new section.
+  useEffect(() => {
+    if (needsFocusOnIdle) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && rootRef.current?.contains(active)) return;
+    const target =
+      rootRef.current?.querySelector<HTMLElement>('[role="alert"][tabindex="-1"]') ??
+      rootRef.current?.querySelector<HTMLElement>("[data-phase-section]");
+    if (phase !== "idle" || errorMessage) target?.focus();
+  }, [phase, errorMessage, needsFocusOnIdle]);
+
+  const percent = partCount ? Math.floor((uploadedCount / partCount) * 100) : 0;
+
   return (
-    <div
+    <section
+      ref={rootRef}
       data-testid="resumable-dataset-upload-ui"
-      aria-label="Resumable dataset upload"
+      aria-label={t("rootLabel")}
+      lang={resolveLocale(locale)}
       dir={dirFor(locale)}
+      style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
     >
       {phase === "resumable" && resumableDraft && (
-        <section data-testid="upload-resume-banner">
-          <p data-testid="upload-resume-text">
+        <section
+          data-testid="upload-resume-banner"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
+          <p data-testid="upload-resume-text" style={WRAP}>
             {phrase("resumeBannerBeforeName", locale)} &quot;
-            <bdi>{resumableDraft.fileName}</bdi>&quot; {phrase("resumeBannerAfterName", locale)}
+            <bdi dir="ltr" style={WRAP}>
+              {resumableDraft.fileName}
+            </bdi>
+            &quot; {phrase("resumeBannerAfterName", locale)}
           </p>
-          {errorMessage && (
-            <p role="alert" data-testid="upload-resume-error">
-              {errorMessage}
-            </p>
-          )}
-          <input
-            type="file"
-            data-testid="upload-resume-file-input"
-            onChange={(event) => {
-              const picked = event.target.files?.[0];
+          {alertFor("upload-resume-error", errorMessage)}
+          <FileField
+            id={`${idBase}-resume-file`}
+            label={t("resumeFileLabel")}
+            testId="upload-resume-file-input"
+            onPick={(picked) => {
               if (picked) void exclusive(() => resumeFromDraft(picked));
             }}
           />
@@ -1258,7 +1370,14 @@ function UploadInner({
             data-testid="upload-abandon-confirm"
             restoreFocusTo={abandonTriggerRef.current}
           >
-            <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "var(--space-2)",
+                justifyContent: "flex-end",
+              }}
+            >
               <Button
                 variant="secondary"
                 data-testid="upload-abandon-cancel-button"
@@ -1285,215 +1404,259 @@ function UploadInner({
               `restoreFocusTo` -- Radix's own default close-focus target only works when the
               opener is its own `Dialog.Trigger`; confirmed empirically (real Chromium,
               ftf_ux02_browser.spec.ts) that without this, focus lands on `<body>` on close. */}
-          <Button
-            variant="secondary"
-            data-testid="upload-abandon-draft-button"
-            onClick={(event) => {
-              abandonTriggerRef.current = event.currentTarget;
-              setConfirmingAbandon(true);
-            }}
-          >
-            {phrase("abandonDraftAction", locale)}
-          </Button>
+          <div>
+            <Button
+              variant="secondary"
+              data-testid="upload-abandon-draft-button"
+              onClick={(event) => {
+                abandonTriggerRef.current = event.currentTarget;
+                setConfirmingAbandon(true);
+              }}
+            >
+              {phrase("abandonDraftAction", locale)}
+            </Button>
+          </div>
         </section>
       )}
 
       {phase === "idle" && (
-        <section data-testid="upload-form">
-          {errorMessage && (
-            <p role="alert" data-testid="upload-error-text">
-              {errorMessage}
-            </p>
-          )}
-          <label>
-            Purpose
-            <select
-              data-testid="upload-purpose-select"
-              value={purpose}
-              onChange={(event) => setPurpose(event.target.value as UploadPurpose)}
-            >
-              {ALLOWED_PURPOSES.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Content type
-            <select
-              data-testid="upload-content-type-select"
-              value={contentType}
-              onChange={(event) => setContentType(event.target.value as UploadContentType)}
-            >
-              {SUPPORTED_CONTENT_TYPES.map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
-          </label>
-          <input
-            type="file"
-            data-testid="upload-file-input"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-          <button
-            type="button"
-            data-testid="upload-start-button"
-            disabled={!file}
-            onClick={() => void exclusive(startUpload)}
+        <section
+          data-testid="upload-form"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
+          <h2 style={WRAP}>{t("heading")}</h2>
+          {alertFor("upload-error-text", errorMessage)}
+          <SelectField
+            id={`${idBase}-purpose`}
+            label={t("purposeLabel")}
+            testId="upload-purpose-select"
+            value={purpose}
+            onChange={(value) => setPurpose(value as UploadPurpose)}
           >
-            Start upload
-          </button>
+            {ALLOWED_PURPOSES.map((value) => (
+              <option key={value} value={value}>
+                {purposeWord(value, locale)}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            id={`${idBase}-content-type`}
+            label={t("contentTypeLabel")}
+            testId="upload-content-type-select"
+            value={contentType}
+            onChange={(value) => setContentType(value as UploadContentType)}
+          >
+            {SUPPORTED_CONTENT_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </SelectField>
+          <FileField
+            id={`${idBase}-file`}
+            label={t("fileLabel")}
+            helper={t("fileHelper")}
+            testId="upload-file-input"
+            onPick={setFile}
+          />
+          <div>
+            <Button
+              variant="primary"
+              data-testid="upload-start-button"
+              disabled={!file}
+              disabledReason={file ? undefined : t("startUploadNeedsFile")}
+              onClick={() => void exclusive(startUpload)}
+            >
+              {t("startUpload")}
+            </Button>
+          </div>
         </section>
       )}
 
       {(phase === "creating" || phase === "uploading") && (
-        <section data-testid="upload-progress">
-          <p data-testid="upload-progress-text">
-            Uploaded {uploadedCount} of {partCount || "?"} parts.
+        <section
+          data-testid="upload-progress"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-2)", ...WRAP }}
+        >
+          <p data-testid="upload-progress-text" style={WRAP}>
+            {t("progress", { count: uploadedCount, total: partCount || "?" })}
           </p>
-          <div
-            role="progressbar"
-            aria-label={phrase("uploadProgress", locale)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={partCount ? Math.floor((uploadedCount / partCount) * 100) : 0}
+          <PendingView
+            phase="progress"
+            label={phrase("uploadProgress", locale)}
+            value={percent}
+            locale={locale}
           />
         </section>
       )}
 
       {phase === "interrupted" && session && (
-        <section data-testid="upload-interrupted">
-          <p data-testid="upload-interrupted-text">
-            Upload interrupted after {uploadedCount} of {partCount} parts. The session is still
-            open; resuming only re-uploads the parts storage does not already have.
+        <section
+          data-testid="upload-interrupted"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
+          <p data-testid="upload-interrupted-text" style={WRAP}>
+            {t("interrupted", { count: uploadedCount, total: partCount })}
           </p>
-          {errorMessage && (
-            <p role="alert" data-testid="upload-interrupted-reason">
-              {errorMessage}
-            </p>
-          )}
-          <button
-            type="button"
-            data-testid="upload-resume-button"
-            onClick={() => file && void exclusive(() => uploadMissingParts(session, file))}
-          >
-            Resume upload
-          </button>
+          {alertFor("upload-interrupted-reason", errorMessage)}
+          <div>
+            <Button
+              variant="primary"
+              data-testid="upload-resume-button"
+              onClick={() => file && void exclusive(() => uploadMissingParts(session, file))}
+            >
+              {t("resumeButton")}
+            </Button>
+          </div>
         </section>
       )}
 
       {FINALIZE_PHASES.includes(phase) ? (
-        <section data-testid="upload-finalize">
+        <section
+          data-testid="upload-finalize"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
           {allPartsUploaded && phase !== "incomplete" && (
-            <p data-testid="upload-all-parts-uploaded">All parts uploaded.</p>
+            <p data-testid="upload-all-parts-uploaded">{t("allUploaded")}</p>
           )}
           {(!allPartsUploaded || phase === "incomplete") && session && (
-            <button
-              type="button"
-              data-testid="upload-recheck-parts-button"
-              onClick={() => file && void exclusive(() => uploadMissingParts(session, file))}
-            >
-              Re-check uploaded parts and resume
-            </button>
+            <div>
+              <Button
+                data-testid="upload-recheck-parts-button"
+                onClick={() => file && void exclusive(() => uploadMissingParts(session, file))}
+              >
+                {t("recheck")}
+              </Button>
+            </div>
           )}
-          <label>
-            Dataset name
-            <input
-              type="text"
-              data-testid="upload-dataset-name-input"
-              value={datasetName}
-              onChange={(event) => setDatasetName(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            data-testid="upload-finalize-button"
-            disabled={!datasetName.trim() || isFinalizing}
-            onClick={() => void exclusive(finalize)}
-          >
-            Finalize
-          </button>
+          <Field
+            id={`${idBase}-dataset-name`}
+            data-testid="upload-dataset-name-input"
+            label={t("datasetNameLabel")}
+            helper={t("datasetNameHelper")}
+            requirement="required"
+            locale={locale}
+            type="text"
+            value={datasetName}
+            style={CONTROL}
+            onChange={(event) => setDatasetName(event.target.value)}
+          />
+          <div>
+            <Button
+              variant="primary"
+              data-testid="upload-finalize-button"
+              disabled={!datasetName.trim() || isFinalizing}
+              disabledReason={datasetName.trim() ? undefined : t("finalizeNeedsName")}
+              onClick={() => void exclusive(finalize)}
+            >
+              {t("finalizeButton")}
+            </Button>
+          </div>
         </section>
       ) : null}
 
-      {phase === "finalizing" && <p data-testid="upload-finalizing-text">Finalizing...</p>}
+      {phase === "finalizing" && (
+        <p data-testid="upload-finalizing-text" role="status" tabIndex={-1} data-phase-section>
+          {t("finalizing")}
+        </p>
+      )}
 
       {phase === "accepted" && dataset && (
-        <section data-testid="upload-accepted" role="status">
-          <p data-testid="upload-accepted-text">Dataset created.</p>
-          <p data-testid="upload-accepted-dataset-id">{dataset.id}</p>
+        <section
+          data-testid="upload-accepted"
+          role="status"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-1)", ...WRAP }}
+        >
+          <p data-testid="upload-accepted-text">{t("created")}</p>
+          <p data-testid="upload-accepted-dataset-id" style={WRAP}>
+            {dataset.id}
+          </p>
+          <div>
+            <Button data-testid="upload-new-upload-button" onClick={startOver}>
+              {t("uploadAnother")}
+            </Button>
+          </div>
         </section>
       )}
 
       {phase === "already_verified" && (
-        <p role="status" data-testid="upload-already-verified-text">
-          This upload session was already finalized and verified; its Dataset exists. Nothing more
-          to upload.
-        </p>
-      )}
-
-      {phase === "malformed" && (
-        <section data-testid="upload-malformed">
-          <p role="alert" data-testid="upload-malformed-text">
-            {errorMessage}
+        <section
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
+          <p role="status" data-testid="upload-already-verified-text" style={WRAP}>
+            {t("alreadyVerified")}
           </p>
-          {session && (
-            <button
-              type="button"
-              data-testid="upload-check-status-button"
-              onClick={() => void exclusive(checkStatus)}
-            >
-              Check upload status
-            </button>
-          )}
-          <button type="button" data-testid="upload-malformed-back-button" onClick={leaveMalformed}>
-            Back
-          </button>
+          <div>
+            <Button data-testid="upload-new-upload-button" onClick={startOver}>
+              {t("uploadAnother")}
+            </Button>
+          </div>
         </section>
       )}
 
-      {phase === "incomplete" && (
-        <p role="alert" data-testid="upload-incomplete-text">
-          {errorMessage}
-        </p>
+      {phase === "malformed" && (
+        <section
+          data-testid="upload-malformed"
+          data-phase-section
+          tabIndex={-1}
+          style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+        >
+          {alertFor("upload-malformed-text", errorMessage)}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+            {session && (
+              <Button
+                variant="primary"
+                data-testid="upload-check-status-button"
+                onClick={() => void exclusive(checkStatus)}
+              >
+                {t("checkStatus")}
+              </Button>
+            )}
+            <Button data-testid="upload-malformed-back-button" onClick={leaveMalformed}>
+              {t("back")}
+            </Button>
+          </div>
+        </section>
       )}
-      {phase === "conflict" && (
-        <p role="alert" data-testid="upload-conflict-text">
-          {errorMessage}
-        </p>
-      )}
+
+      {phase === "incomplete" && alertFor("upload-incomplete-text", errorMessage)}
+      {phase === "conflict" && alertFor("upload-conflict-text", errorMessage)}
       {phase === "finalize_retry" && (
         <>
-          <p role="alert" data-testid="upload-finalize-retry-text">
-            {errorMessage}
-          </p>
-          <button
-            type="button"
-            data-testid="upload-check-status-button"
-            onClick={() => void exclusive(checkStatus)}
-          >
-            Check upload status
-          </button>
+          {alertFor("upload-finalize-retry-text", errorMessage)}
+          <div>
+            <Button
+              variant="primary"
+              data-testid="upload-check-status-button"
+              onClick={() => void exclusive(checkStatus)}
+            >
+              {t("checkStatus")}
+            </Button>
+          </div>
         </>
       )}
-      {phase === "expired" && (
-        <p role="alert" data-testid="upload-expired-text">
-          {errorMessage ?? "This upload session expired."}
-        </p>
+      {phase === "expired" && alertFor("upload-expired-text", errorMessage ?? t("expiredDefault"))}
+      {phase === "rejected" && alertFor("upload-rejected-text", errorMessage)}
+      {(phase === "expired" || phase === "rejected") && (
+        <div>
+          <Button variant="primary" data-testid="upload-new-upload-button" onClick={startOver}>
+            {t("newUpload")}
+          </Button>
+        </div>
       )}
-      {phase === "rejected" && (
-        <p role="alert" data-testid="upload-rejected-text">
-          {errorMessage}
-        </p>
-      )}
-      {phase === "storage_unavailable" && (
-        <p role="alert" data-testid="upload-storage-unavailable-text">
-          {errorMessage}
-        </p>
-      )}
-    </div>
+      {phase === "storage_unavailable" && alertFor("upload-storage-unavailable-text", errorMessage)}
+    </section>
   );
 }
