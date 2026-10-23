@@ -30836,3 +30836,36 @@ certification; nothing further for relay on this item until that review lands or
 `BLOCKER.md` entry. No new "Owner actions" line. Certified count unchanged (merge != certification,
 Law 4); product-true count to be recomputed by Control plane's own review (this item touches no
 `proving_symbol`, so product_truth_check's 49/49 should stay unchanged).
+
+## 2026-10-23T1652Z -- Scheduled relay shift -- fresh-base push on PR #994 (FTF-UX01-F1), frontier otherwise saturated
+
+STEP 0/0.1/0.2 clean (hash matched, no cognee-cli). Returned-work sweep over all 17 open PRs: #998
+(FTF-H010-P4-r1), #1000 ([CERT] tracker), #997 (docs shift log) and #950 (FTF-0904-F2 fix) each had
+a `ci-verdict` genuinely `in_progress` from a concurrent session at check time -- not red, not
+neglected. PR #965 (plain gitignore chore) is green but stale-based and not an item-level task --
+left alone, flagged for a later shift. PRs #974/#961/#960/#759/#732/#709 are all open drafts
+explicitly marked work-in-progress by their own authoring session -- claimed per the Claim rule
+regardless of age, correctly skipped.
+
+PR #994 (`relay/FTF-UX01-F1-r1`, FTF-UX01-F1 round 1, lane B) was non-draft, `mergeable_state:
+clean`, `ci-verdict` green -- but its base (`64bb6645`) predated two later main merges (PR #971
+FTF-R006-P1b-r2 and the FTF-UX02 wrap-up docs commit). Per the CI contract's "fresh base before
+merging" rule this needed a re-merge before it could be merged on a stale-tested head. Diffed
+main's new commits against PR #994's own changed files: zero file overlap (main side touched only
+`apps/api/app/reviews/argilla_identity_store.py`, migration 0036, the Argilla client/tests, ci.yml,
+PROGRESS.md and docs/certifications/queue.md; PR #994 touches only
+`apps/web/components/ui/AlertMessage.tsx`/`errors.ts` and its own test/docs files). Merged
+`origin/main` into `relay/FTF-UX01-F1-r1` -- real, clean merge, no conflicts (`8ba3d14`). Pushed; a
+fresh `ci-verdict` run is in flight on the new head. Subscribed to PR #994's activity to merge on
+green (or diagnose red), same posture as the 2026-10-23T1318Z shift took on PR #947.
+
+No new QUEUE.md item claimed (every Active item already merged or already PR-claimed; the
+accessible Backlog slices are all open drafts per the list above).
+
+STEP 3: this file and the shift log `docs/progress/2026-10-23T1652Z-relay.md` (plain docs-only PR
+on `claude/wizardly-fermat-dqnn1o`, not `[relay]`/`[GOVERNANCE]`-titled; QUEUE.md and
+docs/certifications/queue.md untouched). STEP 4 stop condition: single-item outcome -- PR #994 now
+has a fresh-base `ci-verdict` run in flight; staying subscribed to merge on green or diagnose any
+red job. No new `BLOCKER.md` entry (every entry in the file is RESOLVED, none currently LIVE). No
+new "Owner actions" line (the two existing dated asks -- FTF-0616 LiteLLM judge secret, FTF-04A31
+private-repo credential -- are unchanged, still open). Certified/product-true counts unchanged.
