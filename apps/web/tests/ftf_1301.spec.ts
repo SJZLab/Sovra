@@ -646,3 +646,91 @@ test("FTF-1301-F1 a stale search response from the previous project never overwr
   expect(screen.getByText("New project cheapest")).toBeTruthy();
   expect(screen.queryByText("Old project cheapest")).toBeNull();
 });
+
+test("FTF-1301-F1 round 2: a Verify that finishes after a project switch refreshes the CURRENT project, not the one open when Verify was clicked", async () => {
+  const PROJECT_B = "66666666-6666-6666-6666-666666666666";
+  const calls: Array<{ url: string; resolve: (value: unknown) => void }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          calls.push({ url, resolve });
+        }),
+    ),
+  );
+
+  const unverified = searchResult({
+    id: "r-unverified",
+    verified_at: null,
+    disqualified_reason: "unverified",
+  });
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(1)); // initial search(project A)
+  await act(async () => {
+    calls[0]!.resolve({
+      ok: true,
+      json: async () => ({ results: [unverified], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("cost-profile-verify-r-unverified")).toBeTruthy());
+
+  fireEvent.click(screen.getByTestId("cost-profile-verify-r-unverified"));
+  await waitFor(() => expect(calls.length).toBe(2)); // verify POST, in flight, still project A's click
+
+  // Switch to project B while that verify write is still in flight.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(3)); // search(project B), triggered by the switch
+  await act(async () => {
+    calls[2]!.resolve({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({ id: "b-cheapest", label: "Project B cheapest" }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Project B cheapest")).toBeTruthy());
+
+  // The Verify write from the project-A click now resolves, well after the switch to B.
+  await act(async () => {
+    calls[1]!.resolve({ ok: true, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(calls.length).toBe(4)); // the post-write refresh
+
+  // The post-write refresh must query the project the user is CURRENTLY viewing (B), never
+  // the project that happened to be open when Verify was clicked (A) -- a stale render closure
+  // reading `projectId` directly, rather than a ref to the latest value, would still fetch A here.
+  expect(calls[3]!.url).toBe(costPerSuccessSearchUrl(API_BASE, ORG_ID, PROJECT_B));
+
+  await act(async () => {
+    calls[3]!.resolve({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "b-cheapest-2",
+          label: "Project B cheapest (post-verify)",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Project B cheapest (post-verify)")).toBeTruthy());
+});
