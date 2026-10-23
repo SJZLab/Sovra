@@ -284,3 +284,20 @@ test("[UX01-R4-A6] no status or banner icon is an emoji-presentation glyph (colo
     );
   }
 });
+
+test("FTF-UX02 r2 (regression, Law 15): Field's own input carries the same --target-min floor as Button (WCAG 2.2 2.5.8) -- a bare <input> is under 24x24 in every real browser, which FTF-UX06's real-Chromium axe check on a Field-built screen caught when the round-1 block-label fix was added here without it", () => {
+  render(createElement(Field, { id: "fld", label: "Name", requirement: "required" }));
+  expect(screen.getByLabelText(/Name/).style.minBlockSize).toBe("var(--target-min)");
+});
+
+test("FTF-UX02 r2 (regression): a caller's own style on Field still wins over the --target-min default", () => {
+  render(
+    createElement(Field, {
+      id: "fld2",
+      label: "Name",
+      requirement: "required",
+      style: { minBlockSize: "48px" },
+    }),
+  );
+  expect(screen.getByLabelText(/Name/).style.minBlockSize).toBe("48px");
+});
