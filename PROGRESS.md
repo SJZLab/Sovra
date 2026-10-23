@@ -30757,3 +30757,52 @@ diagnosed and documented, not fixed in place, since nothing in that PR's own dif
 no landed fix for the shared SeaweedFS-fixture issue exists yet to port. No new `BLOCKER.md` entry
 (not systemic -- every other PR and job is unaffected). No new "Owner actions" line. Certified/
 product-true counts unchanged.
+
+## 2026-10-23T1108Z -- Scheduled relay shift -- FTF-1301-F1 claimed, two-round pre-review CERTIFY (PR #996)
+
+STEP 0/0.1/0.2 clean (hash matched, `BLOCKER.md` has no live entry, no `cognee-cli`). Returned-work
+sweep over all 15 open PRs found nothing red: PR #971's `unstable` mergeable state is its own long
+`gate` job genuinely still `in_progress` (confirmed via `get_workflow_job` -- actively advancing, not
+stuck), every other open `[relay]`-titled PR (draft or not) is already claimed, and the rest are
+Control-plane/chore/`[CERT]`-tracker/docs-only PRs outside relay scope. Nothing to fix.
+
+Every QUEUE.md Active item already has an open PR, is merged, or is Parked (cross-checked against
+live GitHub state). Of the two newest "ready now" Backlog follow-ups (Control-plane 2026-10-23T09:10Z),
+FTF-UX01-F1 already had an open PR (#994); **FTF-1301-F1** (cost-profile panel shows the previous
+project's cheapest rate after a project switch) had no open PR and no `relay/FTF-1301-F1*` branch on
+the remote (`git ls-remote` confirmed) -- genuinely unclaimed. Claimed `relay/FTF-1301-F1-r1`.
+
+Round 1: added a `latestSearchRequest` ref-counter `stale()` guard to `refresh()` in
+`apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx` (the same pattern already
+certified in `capability_compatibility_ui.tsx` and the GitHub branch/ref selector component), closing
+the out-of-order-response race the item describes. New test independently shown to FAIL on the
+pre-fix code first (Law 1), fixed, fault-injected (guard defeated -> RED, restored -> GREEN).
+
+An independent pre-review subagent (fresh, no prior context, `opus`) confirmed round 1, then found a
+**second, real gap** the item's own description did not name: `handleCreate`/`handleVerify`'s
+post-write `refresh(true)` runs through the render closure current when the user clicked, so a write
+finishing after a project switch still re-fetches the OLD project and -- as the *latest* call by the
+round-1 counter -- wins and overwrites the correctly-switched project's panel. Independently
+reproduced RED before fixing. Round 2: an `identityRef` kept current every render (not in an effect)
+so `refresh()` reads the fetch identity from the ref rather than its own stale closure. New test
+reproduces the Verify-during-switch race; fault-injected (RED), restored (GREEN). Same reviewer
+re-checked round 2 (`handleCreate`'s own post-write path, a triple A->B->C switch, the org-scoped
+write requests themselves) and returned **`FTF-1301-F1 CERTIFY`** (pre-review evidence only, Law 4 --
+never a self-certification).
+
+Full web suite (`apps/web/tests`, 30 files, 3014 tests): all pass, both before and after round 2.
+`tsc --build`/`eslint`/`prettier --check` on both changed files: clean. `mutation_gate.py`'s CI job
+mutates production Python only (confirmed from `ci.yml`); no production Python changed here, so it
+will report SKIPPED, same as every prior `apps/web`-only relay PR -- the two fault-injection rounds
+above are this item's mutation-equivalent evidence for the TS/TSX files it touches. Merged fresh
+`origin/main` before opening the PR; confirmed zero net diff on QUEUE.md/PROGRESS.md/
+docs/certifications/queue.md. Opened **PR #996** (`[relay] FTF-1301-F1: ...`), PROVISIONAL (Law 4),
+subscribed to its activity. Full evidence and both verbatim-summarized pre-review rounds:
+`docs/certifications/submissions/2026-10-23T1108Z-FTF-1301-F1.md`; shift log:
+`docs/progress/2026-10-23T1108Z-relay.md`.
+
+STEP 3: this file and the designated-branch docs-only PR (QUEUE.md and `docs/certifications/queue.md`
+untouched -- no certification action taken this shift). STEP 4 stop condition: single-item outcome
+(PR #996 opened, PROVISIONAL, awaiting Control-plane L2 review) -- nothing further for relay on this
+item until that review lands. No new `BLOCKER.md` entry. No new "Owner actions" line. Certified/
+product-true counts unchanged (nothing merged or certified this shift).
