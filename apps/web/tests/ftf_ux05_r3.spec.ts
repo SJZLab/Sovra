@@ -9,6 +9,7 @@
 // Every assertion that compares text under locale="ar" compares against a literal Arabic string,
 // never against `phrase()` itself, so a fault that forces English cannot pass by agreement.
 import { createElement } from "react";
+import { renderToString } from "react-dom/server";
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1798,5 +1799,96 @@ describe("the recovery sentence per status", () => {
     expect(alert.style.overflowWrap).toBe("anywhere");
     expect(screen.getByTestId("x-recovery").getAttribute("dir")).toBe("rtl");
     expect(screen.getByTestId("x-recovery").style.overflowWrap).toBe("anywhere");
+  });
+});
+
+describe("round 2: pins for the last GREEN faults", () => {
+  test("R3-R01 create 201, then the refresh answers 500 / a wrong shape: check-the-state recovery", async () => {
+    for (const refresh of [
+      { method: "GET", path: SEARCH_PATH, status: 500, body: {} },
+      { method: "GET", path: SEARCH_PATH, body: { results: "nope" } },
+    ] as Route[]) {
+      stub(
+        { method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) },
+        { method: "POST", path: COST_BASE, status: 201, body: rate() },
+      );
+      renderCost();
+      await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+      fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+        target: { value: "My rate" },
+      });
+      fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+        target: { value: "0.5" },
+      });
+      fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+        target: { value: "https://x" },
+      });
+      stub(refresh, { method: "POST", path: COST_BASE, status: 201, body: rate() });
+      fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+      await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+      expect(screen.getByTestId("cost-profile-form-error-recovery").textContent).toBe(VERIFY_EN);
+      cleanup();
+    }
+  });
+
+  test("R3-R04 the very first render (before any effect) is 'loading', not 'unknown' with a Reload button", () => {
+    const html = renderToString(
+      createElement(CostProfileSearchPanel, {
+        apiBaseUrl: API,
+        organizationId: ORG,
+        projectId: PROJECT,
+      }),
+    );
+    expect(html).toContain("cost-profile-loading");
+    expect(html).not.toContain("cheapest-rate-unknown");
+    expect(html).not.toContain("cheapest-rate-retry-button");
+  });
+
+  test("R3-R06 two activations in the same tick send one request: Reload search", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, status: 503, body: {} });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cheapest-rate-retry-button")).toBeTruthy());
+    stub({ method: "GET", path: SEARCH_PATH, pending: true });
+    const button = screen.getByTestId("cheapest-rate-retry-button");
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(calls.filter((c) => c.pathname.endsWith(SEARCH_PATH))).toHaveLength(1);
+  });
+
+  test("R3-R07 two submits in the same tick send one POST", async () => {
+    stub(
+      { method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) },
+      { method: "POST", path: COST_BASE, pending: true },
+    );
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+    fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+      target: { value: "My rate" },
+    });
+    fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+      target: { value: "0.5" },
+    });
+    fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+      target: { value: "https://x" },
+    });
+    const form = screen.getByTestId("cost-profile-create-form");
+    act(() => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+    });
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+  });
+
+  test("R3-R08 two change-history loads in the same tick send one GET", () => {
+    stub({ method: "GET", path: `${MAP_PATH}/changes`, pending: true });
+    renderMapping();
+    const button = screen.getByTestId("load-changes-button");
+    act(() => {
+      button.click();
+      button.click();
+    });
+    expect(calls).toHaveLength(1);
   });
 });
