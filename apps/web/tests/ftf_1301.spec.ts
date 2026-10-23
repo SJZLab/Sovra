@@ -15,7 +15,7 @@
 // for why, the same precedent `ftf_0401.spec.ts` already established).
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -579,4 +579,70 @@ test("UX05 r2 (L2 return): a long source/label value in a result is wrapped, not
   expect(
     (screen.getByTestId(`cost-profile-result-${longResult.id}`) as HTMLElement).style.overflowWrap,
   ).toBe("anywhere");
+});
+
+test("FTF-1301-F1 a stale search response from the previous project never overwrites the new project's result", async () => {
+  const PROJECT_B = "55555555-5555-5555-5555-555555555555";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1)); // request 1 (old project), in flight
+
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2)); // request 2 (new project), in flight
+
+  // The NEW project's response arrives first.
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "new-cheapest",
+          label: "New project cheapest",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("New project cheapest")).toBeTruthy());
+
+  // The OLD project's response arrives LAST (out of order) -- it must not overwrite the
+  // new project's already-rendered result (Law 1: this must FAIL on the pre-fix code).
+  await act(async () => {
+    pending[0]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "old-cheapest",
+          label: "Old project cheapest",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.getByText("New project cheapest")).toBeTruthy();
+  expect(screen.queryByText("Old project cheapest")).toBeNull();
 });
