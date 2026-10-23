@@ -25224,5 +25224,35 @@ different session.
 - **Certified:** FTF-UX07 (#982, merge 2aa77912), round 3; FTF-0101 requalified.
 - **Certified:** FTF-UX05 (#983, merge 5d793fb8), round 3; parents and FTF-UX01 requalified; follow-ups FTF-UX01-F1, FTF-1301-F1 queued.
 - **Certified:** FTF-H010-P3 (#989, merge e5474526), round 2; P3a/P2 requalified.
+
+## 2026-10-23T1420Z — PROVISIONAL: FTF-UX02 round 2 merged (#947); regression found and fixed in shared Field
+- **Submitted:** closes out the 2026-10-23T10:52Z unparking note (owner approval of
+  `@radix-ui/react-dialog@1.3.1`, PR #995). Round 3's own two remaining items closed: 4 exact-string
+  assertions for the Arabic retry-family phrases (`retry`, `networkErrorRetryable`,
+  `requestFailedRetryable`, `responseMalformedRetryable`), each confirmed RED on a mutated string and
+  GREEN restored; and the submission's stale FTF-0500A H1/H9 heuristic cells corrected to record
+  round 2's own fixes, not just round 1's. Merging current `main` (every UX00–UX07 area merged since
+  this branch's original base) and re-running the full `apps/web` suite — not just this item's own
+  three parent suites, per l2-review-brief item 6's Law 15 regression check — surfaced a real
+  cross-area regression: round 1's `Field.tsx` fix (`display: "block"` on the shared `<label>`) left
+  `Field`'s `<input>` without the `--target-min` (24px) floor every other raw input/select in this
+  repo already applies by hand, so it fell under the WCAG 2.2 2.5.8 (AA) 24×24 CSS px minimum;
+  `ftf_ux06_browser.spec.ts`'s real-Chromium axe check caught it on FTF-UX06's `#field-category`
+  (6/52 failing, certified before this PR's `Field.tsx` change existed on `main`). Independently
+  confirmed real (reproduces on the merged head, not on a clean, unmodified `main` checkout in the
+  same sandbox, 3/3 runs) before fixing: `Field`'s `<input>` now carries
+  `minBlockSize: "var(--target-min)"` (caller `style` wins), with two new regression tests in the
+  shared-component suite `ftf_ux01_r4.spec.ts`, each confirmed RED on the pre-fix code and GREEN
+  restored. `ftf_ux06_browser.spec.ts`: 52/52 again. Full repo `pnpm exec vitest run` on the merged
+  head: 32 test files, 3069/3069 tests passing (the only 2 "failed suites",
+  `ftf_ux01.spec.ts`/`ftf_ux01_r3.spec.ts`, 0 tests each, are the pre-existing `tokens.css?raw`
+  CSS-parse issue, independently reproduced on a clean `main` checkout in this same sandbox, not
+  introduced by this PR). Real CI on the final pushed head: `ci-verdict` green, all 83 jobs
+  (`gate` 1510 steps, `mutation-gate`, `secret-scanning`, 76 integration jobs) passed; merged as
+  `b264be1`. Not self-certified (Law 4) — awaiting Control-plane L2 review, which should also
+  requalify the new UX01 Dialog (focus trap, focus return, Escape, aria-modal) per the unparking
+  note. Full clause-to-test mapping, fault→RED tables, every round's verbatim reviewer report and
+  this update's regression writeup: `docs/certifications/submissions/2026-10-22T0119Z-FTF-UX02-r2.md`.
+  Shift log: `docs/progress/2026-10-23T1318Z-relay.md`.
 - **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
 - **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.

@@ -30762,3 +30762,77 @@ diagnosed and documented, not fixed in place, since nothing in that PR's own dif
 no landed fix for the shared SeaweedFS-fixture issue exists yet to port. No new `BLOCKER.md` entry
 (not systemic -- every other PR and job is unaffected). No new "Owner actions" line. Certified/
 product-true counts unchanged.
+
+## 2026-10-23T1318Z -- Scheduled relay shift -- FTF-UX02 round 2 (PR #947): round-3 closed, regression fixed, pushed for CI
+
+STEP 0/0.1/0.2 clean (hash matched, no cognee-cli). Control plane's PR #995 (merged 12:06:30Z,
+head `2e69212`, already on `main` before this shift) unparked QUEUE.md item 0k (FTF-UX02 round 2,
+PR #947) with explicit next steps: close pre-review round 3's two remaining items, check
+`docs/operations/l2-review-brief.md` item 8, merge main, mark ready, merge on green -- no new
+independent-reviewer round, since round 3 already found "the code is correct on every user-facing
+path I probed". Confirmed PR #947 was still untouched since the park (head `c61e406`) -- genuinely
+unclaimed.
+
+Closed round 3's two items on `relay/FTF-UX02-r2`: 4 exact-string assertions for the Arabic
+retry-family phrases (`retry`, `networkErrorRetryable`, `requestFailedRetryable`,
+`responseMalformedRetryable`), each confirmed RED on a mutated string and GREEN restored; and
+corrected the submission's stale FTF-0500A H1/H9 table cells to reflect round 2's own fixes, not
+just round 1's.
+
+Merged current `main` in (one real, purely-additive conflict in `phrases.ts`, 0 duplicate keys).
+Re-running the FULL `apps/web` suite after the merge (not just this item's own three parent
+suites, per l2-review-brief item 6's Law 15 regression check) surfaced a real cross-area
+regression: round 1's own `Field.tsx` fix (shared `<label>` `display: block`) left `Field`'s
+`<input>` without the `--target-min` floor every other raw input/select in this repo already
+applies by hand, so it fell under the WCAG 2.2 2.5.8 24x24 CSS px minimum -- caught by
+`ftf_ux06_browser.spec.ts`'s real-Chromium axe check on FTF-UX06's `#field-category` (6/52
+failing). Independently confirmed real (reproduces on the merged head, not on a clean, unmodified
+`main` checkout in the same sandbox, 3/3 runs) before fixing: `Field`'s `<input>` now carries
+`minBlockSize: "var(--target-min)"` (caller style wins), with two new regression tests in the
+shared-component suite `ftf_ux01_r4.spec.ts`, each confirmed RED on the pre-fix code and GREEN
+restored. `ftf_ux06_browser.spec.ts`: 52/52 again.
+
+Full verification on the merged head (gitignored `dist/` removed first, this item's own documented
+precedent for this failure class): typecheck/lint/format all clean; `product_truth_check.py
+--fail-on-unwired` 49/49 unchanged; full repo `pnpm exec vitest run` -- 32 test files, 3069/3069
+tests passing, with only the 2 already-known pre-existing/environment-dependent `ftf_ux01*`
+CSS-parse failures (0 tests each), independently reconfirmed on a clean main checkout in this same
+sandbox. Pushed (`c61e406` -> `449d32e`), updated PR #947's body with the full writeup, marked it
+ready for review (was draft), subscribed to its activity. `ci-verdict` is running on the new head
+as of this shift's end -- not yet green, so not merged this shift; this session stays subscribed
+to merge on green or diagnose any red job.
+
+STEP 3: this file and the shift log `docs/progress/2026-10-23T1318Z-relay.md` (plain docs-only PR,
+not `[relay]`-titled; `docs/certifications/queue.md` and PR #947 itself untouched by this branch).
+STEP 4: no stop condition reached yet -- CI still running on PR #947; staying subscribed to finish
+"merge on green" per the Control-plane instruction. No new `BLOCKER.md` entry. No new "Owner
+actions" line. Certified/product-true counts unchanged (PR #947 still PROVISIONAL, unmerged).
+
+## 2026-10-23T1525Z -- Scheduled relay shift (continued) -- FTF-UX02 round 2 merged (#947), queue.md appended
+
+`ci-verdict` went green on PR #947's head `449d32e` (83/83 jobs, `gate` 1510 steps, `mutation-gate`,
+`secret-scanning`, 76 integration jobs) with `mergeable_state: clean` and no open review threads --
+merged as `b264be1` (merge commit, per repo convention). Unsubscribed from PR #947's activity
+(harness auto-unsubscribes on merge besides).
+
+The docs-only shift log PR (#999, same designated branch) then needed a fresh base (main had moved
+past its own CI run's base to include PR #947's merge, per the "fresh base before merging" rule):
+merged current `main` in, pushed, waited for the new run's own `ci-verdict` (`gate`/`secret-scanning`
+green, everything else correctly skipped on a 2-file docs diff) and merged it too, as `64bb664`.
+
+Appended the required `docs/certifications/queue.md` entry for Control plane
+("## 2026-10-23T1420Z -- PROVISIONAL: FTF-UX02 round 2 merged (#947); regression found and fixed in
+shared Field") summarizing round 3's closure, the Field.tsx regression found/fixed, and the final
+green CI -- this is the one shared-file edit this shift makes directly (not via a `[relay]`-titled
+PR; the relay-PR-edits-shared-files prohibition is about PR #947 itself, which stayed clean of it).
+Restarted the designated branch `claude/wizardly-fermat-nxhnal` from the now-current `main`
+(it had just been merged via #999, so there was nothing to carry forward) and pushed this entry from
+there, per the "designated branch already merged -> restart from main" rule.
+
+STEP 3: this file and `docs/certifications/queue.md` (the one shared-file edit this shift makes,
+appending only -- no existing entry touched). STEP 4 stop condition: single-item outcome --
+FTF-UX02 round 2 (QUEUE.md item 0k) is now merged to `main`, PROVISIONAL, awaiting Control-plane L2
+certification; nothing further for relay on this item until that review lands or returns it. No new
+`BLOCKER.md` entry. No new "Owner actions" line. Certified count unchanged (merge != certification,
+Law 4); product-true count to be recomputed by Control plane's own review (this item touches no
+`proving_symbol`, so product_truth_check's 49/49 should stay unchanged).
