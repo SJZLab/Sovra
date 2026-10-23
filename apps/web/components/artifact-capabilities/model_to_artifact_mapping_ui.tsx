@@ -109,6 +109,7 @@ import {
   networkError,
   uiError,
   useRefocusAfter,
+  useSingleFlight,
   type UiError,
 } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
@@ -319,7 +320,12 @@ export function ModelToArtifactMappingUI({
   const armArtifactsFocus = useRefocusAfter(loadingArtifacts);
   const armChangesFocus = useRefocusAfter(loadingChanges);
 
+  const mappingFlight = useSingleFlight();
+  const artifactsFlight = useSingleFlight();
+  const changesFlight = useSingleFlight();
+
   async function handleLoadMapping() {
+    if (!mappingFlight.begin()) return;
     armMappingFocus(() => triggerOf("load-mapping-button"));
     setLoadingMapping(true);
     setMappingError(null);
@@ -348,11 +354,19 @@ export function ModelToArtifactMappingUI({
       setMapping(null);
       setMappingError(networkError(caught, locale));
     } finally {
+      mappingFlight.end();
       setLoadingMapping(false);
     }
   }
 
+  // A failed reload must not leave the previous list (and a selection made from it) beside the error.
+  function clearArtifacts() {
+    setArtifacts([]);
+    setSelectedArtifactId(null);
+  }
+
   async function handleLoadArtifacts() {
+    if (!artifactsFlight.begin()) return;
     armArtifactsFocus(() => triggerOf("load-artifacts-button"));
     setArtifactsError(null);
     setArtifactsLoaded(false);
@@ -363,25 +377,33 @@ export function ModelToArtifactMappingUI({
         credentials: "include",
       });
       if (!response.ok) {
+        clearArtifacts();
         setArtifactsError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!Array.isArray(body) || !body.every(isMappedArtifact)) {
+        clearArtifacts();
         setArtifactsError(uiError(phrase("mappingMalformedArtifactListing", locale)));
         return;
       }
       setArtifacts(body);
       setArtifactsLoaded(true);
     } catch (caught) {
+      clearArtifacts();
       setArtifactsError(networkError(caught, locale));
     } finally {
+      artifactsFlight.end();
       setLoadingArtifacts(false);
     }
   }
 
   async function handleLoadChanges() {
+    if (!changesFlight.begin()) return;
     armChangesFocus(() => triggerOf("load-changes-button"));
+    // Cleared up front: the previous history (or its "no changes" empty state) is not the answer to
+    // this request, and must not sit beside a failure or a spinner.
+    setChanges(null);
     setChangesError(null);
     setLoadingChanges(true);
     try {
@@ -406,6 +428,7 @@ export function ModelToArtifactMappingUI({
     } catch (caught) {
       setChangesError(networkError(caught, locale));
     } finally {
+      changesFlight.end();
       setLoadingChanges(false);
     }
   }

@@ -393,6 +393,19 @@ export const PHRASES = {
     en: "This model alias has not been mapped, changed or removed yet. Reload the history after the first change.",
     ar: "لم يتم ربط اسم هذا النموذج أو تغييره أو إزالته بعد. أعد تحميل السجل بعد أول تغيير.",
   },
+  recoverySignIn: {
+    en: "Your session may have expired. Sign in again, or ask an administrator for access.",
+    ar: "ربما انتهت جلستك. سجّل الدخول مرة أخرى أو اطلب الوصول من المسؤول.",
+  },
+  recoveryRejected: {
+    en: "The server did not accept this request. Reload the page and check what you entered.",
+    ar: "لم يقبل الخادم هذا الطلب. أعد تحميل الصفحة وتحقق مما أدخلته.",
+  },
+  recoveryThrottled: {
+    en: "Too many requests. Wait a moment, then try again.",
+    ar: "طلبات كثيرة جدًا. انتظر قليلًا ثم حاول مرة أخرى.",
+  },
+  costProfileCreated: { en: "Rate recorded.", ar: "تم تسجيل السعر." },
 } as const satisfies Record<string, Record<Locale, string>>;
 
 /** `{name}` placeholders in a catalogue string are replaced from `vars`; nothing else is touched

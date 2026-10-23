@@ -91,6 +91,7 @@ import {
   networkError,
   uiError,
   useRefocusAfter,
+  useSingleFlight,
   type UiError,
 } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
@@ -258,7 +259,13 @@ export function CostProfileSearchPanel({
 }: CostProfilePanelProps) {
   const [search, setSearch] = useState<CostPerSuccessSearchResponse | null>(null);
   const [error, setError] = useState<UiError | null>(null);
-  const [loading, setLoading] = useState(false);
+  // The mount effect starts the first search at once: begin in the loading state so the first
+  // frame never shows "cheapest rate unknown" and a Reload button for a search that is under way.
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const retryFlight = useSingleFlight();
+  const createFlight = useSingleFlight();
+  const verifyFlight = useSingleFlight();
 
   const [profileType, setProfileType] = useState<ProfileType>("provider");
   const [label, setLabel] = useState("");
@@ -277,22 +284,25 @@ export function CostProfileSearchPanel({
     return panelRef.current?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null;
   }
 
-  async function refresh() {
+  /** `afterWrite`: the write this refresh follows DID succeed, so a failure to read the list must
+   * not be presented as if nothing happened -- the recovery is to check the current state. */
+  async function refresh(afterWrite = false) {
     setLoading(true);
     setError(null);
+    const failure = (e: UiError): UiError => (afterWrite ? { ...e, kind: "verify-state" } : e);
     try {
       const response = await fetch(costPerSuccessSearchUrl(apiBaseUrl, organizationId, projectId), {
         credentials: "include",
       });
       if (!response.ok) {
         setSearch(null);
-        setError(await readErrorDetail(response, locale));
+        setError(failure(await readErrorDetail(response, locale)));
         return;
       }
       const body: unknown = await response.json();
       if (!isSearchResponse(body)) {
         setSearch(null);
-        setError(uiError(phrase("costProfileMalformedSearchResponse", locale)));
+        setError(failure(uiError(phrase("costProfileMalformedSearchResponse", locale))));
         return;
       }
       setSearch(body);
@@ -300,7 +310,7 @@ export function CostProfileSearchPanel({
       // A rejected fetch or a body that is not JSON: the previous result may be stale, and
       // "no certified cheapest rate" must never be shown for a search that did not complete.
       setSearch(null);
-      setError(networkError(caught, locale));
+      setError(networkError(caught, locale, { write: afterWrite }));
     } finally {
       setLoading(false);
     }
@@ -312,6 +322,8 @@ export function CostProfileSearchPanel({
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!createFlight.begin()) return;
+    setNotice(null);
     armSaveFocus(() => inPanel("cost-profile-submit-button"));
     armSearchFocus(() => inPanel("cost-per-success-search-results"));
     setSaving(true);
@@ -347,20 +359,25 @@ export function CostProfileSearchPanel({
       setRateAmount("");
       setSource("");
       onCreated?.(created);
-      await refresh();
+      setNotice(phrase("costProfileCreated", locale));
+      await refresh(true);
     } catch (caught) {
       setError(networkError(caught, locale, { write: true }));
     } finally {
+      createFlight.end();
       setSaving(false);
     }
   }
 
   function retrySearch() {
+    if (!retryFlight.begin()) return;
     armSearchFocus(() => inPanel("cost-per-success-search-results"));
-    void refresh();
+    void refresh().finally(retryFlight.end);
   }
 
   async function handleVerify(costProfileId: string) {
+    if (!verifyFlight.begin()) return;
+    setNotice(null);
     armSearchFocus(
       () =>
         inPanel(`cost-profile-result-${costProfileId}`) ??
@@ -374,13 +391,16 @@ export function CostProfileSearchPanel({
       );
       if (!response.ok) {
         setError(await readErrorDetail(response, locale));
+        verifyFlight.end();
         return;
       }
     } catch (caught) {
       setError(networkError(caught, locale, { write: true }));
+      verifyFlight.end();
       return;
     }
-    await refresh();
+    await refresh(true);
+    verifyFlight.end();
   }
 
   return (
@@ -473,6 +493,11 @@ export function CostProfileSearchPanel({
           required
         />
 
+        {notice && (
+          <p role="status" data-testid="cost-profile-created-notice">
+            {notice}
+          </p>
+        )}
         {error && <AlertMessage error={error} locale={locale} testId="cost-profile-form-error" />}
 
         <Button

@@ -5,7 +5,15 @@ import { phrase, type Locale } from "./phrases";
  * is wrong advice for a 403 (ask for access), a 409 (reload first), a missing selection (select
  * it), or a write whose outcome is unknown (check the current state before re-running it).
  */
-export type RecoveryKind = "retry" | "verify-state" | "permission" | "conflict" | "input";
+export type RecoveryKind =
+  | "retry"
+  | "verify-state"
+  | "permission"
+  | "signin"
+  | "conflict"
+  | "input"
+  | "rejected"
+  | "throttled";
 
 export interface UiError {
   message: string;
@@ -18,8 +26,11 @@ export function uiError(message: string, kind: RecoveryKind = "retry"): UiError 
 
 /** The recovery kind a failed HTTP status implies. */
 export function kindForStatus(status: number): RecoveryKind {
-  if (status === 401 || status === 403) return "permission";
+  if (status === 401) return "signin";
+  if (status === 403) return "permission";
   if (status === 409) return "conflict";
+  if (status === 429) return "throttled";
+  if (status === 400 || status === 404 || status === 422) return "rejected";
   return "retry";
 }
 

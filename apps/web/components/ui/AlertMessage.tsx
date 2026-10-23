@@ -7,6 +7,9 @@ const RECOVERY_PHRASE = {
   retry: "errorRecoveryStep",
   "verify-state": "recoveryVerifyState",
   permission: "recoveryPermission",
+  signin: "recoverySignIn",
+  rejected: "recoveryRejected",
+  throttled: "recoveryThrottled",
   conflict: "recoveryConflict",
   input: "recoveryInput",
 } as const;

@@ -11,4 +11,5 @@ export * from "./focus";
 export * from "./Pending";
 export * from "./StatusBadge";
 export * from "./phrases";
+export * from "./singleflight";
 export * from "./text";

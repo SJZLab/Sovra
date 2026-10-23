@@ -161,6 +161,7 @@ import {
   networkError,
   uiError,
   useRefocusAfter,
+  useSingleFlight,
   type UiError,
 } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
@@ -384,7 +385,17 @@ export function ModelCatalogUI({
   const armProjectsFocus = useRefocusAfter(loadingProjects);
   const armCatalogFocus = useRefocusAfter(loadingCatalog);
 
+  const projectsFlight = useSingleFlight();
+  const catalogFlight = useSingleFlight();
+
+  // A failed reload must not leave the previous list (and a selection made from it) beside the error.
+  function clearProjects() {
+    setProjects([]);
+    setSelectedProjectId(null);
+  }
+
   async function handleLoadProjects() {
+    if (!projectsFlight.begin()) return;
     armProjectsFocus(() => triggerOf("load-projects-button"));
     setLoadingProjects(true);
     setProjectsError(null);
@@ -395,19 +406,23 @@ export function ModelCatalogUI({
         credentials: "include",
       });
       if (!response.ok) {
+        clearProjects();
         setProjectsError(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!Array.isArray(body) || !body.every(isProjectSummary)) {
+        clearProjects();
         setProjectsError(uiError(phrase("catalogMalformedProjectListing", locale)));
         return;
       }
       setProjects(body);
       setProjectsLoaded(true);
     } catch (caught) {
+      clearProjects();
       setProjectsError(networkError(caught, locale));
     } finally {
+      projectsFlight.end();
       setLoadingProjects(false);
     }
   }
@@ -421,6 +436,7 @@ export function ModelCatalogUI({
       setCatalogError(uiError(phrase("catalogSelectProjectFirst", locale), "input"));
       return;
     }
+    if (!catalogFlight.begin()) return;
     armCatalogFocus(() => triggerOf("load-catalog-button"));
     setLoadingCatalog(true);
     setCatalogError(null);
@@ -453,6 +469,7 @@ export function ModelCatalogUI({
       setCatalog(null);
       setCatalogError(networkError(caught, locale));
     } finally {
+      catalogFlight.end();
       setLoadingCatalog(false);
     }
   }
