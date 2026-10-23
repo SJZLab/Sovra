@@ -80,9 +80,11 @@ jobs:
 
   ftf0904-fault-matrix:
     # FTF-0904 fault matrix: every fault in tests/tasks/test_ftf_0904.py FAULTS is applied to a
-    # copy of packages/security/log_redaction.py and must turn the behavioural suite RED. It runs
-    # whenever one of its inputs changes (same rule the gate step used, owner-approved
-    # 2026-10-21), split into 8 shards that together run every fault exactly once
+    # copy of packages/security/log_redaction.py and must turn the behavioural suite RED (each copy
+    # runs fail-fast: it stops at its first failing check). It runs whenever the redactor or its
+    # test file changes -- its only inputs: the redactor is stdlib-only, so ci.yml, pyproject.toml
+    # and uv.lock cannot change its result (owner-approved 2026-10-23) -- split into 8 shards that
+    # together run every fault exactly once
     # (test_fault_shards_partition_the_matrix). Inputs unchanged: each shard exits at once, so the
     # job is never skipped and ci-verdict needs no exemption for it.
     runs-on: ubuntu-latest
@@ -102,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
-          if printf '%s\n' "$changed" | grep -qE '^(packages/security/|tests/tasks/test_ftf_0904\.py$|\.github/workflows/ci\.yml$|pyproject\.toml$|uv\.lock$)'; then
+          if printf '%s\n' "$changed" | grep -qE '^(packages/security/|tests/tasks/test_ftf_0904\.py$)'; then
             echo "FTF-0904 inputs changed: running fault shard ${{ matrix.shard }}/8"
             echo "run=true" >> "$GITHUB_OUTPUT"
           else

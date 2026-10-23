@@ -62,9 +62,18 @@ MODULE = REAL_ROOT / "packages" / "security" / "log_redaction.py"
 FAILURES: list[str] = []
 
 
+# A fault-injected copy only has to show that SOME check fails, so each copy runs fail-fast and
+# stops at its first failure. A copy that no check catches still runs every check, so a surviving
+# fault is still reported (and still fails the matrix); only caught faults get cheaper.
+FAIL_FAST = os.environ.get("FTF0904_FAIL_FAST") == "1"
+
+
 def check(criterion_id: str, description: str, condition: bool) -> None:
     if not condition:
         FAILURES.append(f"FAIL [{criterion_id}] {description}")
+        if FAIL_FAST:
+            print(f"FTF-0904 fail-fast: {FAILURES[-1]}", flush=True)
+            os._exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -4165,6 +4174,7 @@ def _run_mutant(fault_id: str, old: str, new: str, count: int) -> tuple[bool, st
             **os.environ,
             "FTF0904_ROOT": tmp,
             "FTF0904_BEHAVIOUR_ONLY": "1",
+            "FTF0904_FAIL_FAST": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         try:
