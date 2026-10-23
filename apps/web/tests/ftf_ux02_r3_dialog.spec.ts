@@ -19,18 +19,15 @@ function Harness({ locale }: { locale?: "en" | "ar" }): ReactElement {
     "div",
     null,
     createElement("button", { type: "button", "data-testid": "opener" }, "open"),
-    createElement(
-      Dialog,
-      {
-        open,
-        onOpenChange: setOpen,
-        title: "Abandon this draft?",
-        description: "This cannot be undone.",
-        locale,
-        "data-testid": "dlg",
-      },
-      createElement("button", { type: "button" }, "Keep"),
-    ),
+    createElement(Dialog, {
+      open,
+      onOpenChange: setOpen,
+      title: "Abandon this draft?",
+      description: "This cannot be undone.",
+      locale,
+      "data-testid": "dlg",
+      children: createElement("button", { type: "button" }, "Keep"),
+    }),
   );
 }
 

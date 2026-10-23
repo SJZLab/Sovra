@@ -38,7 +38,24 @@
  * mocked `fetch`) and UNWIRED to a page.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
+
+import {
+  AlertMessage,
+  Button,
+  EmptyState,
+  Field,
+  Pending,
+  dirFor,
+  kindForStatus,
+  networkError,
+  resolveLocale,
+  uiError,
+  useRefocusAfter,
+  type Locale,
+  type UiError,
+} from "../ui";
+import { SERVER_DETAIL_CODES, t0516, word, type Key0516 } from "./strings_0516";
 
 export type IssueAction = "exclude" | "correct" | "new_version" | "waive";
 export type IssueSeverity = "blocking" | "warning";
@@ -104,6 +121,8 @@ export interface DatasetIssueResolutionUIProps {
   organizationId: string;
   projectId: string;
   datasetId: string;
+  /** System-string language (FTF-UX02 round 3); "ar" renders right-to-left. Default "en". */
+  locale?: Locale;
 }
 
 const REASON_MAX = 2000;
@@ -143,45 +162,34 @@ export function resolveUrl(base: string): string {
   return `${base}/resolve-issue`;
 }
 
-const ERROR_MESSAGES: Record<string, string> = {
-  not_found: "The dataset or issue was not found.",
-  quality_report_not_found: "No quality report has been recorded for this dataset yet.",
-  invalid_body: "The server rejected the decision as malformed.",
-  positions_not_in_issue: "The selected positions are not part of this issue.",
-  waive_not_permitted: "Your role may not waive an issue.",
-  report_version_conflict:
-    "The decisions changed since this screen was loaded. Reload and review again.",
-  report_superseded: "A newer quality report exists. Reload and review again.",
-  issue_already_decided: "This issue already has a decision.",
-  waiver_not_allowed_for_blocking: "A blocking issue cannot be waived.",
-  detector_failure_requires_rerun: "A detector failure requires a rerun, not a decision.",
-  evidence_mismatch: "The issue evidence changed since this screen was loaded. Reload.",
-  successor_not_revalidated: "The successor dataset has not been revalidated.",
-  successor_not_later_version: "The successor must be a later version of this dataset.",
-  idempotency_key_reused: "That request key was already used for a different decision.",
-  request_too_large: "The request was too large.",
-};
-
-async function readErrorDetail(response: Response): Promise<string> {
+/**
+ * A failed HTTP reply as a localized, typed error. A known server `detail` code gets the catalogue
+ * text; an unknown one shows the server's own text in English (the pre-UX02 behaviour) but never
+ * under another locale, where it is replaced by a localized refusal (no English in an Arabic
+ * render). `code` lets the caller react to a specific refusal without matching display text.
+ */
+async function readFailure(
+  response: Response,
+  locale: Locale,
+): Promise<{ error: UiError; code: string | null }> {
+  const kind = kindForStatus(response.status);
   try {
     const body: unknown = await response.json();
     if (isRecord(body) && typeof body.detail === "string") {
-      return ERROR_MESSAGES[body.detail] ?? body.detail;
+      const code = body.detail;
+      if ((SERVER_DETAIL_CODES as readonly string[]).includes(code)) {
+        return { error: uiError(t0516(code as Key0516, locale), kind), code };
+      }
+      const text = resolveLocale(locale) === "en" ? code : t0516("unknownDetail", locale);
+      return { error: uiError(text, kind), code };
     }
   } catch {
     // fall through to the generic message
   }
-  return `request failed (${response.status})`;
-}
-
-function networkErrorMessage(caught: unknown): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
-}
-
-function shown(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "not recorded";
-  return String(value);
+  return {
+    error: uiError(t0516("requestFailed", locale, { status: response.status }), kind),
+    code: null,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -420,9 +428,14 @@ export function validReason(reason: string): string | null {
 }
 
 /** Why the issue offers no decision at all, or null when it is open and decidable. */
-export function undecidableReason(issue: DatasetQualityIssue): string | null {
-  if (issue.state !== "open") return `Already ${issue.state}; a decision cannot be changed here.`;
-  if (issue.is_detector_failure) return "A detector failure requires a rerun, not a decision.";
+export function undecidableReason(
+  issue: DatasetQualityIssue,
+  locale: Locale = "en",
+): string | null {
+  if (issue.state !== "open") {
+    return t0516("alreadyDecided", locale, { state: word("state", issue.state, locale) });
+  }
+  if (issue.is_detector_failure) return t0516("detectorFailure", locale);
   return null;
 }
 
@@ -494,16 +507,52 @@ function newKey(): string {
   return `ftf-0516-${globalThis.crypto.randomUUID()}`;
 }
 
+/** A server-supplied identifier (digest, id, code, timestamp): data, never translated, isolated LTR and wrapped. */
+function Data({ children }: { children: ReactNode }) {
+  return (
+    <bdi dir="ltr" style={{ overflowWrap: "anywhere" }}>
+      {children}
+    </bdi>
+  );
+}
+
+/** Renders a catalogue template with ReactNode values at its `{name}` slots (the text is the template's). */
+function Tpl({ k, locale, vars }: { k: Key0516; locale: Locale; vars: Record<string, ReactNode> }) {
+  const parts = t0516(k, locale).split(/(\{\w+\})/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const name = /^\{(\w+)\}$/.exec(part)?.[1];
+        return name !== undefined && Object.hasOwn(vars, name) ? (
+          <Fragment key={i}>{vars[name]}</Fragment>
+        ) : (
+          part
+        );
+      })}
+    </>
+  );
+}
+
+const WRAP = { overflowWrap: "anywhere", minInlineSize: 0 } as const;
+const CONTROL_STYLE = {
+  boxSizing: "border-box",
+  inlineSize: "100%",
+  maxInlineSize: "100%",
+  minBlockSize: "var(--target-min)",
+} as const;
+const BLOCK_LABEL = { display: "block", marginBlockEnd: "var(--space-1)" } as const;
+
 export function DatasetIssueResolutionUI({
   apiBaseUrl,
   organizationId,
   projectId,
   datasetId,
+  locale = "en",
 }: DatasetIssueResolutionUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, projectId, datasetId]);
   const base = datasetBase(apiBaseUrl, organizationId, projectId, datasetId);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -511,6 +560,23 @@ export function DatasetIssueResolutionUI({
   const [recorded, setRecorded] = useState<DatasetIssueResolution | null>(null);
   const latestRequest = useRef(0);
   const attempt = useRef<{ body: string; key: string } | null>(null);
+  const t = (key: Key0516, vars?: Record<string, string | number>) => t0516(key, locale, vars);
+  const problemsId = useId();
+  const rationaleId = useId();
+  const actionId = useId();
+
+  // A control that disables itself while its request is in flight loses focus to <body>; give it
+  // back (UX01 `useRefocusAfter`), and move focus to the outcome (the failure alert, or the
+  // recorded decision) so a keyboard user is never dropped on <body> after a failed or finished request.
+  const armRefocus = useRefocusAfter(loading || submitting);
+  useEffect(() => {
+    if (error) document.querySelector<HTMLElement>('[data-testid="dir-error"]')?.focus();
+  }, [error]);
+  useEffect(() => {
+    if (recorded) {
+      document.querySelector<HTMLElement>('[data-testid="recorded-decision"]')?.focus();
+    }
+  }, [recorded]);
 
   // A different api/org/project/dataset invalidates everything before the next commit (no frame
   // with a stale decision control) and every in-flight response (its request number is stale).
@@ -532,9 +598,9 @@ export function DatasetIssueResolutionUI({
 
   async function fetchJson(
     url: string,
-  ): Promise<{ ok: true; body: unknown } | { ok: false; message: string }> {
+  ): Promise<{ ok: true; body: unknown } | { ok: false; error: UiError }> {
     const response = await fetch(url, { method: "GET", credentials: "include" });
-    if (!response.ok) return { ok: false, message: await readErrorDetail(response) };
+    if (!response.ok) return { ok: false, error: (await readFailure(response, locale)).error };
     return { ok: true, body: await response.json() };
   }
 
@@ -553,7 +619,7 @@ export function DatasetIssueResolutionUI({
       for (const reply of [reportReply, issuesReply, resolutionsReply]) {
         if (!reply.ok) {
           setLoaded(null);
-          setError(reply.message);
+          setError(reply.error);
           return false;
         }
       }
@@ -563,7 +629,7 @@ export function DatasetIssueResolutionUI({
       const resolutions = parseResolutionPage(resolutionsReply.body);
       if (report === null || page === null || resolutions === null) {
         setLoaded(null);
-        setError("malformed quality response");
+        setError(uiError(t("malformed")));
         return false;
       }
       if (
@@ -571,7 +637,7 @@ export function DatasetIssueResolutionUI({
         page.items.some((issue) => issue.report_id !== report.id)
       ) {
         setLoaded(null);
-        setError("quality response does not match the request");
+        setError(uiError(t("mismatch")));
         return false;
       }
       setLoaded({ report, issues: page.items, next: page.next, resolutions });
@@ -579,7 +645,7 @@ export function DatasetIssueResolutionUI({
     } catch (caught) {
       if (!stale()) {
         setLoaded(null);
-        setError(networkErrorMessage(caught));
+        setError(networkError(caught, locale));
       }
       return false;
     } finally {
@@ -597,21 +663,21 @@ export function DatasetIssueResolutionUI({
       const reply = await fetchJson(issuesUrl(base, loaded.next));
       if (stale()) return;
       if (!reply.ok) {
-        setError(reply.message);
+        setError(reply.error);
         return;
       }
       const page = parseIssuePage(reply.body);
       if (page === null) {
-        setError("malformed quality response");
+        setError(uiError(t("malformed")));
         return;
       }
       if (page.items.some((issue) => issue.report_id !== loaded.report.id)) {
-        setError("quality response does not match the request");
+        setError(uiError(t("mismatch")));
         return;
       }
       setLoaded({ ...loaded, issues: [...loaded.issues, ...page.items], next: page.next });
     } catch (caught) {
-      if (!stale()) setError(networkErrorMessage(caught));
+      if (!stale()) setError(networkError(caught, locale));
     } finally {
       if (!stale()) setLoading(false);
     }
@@ -627,19 +693,18 @@ export function DatasetIssueResolutionUI({
   const needsSuccessor = draft.action === "correct" || draft.action === "new_version";
   const problems: string[] = [];
   if (issue) {
-    if (!allowedActions(issue).includes(draft.action))
-      problems.push("This action is not available for this issue.");
+    if (!allowedActions(issue).includes(draft.action)) problems.push(t("problemAction"));
     if (reason === null) {
       problems.push(
         draft.reason.trim() === ""
-          ? "A rationale is required."
-          : `The rationale must be at most ${REASON_MAX} characters.`,
+          ? t("problemRationaleRequired")
+          : t("problemRationaleTooLong", { max: REASON_MAX }),
       );
     }
     if (draft.action === "exclude" && draft.positions.length === 0) {
-      problems.push("Select at least one position to exclude.");
+      problems.push(t("problemPositions"));
     }
-    if (needsSuccessor && !successorOk) problems.push("A successor dataset id (UUID) is required.");
+    if (needsSuccessor && !successorOk) problems.push(t("problemSuccessor"));
   }
   // A submit during a reload would supersede it (stuck "Loading..."); decide on settled data only.
   const canSubmit = !!issue && !!loaded && problems.length === 0 && !submitting && !loading;
@@ -685,6 +750,7 @@ export function DatasetIssueResolutionUI({
     const key = attempt.current.key;
     const request = ++latestRequest.current;
     const stale = () => request !== latestRequest.current;
+    armRefocus(() => document.querySelector<HTMLElement>('[data-testid="dir-error"]'));
     setSubmitting(true);
     setError(null);
     setRecorded(null);
@@ -696,10 +762,15 @@ export function DatasetIssueResolutionUI({
         body: JSON.stringify({ ...JSON.parse(bodyText), idempotency_key: key }),
       });
       if (!response.ok) {
-        const message = await readErrorDetail(response);
+        const failure = await readFailure(response, locale);
         if (!stale()) {
-          if (/idempotency_key_reused|already used/.test(message)) attempt.current = null;
-          setError(message);
+          if (
+            failure.code === "idempotency_key_reused" ||
+            /idempotency_key_reused|already used/.test(failure.error.message)
+          ) {
+            attempt.current = null;
+          }
+          setError(failure.error);
         }
         return;
       }
@@ -719,7 +790,7 @@ export function DatasetIssueResolutionUI({
         decision === null ||
         !decisionMatchesRequest(decision, expected)
       ) {
-        setError("resolution response does not match the request");
+        setError(uiError(t("resolutionMismatch"), "verify-state"));
         return;
       }
       attempt.current = null;
@@ -730,7 +801,7 @@ export function DatasetIssueResolutionUI({
       await load();
       return;
     } catch (caught) {
-      if (!stale()) setError(networkErrorMessage(caught));
+      if (!stale()) setError(networkError(caught, locale, { write: true }));
     } finally {
       if (!stale()) setSubmitting(false);
     }
@@ -745,144 +816,372 @@ export function DatasetIssueResolutionUI({
     }));
   }
 
+  // Identifiers are isolated LTR only where a right-to-left run could reorder them; in LTR they stay
+  // plain text nodes (the certified English suite matches the issue line as one text run).
+  const d = (value: ReactNode) => (resolveLocale(locale) === "ar" ? <Data>{value}</Data> : value);
+  const notRecorded = (value: unknown) =>
+    value === null || value === undefined || value === "" ? t("notRecorded") : String(value);
+  const undecidable = issue ? undecidableReason(issue, locale) : null;
+  const rationaleProblem = problems.find(
+    (p) =>
+      p === t("problemRationaleRequired") ||
+      p === t("problemRationaleTooLong", { max: REASON_MAX }),
+  );
+
   return (
-    <section aria-label="Dataset issue resolution">
-      <h2>Dataset quality issues</h2>
-      <button type="button" onClick={() => void load()} disabled={loading || submitting}>
-        {loading ? "Loading..." : "Load quality report"}
-      </button>
-      {error ? <p role="alert">{error}</p> : null}
+    <section
+      aria-label={t("sectionLabel")}
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
+    >
+      <h2 style={WRAP}>{t("heading")}</h2>
+      {!loaded && !loading && !error ? <p style={WRAP}>{t("intro")}</p> : null}
+      <div>
+        <Button
+          variant="primary"
+          data-testid="load-report-button"
+          onClick={() => {
+            armRefocus();
+            void load();
+          }}
+          disabled={loading || submitting}
+        >
+          {loading ? t("loadingButton") : t("loadButton")}
+        </Button>
+      </div>
+      {loading ? <Pending label={t("loadingReport")} locale={locale} /> : null}
+      {submitting ? <Pending label={t("submittingStatus")} locale={locale} /> : null}
+      {error ? <AlertMessage error={error} locale={locale} testId="dir-error" focusable /> : null}
       {recorded ? (
-        <div role="status" data-testid="recorded-decision">
-          <p>{`Decision recorded: ${recorded.action} (${recorded.engine_decision}) by ${recorded.actor_id} as ${recorded.actor_role}.`}</p>
-          <p>{`Before evidence ${recorded.before_evidence_sha256}; after evidence ${shown(recorded.after_evidence_sha256)}.`}</p>
+        <div
+          role="status"
+          tabIndex={-1}
+          data-testid="recorded-decision"
+          style={{
+            ...WRAP,
+            borderInlineStart: "4px solid var(--color-success)",
+            paddingInlineStart: "var(--space-3)",
+          }}
+        >
+          <p>
+            <Tpl
+              k="recordedHeadline"
+              locale={locale}
+              vars={{
+                action: word("action", recorded.action, locale),
+                engine: word("state", recorded.engine_decision, locale),
+                actor: d(recorded.actor_id),
+                role: word("role", recorded.actor_role, locale),
+              }}
+            />
+          </p>
+          <p>
+            <Tpl
+              k="recordedEvidence"
+              locale={locale}
+              vars={{
+                before: d(recorded.before_evidence_sha256),
+                after: d(notRecorded(recorded.after_evidence_sha256)),
+              }}
+            />
+          </p>
         </div>
       ) : null}
       {loaded ? (
-        <div>
-          <dl data-testid="report">
-            <dt>Dataset version</dt>
-            <dd>{loaded.report.dataset_version}</dd>
-            <dt>Report</dt>
-            <dd>{`#${loaded.report.report_seq} ${loaded.report.report_sha256}`}</dd>
-            <dt>Issues</dt>
-            <dd>{`${loaded.report.issue_count} (${loaded.report.blocking_count} blocking, ${loaded.report.warning_count} warning)`}</dd>
-            <dt>Blocks split</dt>
-            <dd>{loaded.report.blocks_split ? "yes" : "no"}</dd>
-            <dt>Blocks training</dt>
-            <dd>{loaded.report.blocks_training ? "yes" : "no"}</dd>
-            <dt>Resolution version</dt>
-            <dd>{loaded.report.resolution_version}</dd>
+        <div style={{ display: "grid", gap: "var(--space-3)", minInlineSize: 0 }}>
+          <dl
+            data-testid="report"
+            style={{ display: "grid", gap: "var(--space-1)", margin: 0, ...WRAP }}
+          >
+            <dt>{t("reportVersion")}</dt>
+            <dd style={{ margin: 0 }}>{loaded.report.dataset_version}</dd>
+            <dt>{t("reportReport")}</dt>
+            <dd style={{ margin: 0 }}>
+              <Tpl
+                k="reportValue"
+                locale={locale}
+                vars={{
+                  seq: loaded.report.report_seq,
+                  sha: d(loaded.report.report_sha256),
+                }}
+              />
+            </dd>
+            <dt>{t("reportIssues")}</dt>
+            <dd style={{ margin: 0 }}>
+              {t("issuesValue", {
+                count: loaded.report.issue_count,
+                blocking: loaded.report.blocking_count,
+                warning: loaded.report.warning_count,
+              })}
+            </dd>
+            <dt>{t("reportBlocksSplit")}</dt>
+            <dd style={{ margin: 0 }}>{loaded.report.blocks_split ? t("yes") : t("no")}</dd>
+            <dt>{t("reportBlocksTraining")}</dt>
+            <dd style={{ margin: 0 }}>{loaded.report.blocks_training ? t("yes") : t("no")}</dd>
+            <dt>{t("reportResolutionVersion")}</dt>
+            <dd style={{ margin: 0 }}>{loaded.report.resolution_version}</dd>
           </dl>
-          <p data-testid="residual-risk">{loaded.report.residual_risk_disclosure}</p>
-          <ul aria-label="Issues">
-            {loaded.issues.map((entry) => (
-              <li key={entry.issue_id} data-testid={`issue-${entry.issue_id}`}>
-                <span>{`${entry.severity} ${entry.detector}/${entry.category}: ${entry.reason_code} [${entry.state}]`}</span>
-                <span>{` positions ${entry.batch_positions.join(", ") || "none"}`}</span>
-                {entry.resolution ? (
-                  <span data-testid={`evidence-${entry.issue_id}`}>
-                    {` before ${entry.resolution.before_evidence_sha256} after ${shown(entry.resolution.after_evidence_sha256)} by ${entry.resolution.actor_id} (${entry.resolution.actor_role}): ${entry.resolution.reason}`}
-                  </span>
-                ) : null}
-                <button
-                  type="button"
+          <p data-testid="residual-risk" style={WRAP}>
+            {loaded.report.residual_risk_disclosure}
+          </p>
+          {loaded.issues.length === 0 && loaded.next === null ? (
+            <EmptyState
+              title={t("emptyIssuesTitle")}
+              why={t("emptyIssuesWhy")}
+              action={
+                <Button
+                  data-testid="empty-reload-button"
                   onClick={() => {
-                    setSelected(entry.issue_id);
-                    setDraft({ ...EMPTY_DRAFT, action: allowedActions(entry)[0] ?? "exclude" });
-                    setRecorded(null);
-                    setError(null);
+                    armRefocus();
+                    void load();
+                  }}
+                  disabled={loading || submitting}
+                >
+                  {t("reloadButton")}
+                </Button>
+              }
+            />
+          ) : (
+            <ul
+              aria-label={t("issuesList")}
+              style={{
+                display: "grid",
+                gap: "var(--space-2)",
+                margin: 0,
+                padding: 0,
+                listStyle: "none",
+              }}
+            >
+              {loaded.issues.map((entry) => (
+                <li
+                  key={entry.issue_id}
+                  data-testid={`issue-${entry.issue_id}`}
+                  style={{
+                    display: "grid",
+                    gap: "var(--space-1)",
+                    padding: "var(--space-2)",
+                    border: "1px solid var(--color-border)",
+                    borderInlineStart: `4px solid ${entry.severity === "blocking" ? "var(--color-danger)" : "var(--color-muted)"}`,
+                    ...WRAP,
                   }}
                 >
-                  {`Review ${entry.issue_id.slice(0, 8)}`}
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <span>
+                    <Tpl
+                      k="issueLine"
+                      locale={locale}
+                      vars={{
+                        severity: word("severity", entry.severity, locale),
+                        detector: d(word("category", entry.detector, locale)),
+                        category: d(word("category", entry.category, locale)),
+                        reason: d(entry.reason_code),
+                        state: word("state", entry.state, locale),
+                      }}
+                    />
+                  </span>
+                  <span>
+                    <Tpl
+                      k="positionsLine"
+                      locale={locale}
+                      vars={{
+                        list: entry.batch_positions.join(", ") || t("none"),
+                      }}
+                    />
+                  </span>
+                  {entry.resolution ? (
+                    <span data-testid={`evidence-${entry.issue_id}`}>
+                      <Tpl
+                        k="decisionLine"
+                        locale={locale}
+                        vars={{
+                          before: d(entry.resolution.before_evidence_sha256),
+                          after: d(notRecorded(entry.resolution.after_evidence_sha256)),
+                          actor: d(entry.resolution.actor_id),
+                          role: word("role", entry.resolution.actor_role, locale),
+                          reason: entry.resolution.reason,
+                        }}
+                      />
+                    </span>
+                  ) : null}
+                  <div>
+                    <Button
+                      onClick={() => {
+                        setSelected(entry.issue_id);
+                        setDraft({ ...EMPTY_DRAFT, action: allowedActions(entry)[0] ?? "exclude" });
+                        setRecorded(null);
+                        setError(null);
+                      }}
+                    >
+                      {t("reviewButton", { id: entry.issue_id.slice(0, 8) })}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
           {loaded.next !== null ? (
-            <button type="button" onClick={() => void loadMore()} disabled={loading || submitting}>
-              Load more issues
-            </button>
+            <div>
+              <Button
+                onClick={() => {
+                  armRefocus();
+                  void loadMore();
+                }}
+                disabled={loading || submitting}
+              >
+                {t("loadMoreButton")}
+              </Button>
+            </div>
           ) : null}
           {issue ? (
             <form
-              aria-label="Resolve issue"
+              aria-label={t("formLabel")}
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleSubmit();
               }}
+              style={{ display: "grid", gap: "var(--space-3)", minInlineSize: 0 }}
             >
-              <p data-testid="selected-issue">{`Issue ${issue.issue_id} (${issue.severity}, evidence ${issue.evidence_sha256})`}</p>
-              {undecidableReason(issue) ? (
-                <p role="note">{undecidableReason(issue)}</p>
+              <p data-testid="selected-issue" style={WRAP}>
+                <Tpl
+                  k="selectedIssue"
+                  locale={locale}
+                  vars={{
+                    id: d(issue.issue_id),
+                    severity: word("severity", issue.severity, locale),
+                    sha: d(issue.evidence_sha256),
+                  }}
+                />
+              </p>
+              {undecidable ? (
+                <p role="note" style={WRAP}>
+                  {undecidable}
+                </p>
               ) : (
-                <div>
-                  <label>
-                    Action
+                <div style={{ display: "grid", gap: "var(--space-3)", minInlineSize: 0 }}>
+                  <div>
+                    <label htmlFor={actionId} style={BLOCK_LABEL}>
+                      {t("actionLabel")}
+                    </label>
                     <select
+                      id={actionId}
                       value={draft.action}
+                      style={CONTROL_STYLE}
                       onChange={(event) =>
                         setDraft({ ...draft, action: event.target.value as IssueAction })
                       }
                     >
                       {allowedActions(issue).map((action) => (
                         <option key={action} value={action}>
-                          {action}
+                          {word("action", action, locale)}
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </div>
                   {draft.action === "exclude" ? (
-                    <fieldset>
-                      <legend>Positions to exclude</legend>
+                    <fieldset style={{ ...WRAP, margin: 0 }}>
+                      <legend>{t("positionsLegend")}</legend>
                       {issue.batch_positions.map((position) => (
-                        <label key={position}>
+                        <label
+                          key={position}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--space-2)",
+                            minBlockSize: "var(--target-min)",
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={draft.positions.includes(position)}
                             onChange={() => togglePosition(position)}
+                            style={{
+                              inlineSize: "var(--target-min)",
+                              blockSize: "var(--target-min)",
+                            }}
                           />
-                          {`position ${position}`}
+                          {t("positionLabel", { n: position })}
                         </label>
                       ))}
                     </fieldset>
                   ) : null}
                   {needsSuccessor ? (
-                    <label>
-                      Successor dataset id
-                      <input
-                        type="text"
-                        value={draft.successor}
-                        onChange={(event) => setDraft({ ...draft, successor: event.target.value })}
-                      />
-                    </label>
+                    <Field
+                      id={`${actionId}-successor`}
+                      label={t("successorLabel")}
+                      helper={t("successorHelper")}
+                      requirement="required"
+                      requirementPlacement="hint"
+                      locale={locale}
+                      type="text"
+                      dir="ltr"
+                      value={draft.successor}
+                      onChange={(event) => setDraft({ ...draft, successor: event.target.value })}
+                      aria-describedby={problems.length > 0 ? problemsId : undefined}
+                      style={CONTROL_STYLE}
+                    />
                   ) : null}
-                  <label>
-                    Rationale
+                  <div>
+                    <label htmlFor={rationaleId} style={BLOCK_LABEL}>
+                      {t("rationaleLabel")}
+                    </label>
+                    <p id={`${rationaleId}-hint`} style={{ margin: 0 }}>
+                      {t("required")} {t("rationaleHint", { max: REASON_MAX })}
+                    </p>
                     <textarea
+                      id={rationaleId}
                       value={draft.reason}
+                      aria-required="true"
+                      aria-invalid={rationaleProblem ? true : undefined}
+                      aria-describedby={`${rationaleId}-hint${problems.length > 0 ? ` ${problemsId}` : ""}`}
+                      style={{ ...CONTROL_STYLE, minBlockSize: "6em" }}
                       onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
                     />
-                  </label>
+                  </div>
                   {problems.length > 0 ? (
-                    <ul aria-label="Why this cannot be submitted">
+                    <ul id={problemsId} aria-label={t("problemsLabel")} style={WRAP}>
                       {problems.map((problem) => (
                         <li key={problem}>{problem}</li>
                       ))}
                     </ul>
                   ) : null}
-                  <button type="submit" disabled={!canSubmit}>
-                    {submitting ? "Submitting..." : "Record decision"}
-                  </button>
+                  <div>
+                    <Button type="submit" variant="primary" disabled={!canSubmit}>
+                      {submitting ? t("submittingButton") : t("submitButton")}
+                    </Button>
+                  </div>
                 </div>
               )}
             </form>
           ) : null}
-          <h3>Recent decisions</h3>
-          <ul aria-label="Recent decisions">
+          <h3 style={WRAP}>{t("recentHeading")}</h3>
+          {loaded.resolutions.length === 0 ? <p>{t("emptyDecisions")}</p> : null}
+          <ul
+            aria-label={t("recentList")}
+            style={{
+              display: "grid",
+              gap: "var(--space-2)",
+              margin: 0,
+              padding: 0,
+              listStyle: "none",
+            }}
+          >
             {loaded.resolutions.map((item) => (
-              <li key={item.id}>
-                {`${item.action} (${item.engine_decision}) issue ${item.issue_id} before ${item.before_evidence_sha256} after ${shown(item.after_evidence_sha256)} by ${item.actor_id} (${item.actor_role}) at ${item.created_at}: ${item.reason}`}
+              <li key={item.id} style={WRAP}>
+                <Tpl
+                  k="recentLine"
+                  locale={locale}
+                  vars={{
+                    action: word("action", item.action, locale),
+                    engine: word("state", item.engine_decision, locale),
+                    issue: d(item.issue_id),
+                    before: d(item.before_evidence_sha256),
+                    after: d(notRecorded(item.after_evidence_sha256)),
+                    actor: d(item.actor_id),
+                    role: word("role", item.actor_role, locale),
+                    at: d(item.created_at),
+                    reason: item.reason,
+                  }}
+                />
               </li>
             ))}
           </ul>
