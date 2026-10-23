@@ -859,8 +859,14 @@ def part_m_sql() -> None:
     )
     check(
         "LAW18-MIGRATION",
-        f"exactly one head, 0035: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0035_dataset_mappings" in heads.stdout,
+        # Not pinned to "0035_dataset_mappings" itself: that would go stale the moment any
+        # later migration chains onto it (down_revision = "0035_dataset_mappings"), which is
+        # expected, normal chain growth, not a fork (FTF-R006-P1b round 2's own
+        # 0036_argilla_identity_hardening is the first such migration). The real Law 18
+        # invariant this check protects is "no silent fork", which "exactly one head" alone
+        # already proves -- a real fork would show 2+ "(head)" lines here instead.
+        f"exactly one head: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1,
     )
 
 

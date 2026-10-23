@@ -30853,3 +30853,32 @@ not `[relay]`-titled; `docs/certifications/queue.md` and PR #947 itself untouche
 STEP 4: no stop condition reached yet -- CI still running on PR #947; staying subscribed to finish
 "merge on green" per the Control-plane instruction. No new `BLOCKER.md` entry. No new "Owner
 actions" line. Certified/product-true counts unchanged (PR #947 still PROVISIONAL, unmerged).
+
+## 2026-10-23T1525Z -- Scheduled relay shift (continued) -- FTF-UX02 round 2 merged (#947), queue.md appended
+
+`ci-verdict` went green on PR #947's head `449d32e` (83/83 jobs, `gate` 1510 steps, `mutation-gate`,
+`secret-scanning`, 76 integration jobs) with `mergeable_state: clean` and no open review threads --
+merged as `b264be1` (merge commit, per repo convention). Unsubscribed from PR #947's activity
+(harness auto-unsubscribes on merge besides).
+
+The docs-only shift log PR (#999, same designated branch) then needed a fresh base (main had moved
+past its own CI run's base to include PR #947's merge, per the "fresh base before merging" rule):
+merged current `main` in, pushed, waited for the new run's own `ci-verdict` (`gate`/`secret-scanning`
+green, everything else correctly skipped on a 2-file docs diff) and merged it too, as `64bb664`.
+
+Appended the required `docs/certifications/queue.md` entry for Control plane
+("## 2026-10-23T1420Z -- PROVISIONAL: FTF-UX02 round 2 merged (#947); regression found and fixed in
+shared Field") summarizing round 3's closure, the Field.tsx regression found/fixed, and the final
+green CI -- this is the one shared-file edit this shift makes directly (not via a `[relay]`-titled
+PR; the relay-PR-edits-shared-files prohibition is about PR #947 itself, which stayed clean of it).
+Restarted the designated branch `claude/wizardly-fermat-nxhnal` from the now-current `main`
+(it had just been merged via #999, so there was nothing to carry forward) and pushed this entry from
+there, per the "designated branch already merged -> restart from main" rule.
+
+STEP 3: this file and `docs/certifications/queue.md` (the one shared-file edit this shift makes,
+appending only -- no existing entry touched). STEP 4 stop condition: single-item outcome --
+FTF-UX02 round 2 (QUEUE.md item 0k) is now merged to `main`, PROVISIONAL, awaiting Control-plane L2
+certification; nothing further for relay on this item until that review lands or returns it. No new
+`BLOCKER.md` entry. No new "Owner actions" line. Certified count unchanged (merge != certification,
+Law 4); product-true count to be recomputed by Control plane's own review (this item touches no
+`proving_symbol`, so product_truth_check's 49/49 should stay unchanged).
