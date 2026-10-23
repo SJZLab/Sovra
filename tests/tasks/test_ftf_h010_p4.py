@@ -1198,6 +1198,15 @@ def store_suite(crud: Any) -> None:
             check("S1", "a foreign organization's version is refused", False)
         except version_crud.ModelVersionNotFoundError:
             check("S1", "a foreign organization's version -> ModelVersionNotFoundError", True)
+        # a key is matched exactly: case and surrounding spaces make it a different key
+        for variant in ("K-1", "k-1 ", " k-1", "k-1\x7f"):
+            vv = e.version("weights", artifact=e.artifact(char="c"))
+            res_v = e.assign(vv, "baseline", variant)
+            check(
+                "S1",
+                f"key {variant!r} is not the stored key 'k-1' (a new assignment, no replay)",
+                res_v.replayed is False and res_v.assignment.idempotency_key == variant,
+            )
 
     # ---- the database is the authority: violated name -> code ---------------------------------
     names = {
