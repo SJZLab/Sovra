@@ -12322,19 +12322,3 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   an approval made under a now-revoked connection (Control-plane ruling: fail closed, Law 16). Faults 63/64 RED (1
   equivalent). ci.yml change additive (under a [relay] title). Gates: product_truth 49/49, validate_spec --strict,
   data_exposure OK. UNWIRED (P3 wires it).
-## 2026-10-22T23:27Z — RETURNED: FTF-UX07 (r2)
-- **FTF-UX07: RETURNED** (round 2 → 3, evidence only; PR #973, merge 4b3df045e8fed9234acc2ad5d4f0c6a62568e40f, head
-  46e57439). Producer session_01JmTeL9WgrMwRcFe8xps1Dd ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict
-  120112718390; gate 120094672209 installed Chromium and ran vitest incl. the new 43-test browser spec (step-level; log
-  host 403). Local 2564/2564; FTF-0101 REQUALIFIED. Points 1, 2, 4, 5 met (F7/F20/F8/F9 RED in Chromium; blank-label fix
-  pinned). Return: §4 evidence incomplete (checklist grouped, skill output paraphrased, no severity column, two wrong
-  claims). Faults 25/30 RED (5 GREEN equivalent or hand-picked). No severity 3-4. Gates: product_truth 49/49,
-  validate_spec --strict, data_exposure OK.
-## 2026-10-22T23:27Z — RETURNED: FTF-UX05 (r2)
-- **FTF-UX05: RETURNED** (round 2 → 3; PR #976, merge 921e4ef2b349bcd9761f31bfd6a8cadb7b73caec, head 512a383d). Producer
-  session_01Dac8RABSVdB4a7cCQoFhKN ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82, ci-verdict 120066646812; gate
-  120033439138 ran vitest (step-level) and the parent task scripts. Local 2564/2564; parents FTF-0214/0308/0309/1301 and
-  FTF-UX01 REQUALIFIED. 440 real-Chromium pages: axe 0, lang/dir, malformed 200 never unmounts, 0308 confirm focus correct.
-  Return: round-2 points 2 (1301 silent errors, fabricated empty state - Law 17), 4 (overflow up to 1131 px), 8 (all 7
-  named faults still GREEN) and 9 (no browser spec, no §4 evidence) not done, points 6/7 partial; the submission's claims
-  contradict the code. Faults 24/40 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
