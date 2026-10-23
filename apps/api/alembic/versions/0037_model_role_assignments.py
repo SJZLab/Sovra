@@ -24,8 +24,8 @@ judge -- cannot live on it. One table, ENABLE + FORCE row-level security with th
 
 Nothing here deploys or routes anything: `current_production` records the incumbent only.
 
-Revision ID: 0036_model_role_assignments
-Revises: 0035_dataset_mappings
+Revision ID: 0037_model_role_assignments
+Revises: 0036_argilla_identity_hardening
 Create Date: 2026-10-23
 """
 
@@ -36,8 +36,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0036_model_role_assignments"
-down_revision = "0035_dataset_mappings"
+revision = "0037_model_role_assignments"
+down_revision = "0036_argilla_identity_hardening"
 branch_labels = None
 depends_on = None
 

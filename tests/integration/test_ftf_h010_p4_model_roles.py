@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg,index,misc,no-untyped-def,var-annotated,union-attr,operator,no-any-return"
 # ruff: noqa: E501
-"""FTF-H010-P4 -- real PostgreSQL 16 proof of model role assignments (migration 0036), the roles
+"""FTF-H010-P4 -- real PostgreSQL 16 proof of model role assignments (migration 0037), the roles
 and actions routes, and the pure continuation rules over real rows.
 
 Never SQLite (no RLS, no triggers, no `~`). Requires `SOVRA_DATABASE_URL` (the migration owner,
@@ -10,7 +10,7 @@ real routers on a real uvicorn server as the restricted `sovra_app` role.
 
 Proves:
 
-  M   migration 0036: upgrade -> downgrade -> upgrade, one head, the additive unique key on
+  M   migration 0037: upgrade -> downgrade -> upgrade, one head, the additive unique key on
       model_versions comes and goes with it
   G   grants: `sovra_app` has SELECT/INSERT, UPDATE on exactly (revoked_at, revoked_by,
       revoke_reason_code), no DELETE/TRUNCATE; ENABLE + FORCE RLS with one non-allow-all policy
@@ -266,8 +266,8 @@ def main() -> None:
     heads = _alembic(["heads"], migration_url)
     check(
         "M",
-        f"exactly one head, 0036 on its chain: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0036_model_role_assignments" in heads.stdout,
+        f"exactly one head, 0037 on its chain: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1 and "0037_model_role_assignments" in heads.stdout,
     )
     if FAILURES:
         print("\n".join(FAILURES))

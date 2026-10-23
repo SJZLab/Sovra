@@ -3,7 +3,7 @@
 A ModelVersion is immutable (FTF-1001), so the role a version plays in a project -- the
 `current_production` incumbent, a `baseline`, a `candidate`, a `teacher` or a `judge` -- is a
 separate, revocable row. Table, grants, triggers and indexes are in
-`0036_model_role_assignments.py`: `sovra_app` gets `SELECT, INSERT` plus a column-limited
+`0037_model_role_assignments.py`: `sovra_app` gets `SELECT, INSERT` plus a column-limited
 `UPDATE (revoked_at, revoked_by, revoke_reason_code)`; a trigger accepts only the one-time
 NULL -> set revocation.
 

@@ -748,7 +748,7 @@ from app.model_versions.model_version_schema import ModelVersion  # noqa: E402
 CRUD_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_role_crud.py"
 ROUTES_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_role_routes.py"
 SCHEMA_PATH = ROOT / "apps" / "api" / "app" / "model_versions" / "model_role_schema.py"
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0036_model_role_assignments.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0037_model_role_assignments.py"
 INTERFACE_PATH = ROOT / "packages" / "contracts" / "openapi" / "10-interface.yaml"
 MAIN_PATH = ROOT / "apps" / "api" / "app" / "main.py"
 
@@ -2405,7 +2405,7 @@ def offline_sql(action: str, revision_range: str) -> str:
 
 
 def static_suite() -> None:
-    up = offline_sql("upgrade", "0035_dataset_mappings:0036_model_role_assignments")
+    up = offline_sql("upgrade", "0036_argilla_identity_hardening:0037_model_role_assignments")
     for needle in (
         "ALTER TABLE model_versions ADD CONSTRAINT uq_model_versions_organization_id_project_id_id UNIQUE (organization_id, project_id, id)",
         "CREATE TABLE model_role_assignments (",
@@ -2450,7 +2450,7 @@ def static_suite() -> None:
         "RAISE EXCEPTION 'a role assignment can only be revoked' USING ERRCODE = 'check_violation', CONSTRAINT = 'tr_model_role_assignments_update_guard_transition'",
         "RAISE EXCEPTION 'a role assignment is immutable except its revocation' USING ERRCODE = 'check_violation', CONSTRAINT = 'tr_model_role_assignments_update_guard_frozen'",
         "(to_jsonb(NEW) - 'revoked_at' - 'revoked_by' - 'revoke_reason_code') IS DISTINCT FROM (to_jsonb(OLD) - 'revoked_at' - 'revoked_by' - 'revoke_reason_code')",
-        "UPDATE alembic_version SET version_num='0036_model_role_assignments'",
+        "UPDATE alembic_version SET version_num='0037_model_role_assignments'",
     ):
         check("MG", f"upgrade SQL contains: {needle[:90]}", needle in up)
     check(
@@ -2469,7 +2469,7 @@ def static_suite() -> None:
         and "NEW.role = 'judge'" in up
         and "NEW.role = 'candidate'" in up,
     )
-    down = offline_sql("downgrade", "0036_model_role_assignments:0035_dataset_mappings")
+    down = offline_sql("downgrade", "0037_model_role_assignments:0036_argilla_identity_hardening")
     for needle in (
         "DROP TRIGGER IF EXISTS tr_model_role_assignments_update_guard ON model_role_assignments",
         "DROP FUNCTION IF EXISTS model_role_assignments_update_guard()",
@@ -2479,18 +2479,18 @@ def static_suite() -> None:
         'REVOKE ALL ON model_role_assignments FROM "sovra_app"',
         "DROP TABLE model_role_assignments",
         "ALTER TABLE model_versions DROP CONSTRAINT uq_model_versions_organization_id_project_id_id",
-        "UPDATE alembic_version SET version_num='0035_dataset_mappings'",
+        "UPDATE alembic_version SET version_num='0036_argilla_identity_hardening'",
     ):
         check("MG", f"downgrade SQL contains: {needle[:80]}", needle in down)
     src = MIGRATION_PATH.read_text()
     check(
         "MG",
         "revision id and parent",
-        'revision = "0036_model_role_assignments"' in src
-        and 'down_revision = "0035_dataset_mappings"' in src,
+        'revision = "0037_model_role_assignments"' in src
+        and 'down_revision = "0036_argilla_identity_hardening"' in src,
     )
     check(
-        "MG", "revision id fits alembic_version (<= 32)", len("0036_model_role_assignments") <= 32
+        "MG", "revision id fits alembic_version (<= 32)", len("0037_model_role_assignments") <= 32
     )
     revisions: dict[str, str] = {}
     for path in sorted((ROOT / "apps" / "api" / "alembic" / "versions").glob("0*.py")):
@@ -2503,10 +2503,10 @@ def static_suite() -> None:
     heads = [r for r in revisions if r not in parents]
     check(
         "MG",
-        f"exactly one Alembic head, 0036 on its chain ({heads})",
+        f"exactly one Alembic head, 0037 on its chain ({heads})",
         len(heads) == 1
-        and "0036_model_role_assignments" in revisions
-        and revisions["0036_model_role_assignments"] == "0035_dataset_mappings",
+        and "0037_model_role_assignments" in revisions
+        and revisions["0037_model_role_assignments"] == "0036_argilla_identity_hardening",
     )
 
     # contract

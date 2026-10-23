@@ -2077,6 +2077,100 @@ jobs:
       - name: Prove the real Argilla review-scope/reviewer-identity/workspace-membership evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_argilla_identity_scope.py
 
+  argilla-real-server-integration:
+    # FTF-R006-P1b round 2 (PR #968's L2 return): "the fake server never checks the API key ...
+    # the real-Argilla CI job is required in this slice; there is no P1c split." Boots the real,
+    # pinned argilla-server v2.8.0 binary (not tests/tasks/argilla_test_support.py's own fake
+    # test double) plus the real Elasticsearch and Redis it needs at startup, and proves two
+    # things a fake test double cannot prove either way by construction: (1) the real server
+    # genuinely rejects a wrong/missing X-Argilla-Api-Key on an authenticated route; (2)
+    # FTF-R002's own generic, already-certified compute_health/validate_component_binding (the
+    # "/validate" health contract every component binding shares) genuinely detects this real
+    # server's own health -- tests/integration/test_argilla_real_server.py. GitHub Actions
+    # service containers for one job share a single Docker network and resolve each other by
+    # service name (argilla-elasticsearch, argilla-redis, argilla-postgres); only this job's own
+    # steps, which run on the bare runner rather than in a container, use localhost + the
+    # published port. argilla-server has no `services:`-level healthcheck of its own (its image
+    # may not carry curl/wget; verifying that is this job's own first real-world finding, not an
+    # assumption) -- `--restart on-failure:10` gives it several real chances to come up once its
+    # dependencies are ready, and the test step's own bounded polling loop is the actual readiness
+    # gate, the same discipline this task's OpenBao dev-server wait already uses one job up.
+    # Root cause of this job's first two real runs' 422s, now confirmed (not the version-skew
+    # guess this comment used to carry): the real server's own `/status` route always returns
+    # 422 once a real Elasticsearch is wired up -- a genuine upstream pydantic v2
+    # response-model-validation bug, independent of Elasticsearch's own version (reproduced
+    # locally against a real `pip install argilla-server==2.8.0`, and confirmed still present on
+    # argilla-io/argilla's own `develop` branch). Full root cause in
+    # packages/integrations/argilla/client.py::ArgillaClient.get_status()'s own docstring.
+    # tests/integration/test_argilla_real_server.py now probes `/version` instead, which this bug
+    # cannot reach -- the elasticsearch:8.8.2 pin below (vs. 8.17.0) stays only because it still
+    # matches argilla-io/argilla's own CI-tested client-library version, not because it was ever
+    # the actual fix.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-real-server-integration ')
+    runs-on: ubuntu-latest
+    services:
+      argilla-elasticsearch:
+        image: elasticsearch@sha256:d45ef71c0f2680bc38b1427f53ca294ebaef4a4ea88cb243cdefc96c3e44dbab # elasticsearch:8.8.2 (amd64) -- the exact version argilla-io/argilla's own CI (.github/workflows/argilla-server.yml) tests the pinned `elasticsearch8[async] ~= 8.7.0` client library against.
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+      argilla-redis:
+        image: redis@sha256:8be847644e195abc4c10c8d9936cfa45332eccc6b714fa7b186ff43f1f4d5579 # redis:7-alpine (amd64) -- Argilla's own background-job queue backend
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      argilla-postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest this workflow already pins elsewhere; Argilla's own backing store, unrelated to Sovra's own sovra_app database
+        env:
+          POSTGRES_USER: argilla
+          POSTGRES_PASSWORD: argilla_ci_only
+          POSTGRES_DB: argilla
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U argilla -d argilla"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      argilla-server:
+        image: argilla/argilla-server@sha256:f1adc9cad9db5b01aa4e0cf413dca68e8b611565d51aead267fd165b4d01f3d0 # argilla/argilla-server:v2.8.0 (amd64) -- the same pinned version packages/integrations/argilla/client.py (FTF-R006-P1a) targets
+        env:
+          ARGILLA_ELASTICSEARCH: http://argilla-elasticsearch:9200
+          ARGILLA_DATABASE_URL: postgresql://argilla:argilla_ci_only@argilla-postgres:5432/argilla
+          ARGILLA_REDIS_URL: redis://argilla-redis:6379/0
+          ARGILLA_AUTH_SECRET_KEY: sovra-ci-only-argilla-secret-key-not-for-production-use
+          USERNAME: sovra-ci-owner
+          PASSWORD: sovra-ci-owner-password-not-real
+          API_KEY: sovra-ci-owner-api-key-not-real
+          WORKSPACE: sovra-ci-default
+        ports:
+          - 6900:6900
+        options: --restart on-failure:10
+    env:
+      ARGILLA_BASE_URL: http://127.0.0.1:6900
+      ARGILLA_OWNER_API_KEY: sovra-ci-owner-api-key-not-real
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Argilla server's own API-key enforcement and FTF-R002's generic health check against it
+        run: uv run python3 tests/integration/test_argilla_real_server.py
+
   target-source-snapshot-integration:
     # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
     # 6.8B/7A.1-7A.3/9/45/65-67/77/81) -- two real organizations (org1 with
@@ -4118,6 +4212,7 @@ jobs:
       - api-load-test-integration
       - dataset-source-connection-integration
       - argilla-identity-scope-integration
+      - argilla-real-server-integration
       - target-application-connection-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration

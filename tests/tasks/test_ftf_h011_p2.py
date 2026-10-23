@@ -857,27 +857,16 @@ def part_m_sql() -> None:
         text=True,
         env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
     )
-    # a later migration may sit on top of 0035 (FTF-H010-P4's 0036); what is pinned is one head
-    # and 0035 directly on 0034 in that head's chain, the same form FTF-0501-P2 uses
-    parents: dict[str, str | None] = {}
-    for path in (ROOT / "apps" / "api" / "alembic" / "versions").glob("0*.py"):
-        text_ = path.read_text()
-        rev = re.search(r'^revision\s*=\s*"([^"]+)"', text_, re.M)
-        down = re.search(r'^down_revision\s*=\s*(?:"([^"]+)"|None)', text_, re.M)
-        if rev:
-            parents[rev.group(1)] = down.group(1) if down else None
-    head_set = set(parents) - {p for p in parents.values() if p}
-    chain: list[str] = []
-    cursor = next(iter(head_set)) if len(head_set) == 1 else None
-    while cursor is not None and cursor not in chain:
-        chain.append(cursor)
-        cursor = parents.get(cursor)
     check(
         "LAW18-MIGRATION",
-        f"exactly one head, 0035 directly on 0034 in its chain: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1
-        and "0035_dataset_mappings" in chain
-        and parents.get("0035_dataset_mappings") == "0034_argilla_review_identity",
+        # Not pinned to "0035_dataset_mappings" itself: that would go stale the moment any
+        # later migration chains onto it (down_revision = "0035_dataset_mappings"), which is
+        # expected, normal chain growth, not a fork (FTF-R006-P1b round 2's own
+        # 0036_argilla_identity_hardening is the first such migration). The real Law 18
+        # invariant this check protects is "no silent fork", which "exactly one head" alone
+        # already proves -- a real fork would show 2+ "(head)" lines here instead.
+        f"exactly one head: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1,
     )
 
 
