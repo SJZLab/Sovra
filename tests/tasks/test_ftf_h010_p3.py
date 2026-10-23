@@ -254,6 +254,7 @@ class Env:
         self.open_sessions = 0
         self.sessions_during_fs: list[int] = []
         self.counter = 0
+        self.statements: list[Any] = []
 
     # -- seams -------------------------------------------------------------------------------
 
@@ -274,6 +275,7 @@ class Env:
     def execute_scoped(
         self, session: Any, organization_id: Any, statement: Any, params: Any = None
     ) -> Any:
+        self.statements.append(statement)
         return session.execute(statement)
 
     def get_artifact(self, session: Any, context: Any, artifact_id: Any) -> Any:
@@ -2116,6 +2118,42 @@ def group_k(m: Any) -> None:
 
 FAULTS: list[tuple[str, str, str, int]] = [
     (
+        "r2 base artifact not re-read at the terminal write",
+        "    return base is not None and _artifact_unchanged(session, context, base)",
+        "    return True",
+        1,
+    ),
+    (
+        "r2 only the first weights shard header is read",
+        "            _read_header(directory, manifest, entry.relative_path)\n    assert artifact.weights_digest is not None",
+        "            _read_header(directory, manifest, entry.relative_path)\n            break\n    assert artifact.weights_digest is not None",
+        1,
+    ),
+    (
+        "r2 only the first base shard header is read",
+        "        for e in base_manifest.entries\n        if e.relative_path.endswith(_SAFETENSORS_SUFFIX)\n    ]",
+        "        for e in [x for x in base_manifest.entries if x.relative_path.endswith(_SAFETENSORS_SUFFIX)][:1]\n    ]",
+        1,
+    ),
+    (
+        "r2 terminal re-read not share-locked",
+        "            .with_for_update(read=True),\n",
+        "            ,\n",
+        1,
+    ),
+    (
+        "r2 terminal re-read takes FOR UPDATE instead of FOR SHARE",
+        ".with_for_update(read=True),",
+        ".with_for_update(),",
+        1,
+    ),
+    (
+        "r2 adapter header parsed outside the hashed read",
+        "adapter_header = _read_header(directory, manifest, _ADAPTER_WEIGHTS_FILE)",
+        "adapter_header = _parse(\n        lambda: parse_safetensors_header(\n            (directory / _ADAPTER_WEIGHTS_FILE).read_bytes(),\n            file_size=(directory / _ADAPTER_WEIGHTS_FILE).stat().st_size,\n        )\n    )",
+        1,
+    ),
+    (
         "license gate skipped",
         "lambda: assert_license_accepted_for_use(artifact),",
         "lambda: None,",
@@ -2239,7 +2277,7 @@ FAULTS: list[tuple[str, str, str, int]] = [
     ),
     (
         "terminal artifact re-read dropped",
-        "if _artifact_unchanged(session, context, inputs.artifact):",
+        "if _inputs_unchanged(session, context, inputs, adapter=adapter):",
         "if True:",
         1,
     ),
@@ -2258,6 +2296,202 @@ FAULTS: list[tuple[str, str, str, int]] = [
 ]
 
 
+def group_l(m: Any) -> None:
+    """Round 2: the base artifact is re-read at the terminal write, every shard header is judged,
+    the terminal re-read is share-locked, and the adapter header is the hashed one."""
+    from sqlalchemy.dialects import postgresql
+
+    # L1: the BASE artifact changes while an adapter validates -> failed, never a succeeded adapter
+    def mutate_base(label: str, change: Any, *, delete: bool = False) -> None:
+        with Env(m).patched() as env:
+            fx = env.adapter_job()
+            before = len(env.versions())
+            real = env.m.resolve_local_artifact
+            calls = [0]
+
+            def hook(*a: Any, **k: Any) -> Any:
+                result = real(*a, **k)
+                calls[0] += 1
+                if calls[0] == 2:  # the base manifest: after every base check has passed
+                    with Session(env.engine) as s:
+                        row = s.get(artifact_schema.TrainableArtifact, fx.base_artifact_id)
+                        if delete:
+                            s.delete(row)
+                        else:
+                            change(row)
+                        s.commit()
+                return result
+
+            env.m.resolve_local_artifact = hook
+            try:
+                outcome = env.run(ADAPTER, fx)
+            finally:
+                env.m.resolve_local_artifact = real
+            check(
+                "L1", f"{label}: the base was really changed ({calls[0]} resolves)", calls[0] == 2
+            )
+            check(
+                "L1",
+                f"{label}: ({outcome_pair(outcome)})",
+                outcome_pair(outcome) == ("failed", "artifact_changed_during_validation"),
+            )
+            check("L1", f"{label}: no new ModelVersion", len(env.versions()) == before)
+            check(
+                "L1", f"{label}: the job is terminal failed", env.job(fx.job_id).state == "failed"
+            )
+
+    def revoke_base(a: Any) -> None:
+        a.license_accepted_by = None
+        a.license_accepted_at = None
+        a.status = "registered"
+
+    def archive_base(a: Any) -> None:
+        a.status = "archived"
+
+    def base_new_digest(a: Any) -> None:
+        a.weights_digest = "sha256:" + "e" * 64
+
+    def base_new_revision(a: Any) -> None:
+        a.base_model_revision = "000000000000"
+
+    mutate_base("L1 base license revoked while validating", revoke_base)
+    mutate_base("L1 base archived while validating", archive_base)
+    mutate_base("L1 base digest replaced while validating", base_new_digest)
+    mutate_base("L1 base revision replaced while validating", base_new_revision)
+    mutate_base("L1 base row removed while validating", None, delete=True)
+
+    # the unchanged base still succeeds on the real default code (the negative of L1)
+    with Env(m).patched() as env:
+        fx = env.adapter_job()
+        outcome = env.run(ADAPTER, fx)
+        check(
+            "L1",
+            f"L1 an unchanged base succeeds: ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("succeeded", None),
+        )
+
+    # L2: EVERY shard header is judged: an invalid shard that sorts after a valid one
+    good = safetensors_bytes(BASE_TENSORS)
+    bad = good + b"\0"
+    for label, first, second in (
+        ("invalid shard sorts last", good, bad),
+        ("invalid shard sorts first", bad, good),
+    ):
+        with Env(m).patched() as env:
+            files = weights_files()
+            files.pop("model.safetensors")
+            files["model-00001-of-00002.safetensors"] = first
+            files["model-00002-of-00002.safetensors"] = second
+            fx = env.weights_job("w", files)
+            expect_outcome(
+                env, FULL, fx, f"L2 weights, {label}", "failed", "weights_header_invalid"
+            )
+            check("L2", f"L2 weights, {label}: no ModelVersion", env.versions() == [])
+        with Env(m).patched() as env:
+            base = weights_files()
+            base.pop("model.safetensors")
+            # distinct tensors per shard (a duplicate name would fail the adapter by itself)
+            shard_a = safetensors_bytes(BASE_TENSORS[:1])
+            shard_b = safetensors_bytes(BASE_TENSORS[1:])
+            base["model-00001-of-00002.safetensors"] = shard_a if first is good else shard_a + b"\0"
+            base["model-00002-of-00002.safetensors"] = (
+                shard_b if second is good else shard_b + b"\0"
+            )
+            fx = env.adapter_job(base_files=base)
+            outcome = env.run(ADAPTER, fx)
+            check(
+                "L2",
+                f"L2 adapter base, {label}: ({outcome_pair(outcome)})",
+                outcome_pair(outcome) == ("failed", "weights_header_invalid"),
+            )
+            check("L2", f"L2 adapter base, {label}: no new ModelVersion", len(env.versions()) == 1)
+
+    # L2b: a VALID multi-shard base succeeds for an adapter whose target tensor is in the first shard
+    with Env(m).patched() as env:
+        base = weights_files()
+        base.pop("model.safetensors")
+        base["model-00001-of-00002.safetensors"] = safetensors_bytes(BASE_TENSORS[:1])
+        base["model-00002-of-00002.safetensors"] = safetensors_bytes(BASE_TENSORS[1:])
+        fx = env.adapter_job(base_files=base)
+        outcome = env.run(ADAPTER, fx)
+        check(
+            "L2",
+            f"L2b a valid two-shard base succeeds: ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("succeeded", None),
+        )
+
+    # L3: the terminal re-reads are FOR SHARE on PostgreSQL (one row for weights, two for an adapter)
+    def share_locked(env: Any) -> list[str]:
+        out = []
+        for st in env.statements:
+            arg = getattr(st, "_for_update_arg", None)
+            if arg is not None:
+                rendered = str(
+                    st.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+                )
+                if "trainable_artifacts" in rendered:
+                    out.append(rendered)
+        return out
+
+    with Env(m).patched() as env:
+        fx = env.weights_job("w", weights_files())
+        outcome = env.run(FULL, fx)
+        locked = share_locked(env)
+        check(
+            "L3",
+            f"L3 weights: one FOR SHARE re-read of the artifact ({len(locked)})",
+            outcome_pair(outcome) == ("succeeded", None)
+            and len(locked) == 1
+            and all(" FOR SHARE" in r and "trainable_artifacts" in r for r in locked)
+            and str(fx.artifact_id).replace("-", "") in locked[0].replace("-", ""),
+        )
+    with Env(m).patched() as env:
+        fx = env.adapter_job()
+        outcome = env.run(ADAPTER, fx)
+        locked = share_locked(env)
+        ids = {str(fx.artifact_id).replace("-", ""), str(fx.base_artifact_id).replace("-", "")}
+        seen = {i for i in ids for r in locked if i in r.replace("-", "")}
+        check(
+            "L3",
+            f"L3 adapter: FOR SHARE re-reads of the adapter and its base ({len(locked)})",
+            outcome_pair(outcome) == ("succeeded", None)
+            and len(locked) == 2
+            and all(" FOR SHARE" in r and "trainable_artifacts" in r for r in locked)
+            and seen == ids,
+        )
+
+    # L4: the adapter header parsed is the manifest-hashed one: a same-size swap after the manifest
+    with Env(m).patched() as env:
+        fx = env.adapter_job()
+        real = env.m.resolve_local_artifact
+        calls = [0]
+
+        def swap(*a: Any, **k: Any) -> Any:
+            result = real(*a, **k)
+            calls[0] += 1
+            if calls[0] == 1:  # the adapter manifest: swap the weights for a same-size look-alike
+                target = env.root / "adapter" / "adapter_model.safetensors"
+                original = target.read_bytes()
+                other = safetensors_bytes(
+                    [(n.replace("q_proj", "v_proj"), d, sh) for n, d, sh in ADAPTER_TENSORS]
+                )
+                assert len(other) == len(original) and other != original
+                target.write_bytes(other)
+            return result
+
+        env.m.resolve_local_artifact = swap
+        try:
+            outcome = env.run(ADAPTER, fx)
+        finally:
+            env.m.resolve_local_artifact = real
+        check(
+            "L4",
+            f"L4 a same-size adapter swap after the manifest: ({outcome_pair(outcome)})",
+            outcome_pair(outcome) == ("failed", "artifact_changed_during_validation"),
+        )
+        check("L4", "L4: no new ModelVersion", len(env.versions()) == 1)
+
+
 def suite(m: Any) -> list[str]:
     _failures.clear()
     group_a(m)
@@ -2270,6 +2504,7 @@ def suite(m: Any) -> list[str]:
     group_h(m)
     group_j(m)
     group_k(m)
+    group_l(m)
     return list(_failures)
 
 
