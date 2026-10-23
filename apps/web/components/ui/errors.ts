@@ -45,8 +45,9 @@ export function kindForStatus(status: number): RecoveryKind {
  *   before running it again -- never "nothing was changed", never a blind retry.
  * - A `TypeError` is the browser's own fetch failure ("Failed to fetch" / "Load failed" /
  *   "NetworkError ..."), English text that differs per browser: a localized message replaces it.
- * - Any other thrown error keeps the existing "network error: <reason>" form, with a localized
- *   reason when the error carries none.
+ * - Any other thrown error keeps the existing "network error: <reason>" form in English; its
+ *   message is English text from elsewhere, so under any other locale (or when it carries none) the
+ *   localized unknown-error reason is shown instead.
  */
 export function networkError(
   caught: unknown,
@@ -64,7 +65,7 @@ export function networkError(
   const reason =
     caught instanceof TypeError
       ? phrase("networkErrorUnreachable", locale)
-      : caught instanceof Error && caught.message
+      : caught instanceof Error && caught.message && locale === "en"
         ? caught.message
         : phrase("networkErrorUnknown", locale);
   return uiError(`${phrase("networkErrorPrefix", locale)} ${reason}`, kind);
