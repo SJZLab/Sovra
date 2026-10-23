@@ -34,6 +34,11 @@ export function AlertMessage({
   focusable?: boolean;
 }) {
   const recoveryId = useId();
+  // Own keys only, and a kind outside the union (a stale or hostile value at runtime) falls back to
+  // the retry step instead of throwing during render: "toString" / "__proto__" exist on every object.
+  const recovery = Object.hasOwn(RECOVERY_PHRASE, error.kind)
+    ? RECOVERY_PHRASE[error.kind]
+    : RECOVERY_PHRASE.retry;
   return (
     <>
       <p
@@ -52,7 +57,7 @@ export function AlertMessage({
         dir={dirFor(locale)}
         style={{ overflowWrap: "anywhere" }}
       >
-        {phrase(RECOVERY_PHRASE[error.kind], locale)}
+        {phrase(recovery, locale)}
       </p>
     </>
   );
