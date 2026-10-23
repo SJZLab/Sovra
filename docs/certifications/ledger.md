@@ -12379,3 +12379,8 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Round-1 PG-M1/M2 now fail `artifact_changed_during_validation`; real two-session PG races confirm both rows share-locked
   to commit. Faults: VF10/VF14/VF20 and own variants RED; GREEN only advisory/equivalent/hand-picked. Gates: product_truth
   49/49, validate_spec --strict, data_exposure OK. UNWIRED.
+## 2026-10-23T10:54Z — OWNER DECISION: Radix Dialog approved; FTF-UX02 r2 unparked
+- The owner approved `@radix-ui/react-dialog@1.3.1` (exact-pinned) live in the Control-plane session ("Go for both",
+  then "the decision is yours" for must-haves); the "Owner actions - current" ask is removed and the FTF-UX01 Dialog park
+  resolved. `@radix-ui/react-progress` was not asked for and is not approved. FTF-UX02 round 2 (#947, item 0k) is
+  unparked: close the round-3 pre-review's two items on the same PR, then L2 (which also requalifies the UX01 Dialog).
