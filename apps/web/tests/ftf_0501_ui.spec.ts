@@ -49,6 +49,8 @@ import {
   sha256Hex,
   SUPPORTED_CONTENT_TYPES,
 } from "../components/dataset-factory/resumable_dataset_upload_ui";
+import routesSource from "../../api/app/datasets/direct_object_storage_upload_routes.py?raw";
+import uploadSource from "../../api/app/datasets/direct_object_storage_upload.py?raw";
 
 const API_BASE = "http://localhost:8000";
 const ORG_ID = "11111111-1111-1111-1111-111111111111";
@@ -147,7 +149,7 @@ function datasetBody(overrides: Json = {}): Json {
   };
 }
 
-type Plain = { status?: number; body?: unknown; jsonThrows?: boolean };
+type Plain = { status?: number; body?: unknown; jsonThrows?: boolean; jsonGate?: Promise<void> };
 type Reply = Plain | "throw" | ((init?: { body?: unknown }) => Plain | "throw") | Promise<Plain>;
 let replies: Record<string, Reply[]>;
 let unexpected: string[];
@@ -211,6 +213,7 @@ beforeEach(() => {
         ok: status >= 200 && status < 300,
         status,
         json: async () => {
+          if (settled.jsonGate) await settled.jsonGate;
           if (settled.jsonThrows) throw new SyntaxError("Unexpected token < in JSON");
           return settled.body;
         },
@@ -1626,13 +1629,275 @@ test("negative_acceptance: resuming with a different file is refused before any 
   expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
 });
 
+test("FTF-UX02 H5 (sev 3): abandoning a draft needs an explicit confirmation; the first click changes nothing", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm")).toBeTruthy();
+  expect(screen.queryByTestId("upload-form")).toBeNull();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 H3: cancelling the abandon confirmation keeps the draft resumable", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-cancel-button"));
+  expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+  expect(screen.getByTestId("upload-resume-file-input")).toBeTruthy();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+});
+
+test("FTF-UX02 X4: the abandon confirmation is in Arabic and right-to-left when locale is ar", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  expect(confirm.closest("[dir]")?.getAttribute("dir")).toBe("rtl");
+  expect(confirm.textContent).toMatch(/[\u0600-\u06FF]/);
+  expect(screen.getByTestId("upload-abandon-confirm-button").textContent).toMatch(
+    /[\u0600-\u06FF]/,
+  );
+  expect(screen.getByTestId("upload-abandon-cancel-button").textContent).toMatch(/[\u0600-\u06FF]/);
+});
+
 test("abandoning a draft clears it and returns to a fresh upload form, with no network call", () => {
   seedDraft();
   renderUI();
   fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
   expect(screen.getByTestId("upload-form")).toBeTruthy();
   expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
   expect(fetchCalls().length).toBe(0);
+});
+
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, finding 1 (CONFIRM-FOCUS-LOST) and finding 5
+// (CONFIRM-PROMISES-DISCARD): the abandon confirmation is now the shared
+// UX01 `Dialog` (Radix focus-scope primitives), not a plain unmanaged <div>.
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 finding 1: opening the abandon confirmation moves focus inside it (real focus trap, not a static div)", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  expect(confirm.getAttribute("role")).toBe("alertdialog");
+  // A plain <div role="alertdialog"> never receives focus on its own; the old
+  // implementation left `document.activeElement` on the trigger button that
+  // was just hidden. The real focus-trap primitive moves focus inside.
+  expect(confirm.contains(document.activeElement)).toBe(true);
+});
+
+test("FTF-UX02 r2 finding 1: the confirmation names the trigger via aria-labelledby/aria-describedby, not a hardcoded aria-label", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const labelledBy = confirm.getAttribute("aria-labelledby");
+  // `aria-describedby` may legally be a space-separated list of id references
+  // (ARIA spec; Radix itself appends its own internal one) -- check that at
+  // least one resolves to the real consequence text, not that there is only one.
+  const describedByIds = (confirm.getAttribute("aria-describedby") ?? "").split(/\s+/);
+  expect(labelledBy).toBeTruthy();
+  expect(describedByIds.length).toBeGreaterThan(0);
+  expect(document.getElementById(labelledBy!)?.textContent).toBe("Abandon this draft?");
+  const describedTexts = describedByIds.map((id) => document.getElementById(id)?.textContent);
+  expect(describedTexts.some((t) => t?.includes("This browser forgets your progress"))).toBe(true);
+});
+
+test("FTF-UX02 r2 finding 1: Escape keeps the draft (same effect as Keep draft), never the same effect as confirming abandon", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  fireEvent.keyDown(confirm, { key: "Escape" });
+  expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+  // Still resumable: Escape must not have run the destructive `resetToIdle` path.
+  expect(screen.getByTestId("upload-resume-file-input")).toBeTruthy();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 r2 finding 5: the confirmation no longer claims the upload itself is discarded (no abort route exists for it)", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const body = screen.getByTestId("upload-abandon-confirm").textContent ?? "";
+  // The prior wording ("The partly uploaded file is discarded") is a claim this UI cannot
+  // keep -- apps/api/app/datasets/direct_object_storage_upload_routes.py exposes no abort
+  // route the browser could call, so confirming never contacts the server (asserted below);
+  // the honest, rewritten copy describes only the local, client-side effect.
+  expect(body).not.toMatch(/discarded/i);
+  expect(body).toContain("This browser forgets your progress");
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+  expect(fetchCalls().length).toBe(0);
+});
+
+test("FTF-UX02 r2: the abandon trigger button text is bilingual, not a hardcoded English string", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  const trigger = screen.getByTestId("upload-abandon-draft-button");
+  expect(trigger.textContent).toMatch(/[؀-ۿ]/);
+});
+
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 1 (independent L2-style review of PR #947):
+// findings 1 (CONFIRM-FOCUS-ON-CONFIRM, pinned initial-focus), 2 (UNPINNED-F4),
+// 3 (NOT-BILINGUAL-0500A's dialog half) and the lang-attribute gap.
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r1 finding 1 (pinned): initial open focus is the Keep-draft button specifically, not merely 'something inside'", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  // Reordering Keep/Abandon so the destructive button gets initial focus must turn this RED --
+  // the prior assertion (`confirm.contains(document.activeElement)`) could not catch that.
+  expect(document.activeElement).toBe(screen.getByTestId("upload-abandon-cancel-button"));
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 1 (pinned): confirming abandon moves focus to the fresh form's first control, never <body>", async () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+  await waitFor(() => expect(screen.getByTestId("upload-form")).toBeTruthy());
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByTestId("upload-purpose-select")),
+  );
+});
+
+test.each([
+  ["en", "Keep draft", "Abandon draft"],
+  ["ar", "الاحتفاظ بالمسودة", "تجاهل المسودة"],
+])(
+  "FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): Keep/Abandon button labels are exact in %s",
+  (locale, keepText, abandonText) => {
+    seedDraft();
+    render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: locale as "en" | "ar" }));
+    fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+    expect(screen.getByTestId("upload-abandon-cancel-button").textContent).toBe(keepText);
+    expect(screen.getByTestId("upload-abandon-confirm-button").textContent).toBe(abandonText);
+  },
+);
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the English confirm body includes the exact 'cannot be undone' sentence", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm").textContent).toContain(
+    "This cannot be undone.",
+  );
+});
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the Arabic confirm body is the exact translated sentence, not the English one", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const text = screen.getByTestId("upload-abandon-confirm").textContent ?? "";
+  expect(text).toContain(
+    "سينسى هذا المتصفح التقدم الذي أحرزته وسيبدأ رفع جديد من البداية. لا يمكن التراجع عن ذلك.",
+  );
+  expect(text).not.toContain("This browser forgets");
+});
+
+test.each(["en", "ar"] as const)(
+  "FTF-UX02 r2 pre-review r1 finding 3 (pinned): the abandon dialog's lang attribute is %s, not left unset",
+  (locale) => {
+    seedDraft();
+    render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale }));
+    fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+    expect(screen.getByTestId("upload-abandon-confirm").getAttribute("lang")).toBe(locale);
+  },
+);
+
+test("FTF-UX02 r2 pre-review r1 finding 2 (pinned, UNPINNED-F4): the resume-error paragraph carries role=alert", async () => {
+  seedDraft();
+  renderUI();
+  enqueue("GET", SESSION_URL, fail(500, null));
+  fireEvent.change(screen.getByTestId("upload-resume-file-input"), {
+    target: { files: [testFile(FILE_BYTES)] },
+  });
+  await waitFor(() => expect(screen.getByTestId("upload-resume-error")).toBeTruthy());
+  expect(screen.getByTestId("upload-resume-error").getAttribute("role")).toBe("alert");
+});
+
+// ---------------------------------------------------------------------------
+// FTF-UX02 round 2, pre-review round 2 (independent L2-style re-review of PR #947):
+// finding 2 (F3a-UNPINNED + the wider Arabic-string surface) and finding 6
+// (STICKY-CHECKING-AND-BUTTON-PINS-UNPINNED's Abandon-variant pin).
+// ---------------------------------------------------------------------------
+
+test("FTF-UX02 r2 pre-review r2 finding 2 (F3a-UNPINNED): the Arabic abandon-confirmation title is the exact translation, not left English", () => {
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const labelledBy = confirm.getAttribute("aria-labelledby");
+  expect(document.getElementById(labelledBy!)?.textContent).toBe("هل تريد تجاهل هذه المسودة؟");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the Dialog's close button has an exact, bilingual aria-label", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirm = screen.getByTestId("upload-abandon-confirm");
+  const closeButton = Array.from(confirm.querySelectorAll("button")).find(
+    (b) => b.textContent === "×",
+  );
+  expect(closeButton?.getAttribute("aria-label")).toBe("Cancel");
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  const confirmAr = screen.getByTestId("upload-abandon-confirm");
+  const closeButtonAr = Array.from(confirmAr.querySelectorAll("button")).find(
+    (b) => b.textContent === "×",
+  );
+  expect(closeButtonAr?.getAttribute("aria-label")).toBe("إلغاء");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the resume banner's text and file name are the exact bilingual strings, the name wrapped in <bdi>", () => {
+  seedDraft();
+  renderUI();
+  const banner = screen.getByTestId("upload-resume-banner");
+  expect(banner.textContent).toContain("A previous upload of");
+  expect(banner.textContent).toContain("is still in progress. Choose that same file to resume it.");
+  expect(banner.querySelector("bdi")?.textContent).toBe("data.jsonl");
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  const bannerAr = screen.getByTestId("upload-resume-banner");
+  expect(bannerAr.textContent).toContain("رفع سابق لملف");
+  expect(bannerAr.textContent).toContain("لا يزال قيد التنفيذ. اختر نفس الملف لاستئنافه.");
+  expect(bannerAr.querySelector("bdi")?.textContent).toBe("data.jsonl");
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 2: the abandon trigger's accessible action text is the exact bilingual sentence", () => {
+  seedDraft();
+  renderUI();
+  expect(screen.getByTestId("upload-abandon-draft-button").textContent).toBe(
+    "Abandon this draft and start a new upload",
+  );
+  cleanup();
+
+  seedDraft();
+  render(createElement(ResumableDatasetUploadUI, { ...PROPS, locale: "ar" }));
+  expect(screen.getByTestId("upload-abandon-draft-button").textContent).toBe(
+    "تجاهل هذه المسودة وابدأ رفعًا جديدًا",
+  );
+});
+
+test("FTF-UX02 r2 pre-review r2 finding 6 (pinned): the destructive Abandon button is the UX01 Button with variant=danger, not primary", () => {
+  seedDraft();
+  renderUI();
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  expect(screen.getByTestId("upload-abandon-confirm-button").getAttribute("data-variant")).toBe(
+    "danger",
+  );
 });
 
 test("fault: a secret, a presigned URL or file bytes ever written to localStorage -> RED", async () => {
@@ -1648,4 +1913,147 @@ test("fault: a secret, a presigned URL or file bytes ever written to localStorag
   expect(everything).not.toContain("10,20,30");
   expect(everything).toContain(SESSION_ID);
   expect(everything).toContain(ORG_ID);
+});
+
+// ---------------------------------------------------------------------------
+// Round 3 (Control-plane return of d3bf8ba, #727)
+// ---------------------------------------------------------------------------
+
+async function startAndWaitFor(testId: string) {
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(screen.getByTestId(testId)).toBeTruthy());
+}
+
+test("UF3-r3: listing [] then a 503 on part-urls shows 'after 0 of 2', never a listed-all count", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([])));
+  enqueue("POST", PART_URLS_URL, fail(503, "storage_unavailable"));
+  await startAndWaitFor("upload-interrupted-text");
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 0 of 2 parts",
+  );
+  expect(calls("PUT", PART1_URL).length).toBe(0);
+});
+
+test("UF3-r3: listing [1] then a 500 on part-urls shows 'after 1 of 2'", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([1])));
+  enqueue("POST", PART_URLS_URL, fail(500, null));
+  await startAndWaitFor("upload-interrupted-text");
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 1 of 2 parts",
+  );
+});
+
+test("UF3-r3: a PUT still in flight shows 'Uploaded 0 of 2', and a 403 PUT is not counted", async () => {
+  renderUI();
+  let release: (value: Plain) => void = () => undefined;
+  const held = new Promise<Plain>((resolve) => {
+    release = resolve;
+  });
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([])));
+  enqueue("POST", PART_URLS_URL, (init) => {
+    const requested = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+    return ok(grants(requested));
+  });
+  enqueue("PUT", PART1_URL, held);
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(calls("PUT", PART1_URL).length).toBe(1));
+  expect(screen.getByTestId("upload-progress-text").textContent).toContain("Uploaded 0 of 2 parts");
+  const bar = screen.getByRole("progressbar");
+  expect(bar.getAttribute("aria-valuenow")).toBe("0");
+  expect(bar.getAttribute("aria-valuemax")).toBe("100");
+  release({ status: 403, body: {} });
+  await waitFor(() => expect(screen.getByTestId("upload-interrupted-text")).toBeTruthy());
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 0 of 2 parts",
+  );
+  expect(screen.queryByTestId("upload-all-parts-uploaded")).toBeNull();
+});
+
+test("UF3-r3: part 1 listed and part 2 PUT ok then part 3 absent: counts equal listed + 2xx PUTs", async () => {
+  renderUI();
+  enqueue("POST", SESSIONS_URL, ok(session(), 201));
+  enqueue("GET", PARTS_URL, ok(listing([1])));
+  enqueue("POST", PART_URLS_URL, (init) => {
+    const requested = (JSON.parse(String(init?.body)) as { part_numbers: number[] }).part_numbers;
+    return ok(grants(requested));
+  });
+  enqueue("PUT", PART2_URL, fail(403, null));
+  await startAndWaitFor("upload-interrupted-text");
+  // listed part 1 counts; the refused PUT of part 2 does not
+  expect(screen.getByTestId("upload-interrupted-text").textContent).toContain(
+    "interrupted after 1 of 2 parts",
+  );
+});
+
+test("UNSAFE-ARCHIVE: a 422 unsafe_archive on finalize is terminal: rejected, draft cleared, no Finalize control", async () => {
+  await uploadToReadyToFinalize();
+  expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+  await finalizeWith("my-dataset", fail(422, "unsafe_archive"));
+  await waitFor(() => expect(screen.getByTestId("upload-rejected-text")).toBeTruthy());
+  expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  expect(screen.queryByTestId("upload-finalize-button")).toBeNull();
+  expect(screen.queryByTestId("upload-finalize")).toBeNull();
+  expect(screen.getByTestId("upload-rejected-text").textContent).not.toContain("can be retried");
+});
+
+test("422 vocabulary cannot drift: every reason the server can raise on finalize is terminal on the client", () => {
+  const upload = uploadSource;
+  const routes = routesSource;
+  const reasons = new Set<string>();
+  // `return "code"` (sniff_content / inspect_xlsx verdicts) and `_reject(..., "code")`
+  for (const match of upload.matchAll(/return "([a-z][a-z0-9_]*)"/g))
+    reasons.add(match[1] as string);
+  for (const match of upload.matchAll(/_reject\([^)]*?"([a-z][a-z0-9_]*)"\s*\)/g)) {
+    reasons.add(match[1] as string);
+  }
+  // the route's own 422 details
+  for (const match of routes.matchAll(/status_code=422, detail="([a-z][a-z0-9_]*)"/g)) {
+    reasons.add(match[1] as string);
+  }
+  // the extractor must really have found the vocabulary (a silent empty set proves nothing)
+  for (const known of [
+    "unsafe_archive",
+    "content_type_mismatch",
+    "sha256_mismatch",
+    "size_mismatch",
+    "part_size_mismatch",
+    "unexpected_part",
+    "unsupported_content_type",
+    "verification_mismatch",
+    "source_revoked",
+  ]) {
+    expect(reasons.has(known), `extractor missed ${known}`).toBe(true);
+  }
+  for (const reason of reasons) {
+    const failure = classifyFailure(422, reason);
+    expect(failure.kind, `422 ${reason}`).toBe("closed");
+    expect(failure.message, `422 ${reason}`).not.toContain("can be retried");
+  }
+});
+
+test("B34: a create whose body resolves after an organization change saves no draft and lists no parts", async () => {
+  const view = renderUI();
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  enqueue("POST", SESSIONS_URL, { status: 201, body: session(), jsonGate: gate });
+  await selectFileAndStart(testFile(FILE_BYTES));
+  await waitFor(() => expect(calls("POST", SESSIONS_URL).length).toBe(1));
+  view.rerender(
+    createElement(ResumableDatasetUploadUI, { ...PROPS, organizationId: OTHER_ORG_ID }),
+  );
+  await act(async () => {
+    open();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+  expect(calls("GET", PARTS_URL).length).toBe(0);
+  expect(window.localStorage.length).toBe(0);
+  expect(unexpected).toEqual([]);
 });

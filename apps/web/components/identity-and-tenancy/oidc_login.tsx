@@ -17,19 +17,63 @@
  * excluding `apps/web`'s server runtime from its own scope.
  */
 
+import type { CSSProperties } from "react";
+
+import { dirFor, resolveLocale } from "../ui/phrases";
+import { cleanText } from "../ui/text";
+import { loginString } from "./strings_0101";
+
 export interface OidcLoginButtonProps {
   apiBaseUrl: string;
   label?: string;
+  /** "ar" renders Arabic copy with `dir="rtl"`; any other value renders English. */
+  locale?: string;
+  /** Id of the hint paragraph the link points at via aria-describedby. Fixed default: one login entry
+   * per page; a second instance on the same page must pass its own id. */
+  hintId?: string;
 }
 
 export function loginUrl(apiBaseUrl: string): string {
   return `${apiBaseUrl.replace(/\/$/, "")}/auth/login`;
 }
 
-export function OidcLoginButton({ apiBaseUrl, label = "Sign in" }: OidcLoginButtonProps) {
+/** Link styled as the primary action: the §72.1 action tokens, the minimum target size, and a
+ * text-decoration-free fill that is distinct from body text by fill and border, not hue alone. */
+const LINK_STYLE: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minBlockSize: "var(--target-min)",
+  minInlineSize: "var(--target-min)",
+  paddingInline: "1rem",
+  background: "var(--color-action)",
+  color: "var(--color-action-text)",
+  border: "2px solid var(--color-action)",
+  textDecoration: "none",
+};
+
+export function OidcLoginButton({
+  apiBaseUrl,
+  label,
+  locale = "en",
+  hintId = "oidc-login-hint",
+}: OidcLoginButtonProps) {
+  const lang = resolveLocale(locale);
   return (
-    <a href={loginUrl(apiBaseUrl)} data-testid="oidc-login-link">
-      {label}
-    </a>
+    <div lang={lang} dir={dirFor(lang)} data-testid="oidc-login">
+      {/* Still a real top-level <a> (never a JS redirect): H5/Law 17. */}
+      <a
+        href={loginUrl(apiBaseUrl)}
+        data-testid="oidc-login-link"
+        aria-describedby={hintId}
+        style={LINK_STYLE}
+      >
+        {cleanText(label) || loginString("signIn", lang)}
+      </a>
+      {/* H10: say where the click leads and that the user comes back. */}
+      <p id={hintId} data-testid="oidc-login-hint">
+        {loginString("hint", lang)}
+      </p>
+    </div>
   );
 }

@@ -62,7 +62,10 @@
  * repository).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+import { Button, EmptyState, Field, PendingView } from "../ui";
+import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
@@ -119,6 +122,8 @@ export interface DatasetSourceSelectorPurposeAuthorizationProps {
   apiBaseUrl: string;
   organizationId: string;
   projectId: string;
+  /** Standard-phrase language; "ar" renders right-to-left. */
+  locale?: Locale;
 }
 
 type FormStep = "form" | "preview";
@@ -148,25 +153,100 @@ export function datasetSourceAuthorizeUrl(
   return `${datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId)}/${connectionId}/authorize`;
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
+type PhraseKey = Parameters<typeof phrase>[0];
+
+// FTF-UX02 round-2 pre-review round 2 (SERVER-DETAIL-ENGLISH-IN-AR): `dataset_source_connection_
+// routes.py` raises `str(exc)`/an f-string for these four cases -- real English prose with
+// embedded dynamic values (a connection id, a purpose, an allowed-purposes list), never a fixed
+// code this frontend could echo as-is. Pattern-matching the stable PREFIX of each known shape
+// (never the dynamic suffix) lets English locale keep showing the server's own text unchanged
+// (already correct there) while Arabic gets a real translation instead of raw English prose.
+const FIELD_LABEL_PHRASE: Partial<Record<string, PhraseKey>> = {
+  source_type: "sourceTypeLabel",
+  display_name: "displayNameLabel",
+  allowed_purposes: "allowedPurposesLegend",
+  security_classification: "securityClassificationLabel",
+  credential: "credentialLabel",
+};
+
+function translateServerDetailToArabic(detail: string): string {
+  if (detail === "project_not_found") return phrase("detailProjectNotFound", "ar");
+  if (detail === "not_found") return phrase("detailConnectionNotFound", "ar");
+  if (detail.includes("no secret-manager backend configuration")) {
+    return phrase("detailSecretManagerUnavailable", "ar");
+  }
+  if (/ is not active \(connection_status=/.test(detail)) {
+    return phrase("detailConnectionNotActive", "ar");
+  }
+  const purposeMatch = detail.match(/is not granted for purpose '([^']+)'/);
+  if (purposeMatch) {
+    return phrase("detailPurposeNotGranted", "ar").replace("{purpose}", purposeMatch[1]!);
+  }
+  const requiredMatch = detail.match(/^(\w+) (?:is required and must be|must be)/);
+  const labelKey = requiredMatch ? FIELD_LABEL_PHRASE[requiredMatch[1]!] : undefined;
+  if (labelKey) {
+    return phrase("detailFieldRequiredTemplate", "ar").replace("{field}", phrase(labelKey, "ar"));
+  }
+  return phrase("detailUnexpectedRetryable", "ar");
+}
+
+async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return body.detail;
+      return locale === "ar" ? translateServerDetailToArabic(body.detail) : body.detail;
     }
   } catch {
     // fall through to the generic message below
   }
-  return `request failed (${response.status})`;
+  // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a 5xx (or any failure with
+  // no server-supplied `detail`) used to render the raw, untranslated `request failed (${status})`
+  // -- never in Arabic, and with no retry affordance.
+  return phrase("requestFailedRetryable", locale);
 }
 
-export function DatasetSourceSelectorPurposeAuthorizationUi({
+function networkErrorMessage(caught: unknown, locale: Locale): string {
+  // Distinguish from the above only for logging/debugging; the user-facing text is the same
+  // bilingual, retryable message either way (Law 17: never silent, never a crash).
+  void caught;
+  return phrase("networkErrorRetryable", locale);
+}
+
+export function DatasetSourceSelectorPurposeAuthorizationUi(
+  props: DatasetSourceSelectorPurposeAuthorizationProps,
+) {
+  // FTF-UX02 round-2 pre-review round 1 (STALE-IDENTITY-0500A): any identity change fully remounts
+  // this component (same pattern as the sibling FTF-0501-UI `ResumableDatasetUploadUI`), so a
+  // still-in-flight request for the OLD organization/project can never land on the NEW identity's
+  // state, and the new identity starts from a real loading state immediately instead of showing
+  // the previous identity's stale, still-usable list and authorization panel.
+  return (
+    <DatasetSourceSelectorInner
+      key={`${props.apiBaseUrl}|${props.organizationId}|${props.projectId}`}
+      {...props}
+    />
+  );
+}
+
+function DatasetSourceSelectorInner({
   apiBaseUrl,
   organizationId,
   projectId,
+  locale = "en",
 }: DatasetSourceSelectorPurposeAuthorizationProps) {
   const [connections, setConnections] = useState<DatasetSourceConnectionSummary[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
+
+  // Guards every state update after an `await` so a request from an identity this component has
+  // since remounted away from (key change above) can never write into the new instance's state --
+  // belt-and-suspenders alongside the key-based remount itself.
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const [formStep, setFormStep] = useState<FormStep>("form");
   const [sourceType, setSourceType] = useState<DatasetSourceType>(DATASET_SOURCE_TYPES[0]);
@@ -184,19 +264,84 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
   const [authorizeState, setAuthorizeState] = useState<AuthorizeState>("idle");
   const [authorizeMessage, setAuthorizeMessage] = useState<string | null>(null);
 
-  async function refreshConnections() {
-    setListError(null);
-    const response = await fetch(
-      datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId),
-      {
-        credentials: "include",
-      },
-    );
-    if (!response.ok) {
-      setListError(await readErrorDetail(response));
-      return;
+  // FTF-UX02 round-2 pre-review round 2 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): "Check authorization"/
+  // "Confirm and create"/"Retry" each disable themselves while their request is in flight, and a
+  // browser blurs an element the instant it becomes `disabled` -- re-enabling it afterward never
+  // gives focus back on its own, so it fell through to `<body>` with nothing announced. Each ref
+  // below tracks "was this the busy state a moment ago" so the matching effect can restore focus
+  // to the real control (or the only sensible place left) exactly once, right after it is safe to
+  // focus again -- never before the DOM has actually dropped `disabled` (same two-step shape as
+  // the sibling FTF-0501-UI `pendingAbandon`/`needsFocusOnIdle` fix for the same bug class).
+  const wasCheckingRef = useRef(false);
+  const wasCreatingRef = useRef(false);
+  const pendingRetryFocusRef = useRef(false);
+
+  useEffect(() => {
+    if (wasCheckingRef.current && authorizeState !== "checking") {
+      document
+        .querySelector<HTMLElement>('[data-testid="dataset-source-check-authorization-button"]')
+        ?.focus();
     }
-    setConnections(await response.json());
+    wasCheckingRef.current = authorizeState === "checking";
+  }, [authorizeState]);
+
+  useEffect(() => {
+    if (wasCreatingRef.current && !creating && createError) {
+      // On success the preview section unmounts instead (handled by resetForm), so this only
+      // ever fires on the real failure path -- never stealing focus from the fresh form.
+      document.querySelector<HTMLElement>('[data-testid="dataset-source-confirm-button"]')?.focus();
+    }
+    wasCreatingRef.current = creating;
+  }, [creating, createError]);
+
+  // Set true ONLY in a genuine retry failure branch below (never on the transient `setListError
+  // (null)` at the top of a retry, which would otherwise race this same ref if it were instead
+  // keyed off "listError just became falsy") -- so this effect only ever fires on a real repeat
+  // failure, landing focus on the newly (re)mounted Retry button rather than `<body>`.
+  useEffect(() => {
+    if (pendingRetryFocusRef.current && listError) {
+      pendingRetryFocusRef.current = false;
+      document
+        .querySelector<HTMLElement>('[data-testid="dataset-source-list-retry-button"]')
+        ?.focus();
+    }
+  }, [listError]);
+
+  async function refreshConnections(options?: { focusRetryOnFailure?: boolean }) {
+    setListError(null);
+    const failed = (message: string) => {
+      setListError(message);
+      if (options?.focusRetryOnFailure) pendingRetryFocusRef.current = true;
+    };
+    try {
+      const response = await fetch(
+        datasetSourceConnectionsUrl(apiBaseUrl, organizationId, projectId),
+        {
+          credentials: "include",
+        },
+      );
+      if (!aliveRef.current) return;
+      if (!response.ok) {
+        failed(await readErrorDetail(response, locale));
+        return;
+      }
+      const body = await response.json().catch(() => null);
+      if (!aliveRef.current) return;
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a 200 whose body is not
+      // an array (an object like `{items: []}`, `null`, a string, ...) used to crash the component
+      // outright (`connections?.find is not a function`) or spin the loading state forever -- a
+      // malformed 2xx is never success (Law 17), so it becomes a typed, retryable, announced error.
+      if (!Array.isArray(body)) {
+        failed(phrase("responseMalformedRetryable", locale));
+        return;
+      }
+      setConnections(body);
+    } catch (caught) {
+      if (!aliveRef.current) return;
+      // A thrown fetch (offline, DNS failure, a dropped connection) used to leave the loading
+      // state showing forever with an unhandled rejection and nothing announced to assistive tech.
+      failed(networkErrorMessage(caught, locale));
+    }
   }
 
   // Deliberately runs once per identity triple, not on every keystroke of
@@ -261,20 +406,28 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
           }),
         },
       );
+      if (!aliveRef.current) return;
       if (!response.ok) {
         // Preserve the draft on a real failure -- never revert the user's
         // own in-progress entries back to empty fields.
-        setCreateError(await readErrorDetail(response));
+        setCreateError(await readErrorDetail(response, locale));
         return;
       }
       const created: DatasetSourceConnectionSummary = await response.json();
+      if (!aliveRef.current) return;
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
       setAuthorizeState("idle");
       setAuthorizeMessage(null);
       resetForm();
+    } catch (caught) {
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
+      // here used to throw past this function's own `finally` as an unhandled rejection, leaving
+      // the preview showing with no error and `creating` never cleared except by the `finally`.
+      if (!aliveRef.current) return;
+      setCreateError(networkErrorMessage(caught, locale));
     } finally {
-      setCreating(false);
+      if (aliveRef.current) setCreating(false);
     }
   }
 
@@ -301,55 +454,115 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
           body: JSON.stringify({ purpose: purposeToCheck }),
         },
       );
+      if (!aliveRef.current) return;
       if (response.status === 403) {
         setAuthorizeState("denied");
-        setAuthorizeMessage(await readErrorDetail(response));
+        setAuthorizeMessage(await readErrorDetail(response, locale));
         return;
       }
       if (!response.ok) {
         setAuthorizeState("idle");
-        setAuthorizeMessage(await readErrorDetail(response));
+        setAuthorizeMessage(await readErrorDetail(response, locale));
         return;
       }
       setAuthorizeState("authorized");
       setAuthorizeMessage(null);
-    } finally {
-      // state already set in each branch above
+    } catch (caught) {
+      // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
+      // here used to leave "Check authorization" disabled forever (`checking` state) with an
+      // unhandled rejection and nothing announced -- now a typed, retryable, announced error.
+      if (!aliveRef.current) return;
+      setAuthorizeState("idle");
+      setAuthorizeMessage(networkErrorMessage(caught, locale));
     }
   }
 
   const selectedConnection =
     connections?.find((connection) => connection.id === selectedConnectionId) ?? null;
 
+  function connectionStatusLabel(status: string): string {
+    if (status === "active") return phrase("connectionStatusActive", locale);
+    if (status === "revoked") return phrase("connectionStatusRevoked", locale);
+    return status;
+  }
+
   return (
-    <div data-testid="dataset-source-selector">
+    <div data-testid="dataset-source-selector" lang={resolveLocale(locale)} dir={dirFor(locale)}>
       <section data-testid="dataset-source-list-section">
-        <h2>Dataset source connections</h2>
-        {listError && <p data-testid="dataset-source-list-error">{listError}</p>}
+        <h2>{phrase("datasetSourceHeading", locale)}</h2>
+        {listError && (
+          <div data-testid="dataset-source-list-error-section">
+            <p role="alert" data-testid="dataset-source-list-error">
+              {listError}
+            </p>
+            <Button
+              variant="secondary"
+              data-testid="dataset-source-list-retry-button"
+              onClick={() => void refreshConnections({ focusRetryOnFailure: true })}
+            >
+              {phrase("retry", locale)}
+            </Button>
+          </div>
+        )}
+        {connections === null && !listError && (
+          <PendingView
+            phase="busy"
+            label={phrase("datasetSourceLoading", locale)}
+            locale={locale}
+          />
+        )}
+        {connections !== null && connections.length === 0 && !listError && (
+          <div data-testid="dataset-source-empty-state">
+            <EmptyState
+              title={phrase("noConnectionsTitle", locale)}
+              why={phrase("noConnectionsWhy", locale)}
+              action={
+                <Button
+                  data-testid="dataset-source-empty-state-action"
+                  onClick={() => document.getElementById("dataset-source-display-name")?.focus()}
+                >
+                  {phrase("newConnectionHeading", locale)}
+                </Button>
+              }
+            />
+          </div>
+        )}
         <ul data-testid="dataset-source-connection-list">
           {(connections ?? []).map((connection) => (
             <li key={connection.id}>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 data-testid={`dataset-source-option-${connection.id}`}
                 aria-pressed={selectedConnectionId === connection.id}
                 onClick={() => handleSelectConnection(connection)}
               >
-                {connection.display_name} ({connection.source_type},{" "}
-                {connection.security_classification}, {connection.connection_status})
-              </button>
+                <bdi>{connection.display_name}</bdi> ({connection.source_type},{" "}
+                {connection.security_classification},{" "}
+                {connectionStatusLabel(connection.connection_status)})
+              </Button>
             </li>
           ))}
         </ul>
       </section>
 
       <section data-testid="dataset-source-new-connection-section">
-        <h2>New connection</h2>
-        {createError && <p data-testid="dataset-source-create-error">{createError}</p>}
+        <h2>{phrase("newConnectionHeading", locale)}</h2>
+        {createError && (
+          <p role="alert" data-testid="dataset-source-create-error">
+            {createError}
+          </p>
+        )}
 
         {formStep === "form" && (
           <form onSubmit={handleReview} data-testid="dataset-source-form">
-            <label htmlFor="dataset-source-type">Source type</label>
+            {/* FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS): block labels, same fix
+                as `Field` itself -- real layout, not DOM order, is what NN/g forms measures. */}
+            <label
+              htmlFor="dataset-source-type"
+              style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+            >
+              {phrase("sourceTypeLabel", locale)}
+            </label>
             <select
               id="dataset-source-type"
               data-testid="dataset-source-type-select"
@@ -363,26 +576,30 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </select>
 
-            <label htmlFor="dataset-source-display-name">Display name</label>
-            <input
+            <Field
               id="dataset-source-display-name"
               data-testid="dataset-source-display-name-input"
+              label={phrase("displayNameLabel", locale)}
+              requirement="required"
+              locale={locale}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               required
             />
 
-            <label htmlFor="dataset-source-credential">Credential (optional)</label>
-            <input
+            <Field
               id="dataset-source-credential"
               data-testid="dataset-source-credential-input"
+              label={phrase("credentialLabel", locale)}
+              requirement="optional"
+              locale={locale}
               type="password"
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
             />
 
             <fieldset data-testid="dataset-source-purposes-fieldset">
-              <legend>Allowed purposes</legend>
+              <legend>{phrase("allowedPurposesLegend", locale)}</legend>
               {DATASET_SOURCE_PURPOSES.map((purpose) => (
                 <label key={purpose}>
                   <input
@@ -396,8 +613,11 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </fieldset>
 
-            <label htmlFor="dataset-source-security-classification">
-              Security classification (privacy boundary)
+            <label
+              htmlFor="dataset-source-security-classification"
+              style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+            >
+              {phrase("securityClassificationLabel", locale)}
             </label>
             <select
               id="dataset-source-security-classification"
@@ -409,7 +629,7 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
                 )
               }
             >
-              <option value="">Select...</option>
+              <option value="">{phrase("selectPlaceholder", locale)}</option>
               {DATASET_SOURCE_SECURITY_CLASSIFICATIONS.map((classification) => (
                 <option key={classification} value={classification}>
                   {classification}
@@ -417,97 +637,112 @@ export function DatasetSourceSelectorPurposeAuthorizationUi({
               ))}
             </select>
 
-            <button
+            <Button
               type="submit"
               data-testid="dataset-source-review-button"
               disabled={!formIsReadyForReview}
             >
-              Review
-            </button>
+              {phrase("reviewButton", locale)}
+            </Button>
           </form>
         )}
 
         {formStep === "preview" && (
           <div data-testid="dataset-source-preview">
-            <p data-testid="dataset-source-preview-notice">
-              Review before creating. This previews exactly what will be submitted -- it is not a
-              preview of the external source's own records or byte counts, which no connector in
-              this repository can validate yet.
-            </p>
+            <p data-testid="dataset-source-preview-notice">{phrase("previewNotice", locale)}</p>
             <dl>
-              <dt>Source type</dt>
+              <dt>{phrase("previewSourceTypeLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-source-type">{sourceType}</dd>
-              <dt>Display name</dt>
-              <dd data-testid="dataset-source-preview-display-name">{displayName}</dd>
-              <dt>Credentials scope</dt>
-              <dd data-testid="dataset-source-preview-credential">
-                {credential ? "credential provided" : "no credential provided"}
+              <dt>{phrase("previewDisplayNameLabel", locale)}</dt>
+              <dd data-testid="dataset-source-preview-display-name">
+                <bdi>{displayName}</bdi>
               </dd>
-              <dt>Allowed purposes</dt>
+              <dt>{phrase("previewCredentialScopeLabel", locale)}</dt>
+              <dd data-testid="dataset-source-preview-credential">
+                {credential
+                  ? phrase("credentialProvided", locale)
+                  : phrase("credentialNotProvided", locale)}
+              </dd>
+              <dt>{phrase("previewPurposesLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-purposes">
                 {Array.from(purposes).join(", ")}
               </dd>
-              <dt>Privacy boundary</dt>
+              <dt>{phrase("previewPrivacyBoundaryLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-security-classification">
                 {securityClassification}
               </dd>
             </dl>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               data-testid="dataset-source-back-button"
               onClick={handleBackToEdit}
               disabled={creating}
             >
-              Back
-            </button>
-            <button
-              type="button"
+              {phrase("backButton", locale)}
+            </Button>
+            <Button
               data-testid="dataset-source-confirm-button"
               onClick={handleConfirmCreate}
               disabled={creating}
             >
-              Confirm and create
-            </button>
+              {phrase("confirmCreateButton", locale)}
+            </Button>
           </div>
         )}
       </section>
 
       {selectedConnection && (
         <section data-testid="dataset-source-authorization-section">
-          <h2>Purpose authorization</h2>
+          <h2>{phrase("authorizationHeading", locale)}</h2>
           <p data-testid="dataset-source-authorization-selected-connection">
-            {selectedConnection.display_name}
+            <bdi>{selectedConnection.display_name}</bdi>
           </p>
-          <label htmlFor="dataset-source-purpose-to-check">Purpose to authorize</label>
+          {/* FTF-UX02 round-2 pre-review round 2 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK): this
+              label was missed when the other four got the same block-layout fix last round --
+              real layout (not DOM order) still put it beside, not above, its select. */}
+          <label
+            htmlFor="dataset-source-purpose-to-check"
+            style={{ display: "block", marginBlockEnd: "var(--space-1)" }}
+          >
+            {phrase("purposeToCheckLabel", locale)}
+          </label>
           <select
             id="dataset-source-purpose-to-check"
             data-testid="dataset-source-purpose-to-check-select"
             value={purposeToCheck}
             onChange={(event) => setPurposeToCheck(event.target.value as DatasetSourcePurpose | "")}
           >
-            <option value="">Select...</option>
+            <option value="">{phrase("selectPlaceholder", locale)}</option>
             {DATASET_SOURCE_PURPOSES.map((purpose) => (
               <option key={purpose} value={purpose}>
                 {purpose}
               </option>
             ))}
           </select>
-          <button
-            type="button"
+          <Button
             data-testid="dataset-source-check-authorization-button"
             onClick={handleCheckAuthorization}
             disabled={!purposeToCheck || authorizeState === "checking"}
           >
-            Check authorization
-          </button>
+            {phrase("checkAuthorizationButton", locale)}
+          </Button>
           {authorizeState === "authorized" && (
-            <p data-testid="dataset-source-authorization-result-authorized">Authorized</p>
+            // FTF-UX02 round-2 pre-review round 2 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): a
+            // successful check had no role/aria-live anywhere, so a screen-reader user who just
+            // triggered it heard nothing at all -- "status", not "alert" (this is good news).
+            <p role="status" data-testid="dataset-source-authorization-result-authorized">
+              {phrase("authorizedResult", locale)}
+            </p>
           )}
           {authorizeState === "denied" && (
-            <p data-testid="dataset-source-authorization-result-denied">{authorizeMessage}</p>
+            <p role="alert" data-testid="dataset-source-authorization-result-denied">
+              {authorizeMessage}
+            </p>
           )}
           {authorizeState === "idle" && authorizeMessage && (
-            <p data-testid="dataset-source-authorization-error">{authorizeMessage}</p>
+            <p role="alert" data-testid="dataset-source-authorization-error">
+              {authorizeMessage}
+            </p>
           )}
         </section>
       )}

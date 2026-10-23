@@ -45,7 +45,36 @@
  * a mocked `fetch`), not a full browser E2E.
  */
 
-import { useState } from "react";
+/*
+ * FTF-UX03 round 2: rebuilt on the UX01 components, bilingual with `lang`/`dir` on every state,
+ * branch and ref text in <bdi>. Every failure (rejected fetch, non-2xx, malformed 2xx) is announced
+ * with a recovery step and keeps what is on screen. A 2xx counts only when `bindBranchListing` /
+ * `bindResolvedRef` find it answers what was asked, and a reply for a ref that is no longer the one
+ * in the input is ignored (the pre-existing stale-resolve race).
+ */
+
+import { useRef, useState } from "react";
+
+import {
+  Banner,
+  Button,
+  EmptyState,
+  Field,
+  Pending,
+  dirFor,
+  resolveLocale,
+  type Locale,
+} from "../ui";
+import {
+  MALFORMED_FAILURE,
+  NETWORK_FAILURE,
+  failureFromResponse,
+  selectorFailureMessage,
+  type SelectorRoute,
+  isRecord,
+  type Failure,
+} from "./common";
+import { t04a04 } from "./strings_04a04";
 
 export interface GitHubBranchSummary {
   name: string;
@@ -72,6 +101,9 @@ export interface GitHubBranchRefSelectorProps {
   repositoryIdentity: string;
   targetApplicationConnectionId: string;
   onResolve?: (resolved: GitHubResolvedRef) => void;
+  /** Pre-fills the ref input (e.g. the connection's default branch); never resolves it. */
+  defaultBranch?: string;
+  locale?: Locale;
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -100,19 +132,64 @@ export function githubResolveRefUrl(
   );
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
-  try {
-    const body = await response.json();
-    if (body && typeof body.detail === "string") {
-      return body.detail;
-    }
-  } catch {
-    // fall through to the generic message below
+// A git object id: 40 hex (SHA-1) or 64 hex (SHA-256 repositories).
+const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
+/** Binds a branch-listing reply to the page that was requested; `null` when it does not bind. */
+export function bindBranchListing(
+  requestedPage: number,
+  body: unknown,
+): GitHubBranchListingResponse | null {
+  if (!isRecord(body)) return null;
+  const { branches, page, per_page, has_next_page } = body;
+  if (!Array.isArray(branches)) return null;
+  if (!Number.isInteger(page) || page !== requestedPage) return null;
+  if (!Number.isInteger(per_page) || typeof has_next_page !== "boolean") return null;
+  const parsed: GitHubBranchSummary[] = [];
+  for (const entry of branches) {
+    if (!isRecord(entry)) return null;
+    const { name, list_time_commit_sha } = entry;
+    if (typeof name !== "string" || name.trim() === "") return null;
+    if (typeof list_time_commit_sha !== "string") return null;
+    parsed.push({ name, list_time_commit_sha });
   }
-  return `request failed (${response.status})`;
+  return {
+    branches: parsed,
+    page: page as number,
+    per_page: per_page as number,
+    has_next_page,
+  };
 }
 
-export function GitHubBranchRefSelector({
+/**
+ * Binds a resolve reply to the ref that was sent: the echoed ref must be the requested ref and the
+ * commit must be a real object id, so a reply for another ref is never shown as this ref's commit.
+ */
+export function bindResolvedRef(requestedRef: string, body: unknown): GitHubResolvedRef | null {
+  if (!isRecord(body)) return null;
+  const { ref, resolved_commit_sha } = body;
+  if (typeof ref !== "string" || ref !== requestedRef) return null;
+  if (typeof resolved_commit_sha !== "string" || !COMMIT_SHA.test(resolved_commit_sha)) return null;
+  return { ref, resolved_commit_sha };
+}
+
+/**
+ * Identity (UI CHECKLIST c): the repository, connection and project the selector works on are the
+ * key, so branches, a typed ref and a resolved commit never carry over to another one.
+ */
+export function GitHubBranchRefSelector(props: GitHubBranchRefSelectorProps) {
+  const identity = JSON.stringify([
+    props.apiBaseUrl,
+    props.organizationId,
+    props.projectId,
+    props.repositoryIdentity,
+    props.targetApplicationConnectionId,
+    props.credential,
+  ]);
+  return <BranchRefSelector key={identity} {...props} />;
+}
+
+function BranchRefSelector({
   apiBaseUrl,
   organizationId,
   projectId,
@@ -120,25 +197,37 @@ export function GitHubBranchRefSelector({
   repositoryIdentity,
   targetApplicationConnectionId,
   onResolve,
+  defaultBranch,
+  locale = "en",
 }: GitHubBranchRefSelectorProps) {
   const [branches, setBranches] = useState<GitHubBranchSummary[]>([]);
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
+  const [branchesLoaded, setBranchesLoaded] = useState(false);
   const [resolving, setResolving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  // Which request the failure belongs to: the words for a 404 or 409 differ between listing branches
+  // and resolving a ref.
+  const [failureRoute, setFailureRoute] = useState<SelectorRoute>("branches");
   // The ref currently being edited/selected (display value only).
-  const [selectedRef, setSelectedRef] = useState("");
+  const [selectedRef, setSelectedRef] = useState(defaultBranch ?? "");
   // Deliberately starts `null` and is set only from a real, fresh
   // `github-resolve-ref` response inside `handleResolve` -- cleared by
   // every code path that changes `selectedRef`, so a resolved SHA is
   // never shown next to a ref it was not actually resolved for (this
   // task's own real "does not mix commits" negative_acceptance).
   const [resolvedRef, setResolvedRef] = useState<GitHubResolvedRef | null>(null);
+  // What the input says right now, readable from an async reply that outlives a render.
+  const liveRef = useRef(selectedRef);
+  const latestResolve = useRef(0);
+
+  const lang = resolveLocale(locale);
 
   async function fetchBranchPage(requestedPage: number, append: boolean) {
     setLoadingBranches(true);
-    setError(null);
+    setFailure(null);
+    setFailureRoute("branches");
     try {
       const response = await fetch(githubBranchesUrl(apiBaseUrl, organizationId, projectId), {
         method: "POST",
@@ -151,13 +240,27 @@ export function GitHubBranchRefSelector({
         }),
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        const refused = await failureFromResponse(response);
+        setFailure(refused);
         return;
       }
-      const body: GitHubBranchListingResponse = await response.json();
+      let raw: unknown;
+      try {
+        raw = await response.json();
+      } catch {
+        raw = null;
+      }
+      const body = bindBranchListing(requestedPage, raw);
+      if (!body) {
+        setFailure(MALFORMED_FAILURE);
+        return;
+      }
       setBranches((previous) => (append ? [...previous, ...body.branches] : body.branches));
       setPage(body.page);
       setHasNextPage(body.has_next_page);
+      setBranchesLoaded(true);
+    } catch {
+      setFailure(NETWORK_FAILURE);
     } finally {
       setLoadingBranches(false);
     }
@@ -171,23 +274,25 @@ export function GitHubBranchRefSelector({
     await fetchBranchPage(page + 1, true);
   }
 
-  function handleSelectBranch(name: string) {
-    setSelectedRef(name);
-    setResolvedRef(null);
-  }
-
-  function handleRefChange(value: string) {
+  function changeRef(value: string) {
+    liveRef.current = value;
     setSelectedRef(value);
     setResolvedRef(null);
   }
 
   async function handleResolve(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedRef.trim()) {
+    const requestedRef = selectedRef;
+    if (!requestedRef.trim()) {
       return;
     }
+    const requestId = ++latestResolve.current;
     setResolving(true);
-    setError(null);
+    setFailure(null);
+    setFailureRoute("resolve");
+    // A reply only counts while it is still the newest request AND the input still holds the ref it
+    // was sent for; otherwise the user has moved on and showing it would mix commits.
+    const stale = () => requestId !== latestResolve.current || liveRef.current !== requestedRef;
     try {
       const response = await fetch(githubResolveRefUrl(apiBaseUrl, organizationId, projectId), {
         method: "POST",
@@ -196,84 +301,144 @@ export function GitHubBranchRefSelector({
         body: JSON.stringify({
           credential,
           repository_identity: repositoryIdentity,
-          ref: selectedRef,
+          ref: requestedRef,
           target_application_connection_id: targetApplicationConnectionId,
         }),
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response));
+        const refused = await failureFromResponse(response);
+        if (!stale()) setFailure(refused);
         return;
       }
-      const body: GitHubResolvedRef = await response.json();
+      let raw: unknown;
+      try {
+        raw = await response.json();
+      } catch {
+        raw = null;
+      }
+      if (stale()) return;
+      const body = bindResolvedRef(requestedRef, raw);
+      if (!body) {
+        setFailure(MALFORMED_FAILURE);
+        return;
+      }
       setResolvedRef(body);
       onResolve?.(body);
+    } catch {
+      if (!stale()) setFailure(NETWORK_FAILURE);
     } finally {
-      setResolving(false);
+      if (requestId === latestResolve.current) setResolving(false);
     }
   }
 
+  const showEmpty =
+    branchesLoaded && !loadingBranches && failure === null && !hasNextPage && branches.length === 0;
+  const refBlank = !selectedRef.trim();
+
   return (
-    <div data-testid="github-branch-ref-selector">
-      <button
-        type="button"
+    <div data-testid="github-branch-ref-selector" lang={lang} dir={dirFor(locale)}>
+      <Button
+        variant="secondary"
         data-testid="github-load-branches-button"
         disabled={loadingBranches}
         onClick={handleLoadBranches}
       >
-        Load branches
-      </button>
+        {t04a04("loadBranches", locale)}
+      </Button>
 
-      {error && <p data-testid="github-branch-ref-error">{error}</p>}
-
-      <ul data-testid="github-branch-list">
-        {branches.map((branch) => (
-          <li key={branch.name}>
-            <button
-              type="button"
-              data-testid={`github-branch-option-${branch.name}`}
-              aria-pressed={selectedRef === branch.name}
-              onClick={() => handleSelectBranch(branch.name)}
-            >
-              {branch.name}
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {hasNextPage && (
-        <button
-          type="button"
-          data-testid="github-branch-load-more-button"
-          disabled={loadingBranches}
-          onClick={handleLoadMore}
-        >
-          Load more
-        </button>
+      {failure && (
+        <div data-testid="github-branch-ref-error">
+          <Banner kind="error" locale={locale}>
+            {selectorFailureMessage(failure, locale, failureRoute)}
+          </Banner>
+        </div>
       )}
 
-      <form onSubmit={handleResolve} data-testid="github-ref-form">
-        <label htmlFor="github-ref-input">Branch, tag, or commit SHA</label>
-        <input
+      <div aria-busy={loadingBranches}>
+        {loadingBranches && <Pending label={t04a04("loadingBranches", locale)} locale={locale} />}
+
+        {showEmpty && (
+          <EmptyState
+            title={t04a04("noBranchesTitle", locale)}
+            why={t04a04("noBranchesWhy", locale)}
+            action={
+              <Button
+                variant="secondary"
+                data-testid="github-enter-ref-button"
+                onClick={() => document.getElementById("github-ref-input")?.focus()}
+              >
+                {t04a04("enterRefManually", locale)}
+              </Button>
+            }
+          />
+        )}
+
+        <ul data-testid="github-branch-list" aria-label={t04a04("branchListLabel", locale)}>
+          {branches.map((branch, index) => {
+            const selected = selectedRef === branch.name;
+            return (
+              <li key={`${index}:${branch.name}`}>
+                <Button
+                  variant={selected ? "primary" : "secondary"}
+                  data-testid={`github-branch-option-${branch.name}`}
+                  aria-pressed={selected}
+                  style={{ overflowWrap: "anywhere", maxInlineSize: "100%" }}
+                  onClick={() => changeRef(branch.name)}
+                >
+                  {selected && <span aria-hidden="true">✓ </span>}
+                  <bdi>{branch.name}</bdi>
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {hasNextPage && (
+          <Button
+            data-testid="github-branch-load-more-button"
+            disabled={loadingBranches}
+            onClick={handleLoadMore}
+          >
+            {t04a04("loadMore", locale)}
+          </Button>
+        )}
+      </div>
+
+      <form onSubmit={handleResolve} data-testid="github-ref-form" noValidate>
+        <Field
+          style={{ minBlockSize: "var(--target-min)" }}
           id="github-ref-input"
           data-testid="github-ref-input"
           type="text"
+          label={t04a04("refLabel", locale)}
+          helper={t04a04("refHelper", locale)}
+          requirement="required"
+          locale={locale}
           value={selectedRef}
-          onChange={(event) => handleRefChange(event.target.value)}
-          required
+          onChange={(event) => changeRef(event.target.value)}
         />
-        <button
+        <Button
           type="submit"
+          variant="primary"
           data-testid="github-resolve-ref-button"
-          disabled={resolving || !selectedRef.trim()}
+          disabled={resolving}
+          disabledReason={refBlank ? t04a04("refRequired", locale) : undefined}
         >
-          Resolve
-        </button>
+          {t04a04("resolve", locale)}
+        </Button>
       </form>
+      {resolving && <Pending label={t04a04("resolving", locale)} locale={locale} />}
 
       {resolvedRef && (
-        <p data-testid="github-resolved-ref-notice">
-          Resolved {resolvedRef.ref} to {resolvedRef.resolved_commit_sha}
-        </p>
+        <div
+          role="status"
+          data-testid="github-resolved-ref-notice"
+          style={{ overflowWrap: "anywhere" }}
+        >
+          <span aria-hidden="true">✓</span> {t04a04("resolvedPrefix", locale)}{" "}
+          <bdi>{resolvedRef.ref}</bdi> {t04a04("resolvedTo", locale)}{" "}
+          <bdi dir="ltr">{resolvedRef.resolved_commit_sha}</bdi>
+        </div>
       )}
     </div>
   );

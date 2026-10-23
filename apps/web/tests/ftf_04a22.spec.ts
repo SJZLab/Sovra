@@ -20,6 +20,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { failureMessage } from "../components/target-application/common";
 import {
   manifestUrl,
   type ManifestRecord,
@@ -366,9 +367,10 @@ test("loads the manifest and requirements views from the real FTF-04A19/FTF-0407
     "en, ar",
   );
   expect(screen.getByTestId("forbidden-action-name-refund").textContent).toBe("refund");
-  expect(screen.getByTestId("forbidden-action-status-refund").textContent).toBe(
-    "not_runtime_enforced",
-  );
+  // UX03: the status is human words (icon + text), never the raw reason code.
+  const statusText = screen.getByTestId("forbidden-action-status-refund").textContent ?? "";
+  expect(statusText).toContain("not yet seen blocked at runtime");
+  expect(statusText).not.toContain("not_runtime_enforced");
   expect(screen.getByTestId("forbidden-action-conflict-refund")).toBeTruthy();
   expect(callsOf("GET", MANIFEST_PATH)).toHaveLength(1);
   expect(callsOf("GET", REQUIREMENTS_PATH)).toHaveLength(1);
@@ -393,8 +395,8 @@ test("malformed manifest/requirements responses are refused, not silently treate
   );
   renderUI();
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-load-error").textContent).toBe(
-      "malformed manifest response",
+    expect(screen.getByTestId("mandate-load-error").textContent).toContain(
+      failureMessage({ kind: "malformed" }),
     ),
   );
 });
@@ -749,7 +751,9 @@ describe("refresh enforcement failures", () => {
     );
     fireEvent.click(screen.getByTestId("refresh-enforcement-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("refresh-enforcement-error").textContent).toContain("offline"),
+      expect(screen.getByTestId("refresh-enforcement-error").textContent).toContain(
+        failureMessage({ kind: "network" }),
+      ),
     );
     expect(screen.getByTestId("mandate-lock-blocked")).toBeTruthy();
     expect(screen.queryByTestId("mandate-lock-ready")).toBeNull();
@@ -766,7 +770,9 @@ test("a load network error is surfaced", async () => {
   );
   renderUI();
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-load-error").textContent).toContain("boom"),
+    expect(screen.getByTestId("mandate-load-error").textContent).toContain(
+      failureMessage({ kind: "network" }),
+    ),
   );
 });
 
@@ -782,7 +788,9 @@ test("a save network error is surfaced and the draft is kept", async () => {
   );
   fireEvent.click(screen.getByTestId("mandate-save-button"));
   await waitFor(() =>
-    expect(screen.getByTestId("mandate-save-error").textContent).toContain("down"),
+    expect(screen.getByTestId("mandate-save-error").textContent).toContain(
+      failureMessage({ kind: "network" }),
+    ),
   );
   expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
     "draft",
@@ -821,7 +829,7 @@ test("clearing business_purpose and latency_slo_ms sends JSON null with the key 
 test("a locked manifest has no remove buttons and every input is disabled", async () => {
   installServer({
     manifest: manifestRecord({
-      status: "approved",
+      status: "locked",
       forbidden_actions_json: { actions: [{ name: "refund", reason: "x" }] },
     }),
     requirements: [requirement()],
@@ -923,41 +931,33 @@ test("a props change refetches the manifest", async () => {
   expect(before).toBeGreaterThan(0);
 });
 
-// -- Round 3: the server's returned manifest is what is shown after a save --
+// -- Round 3: the server's returned manifest is what is shown after a save (UX03 r2: and it must be
+// the manifest that was asked for -- the columns sent, the status unchanged) --
 
-test("after a successful save the returned manifest is shown (fields, lock state, no Save)", async () => {
+test("after a successful save the returned manifest is shown (server-owned fields, no Save)", async () => {
   installServer({
-    patchResponse: {
-      status: "locked",
-      mandate_json: { business_purpose: "SERVER" },
-      forbidden_actions_json: { actions: [{ name: "server_action", reason: "from server" }] },
-    },
+    patchResponse: { version: 7, manifest_sha256: "f".repeat(64) },
   });
   await renderLoaded();
   typeInto("mandate-field-business_purpose", "local edit");
   fireEvent.click(screen.getByTestId("mandate-save-button"));
   await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
-  await waitFor(() => expect(screen.queryByTestId("mandate-save-button")).toBeNull());
+  await waitFor(() => expect(screen.getByTestId("mandate-saved-notice")).toBeTruthy());
   const field = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
-  expect(field.value).toBe("SERVER");
-  expect(field.disabled).toBe(true);
-  expect(screen.getByTestId("mandate-readonly-notice")).toBeTruthy();
-  expect(screen.getByTestId("forbidden-action-name-server_action")).toBeTruthy();
-  expect(screen.queryByTestId("forbidden-action-add-form")).toBeNull();
+  expect(field.value).toBe("local edit");
+  expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true);
 });
 
-test("after a successful save that stays editable, Save is disabled again and the server value shows", async () => {
-  installServer({
-    patchResponse: { mandate_json: { business_purpose: "SERVER" } },
-  });
+test("a save reply that flips the lifecycle status is refused: never 'saved', drafts kept", async () => {
+  installServer({ patchResponse: { status: "locked" } });
   await renderLoaded();
   typeInto("mandate-field-business_purpose", "local edit");
   fireEvent.click(screen.getByTestId("mandate-save-button"));
-  await waitFor(() =>
-    expect((screen.getByTestId("mandate-save-button") as HTMLButtonElement).disabled).toBe(true),
-  );
+  await waitFor(() => expect(callsOf("PATCH").length).toBe(1));
+  await waitFor(() => expect(screen.getByTestId("mandate-save-error")).toBeTruthy());
+  expect(screen.queryByTestId("mandate-saved-notice")).toBeNull();
   expect((screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement).value).toBe(
-    "SERVER",
+    "local edit",
   );
 });
 
@@ -980,4 +980,69 @@ test("a locked manifest disables every mandate input", async () => {
     const input = screen.getByTestId(`mandate-field-${field}`) as HTMLInputElement;
     expect(input.disabled, field).toBe(true);
   }
+});
+
+// -- FTF-UX03 (audit #15, H10): inline guidance on every structured field ---
+
+describe("UX03 field guidance", () => {
+  const ALL_FIELDS = [...MANDATE_TEXT_FIELDS, ...MANDATE_LIST_FIELDS, ...MANDATE_NUMBER_FIELDS];
+
+  function renderLocale(locale?: "en" | "ar") {
+    return render(
+      createElement(MandateEditorAndConflictResolutionUI, {
+        apiBaseUrl: API_BASE,
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        manifestId: MANIFEST_ID,
+        locale,
+      }),
+    );
+  }
+
+  function helpText(field: string): string {
+    const id = screen.getByTestId(`mandate-field-${field}`).getAttribute("aria-describedby");
+    expect(id, `${field} has no aria-describedby`).toBeTruthy();
+    const el = document.getElementById(id as string);
+    expect(el, `${field} help element missing`).toBeTruthy();
+    return (el as HTMLElement).textContent ?? "";
+  }
+
+  test("every one of the 14 structured fields has distinct, non-trivial help (en)", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    const seen = new Set<string>();
+    for (const field of ALL_FIELDS) {
+      const text = helpText(field);
+      expect(text.length).toBeGreaterThan(30);
+      expect(/[؀-ۿ]/.test(text)).toBe(false);
+      seen.add(text);
+    }
+    expect(ALL_FIELDS.length).toBe(14);
+    expect(seen.size).toBe(14);
+  });
+
+  test("every field's help is Arabic with locale=ar and the editor is rtl", async () => {
+    renderLocale("ar");
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    for (const field of ALL_FIELDS) {
+      expect(/[؀-ۿ]/.test(helpText(field))).toBe(true);
+    }
+    expect(screen.getByTestId("mandate-editor-ui").getAttribute("dir")).toBe("rtl");
+  });
+
+  test("list fields state that items are separated by commas", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    for (const field of MANDATE_LIST_FIELDS) {
+      expect(helpText(field)).toMatch(/comma/i);
+    }
+  });
+
+  test("help text does not change what a field saves (value path unchanged)", async () => {
+    renderLocale();
+    await waitFor(() => expect(screen.getByTestId("mandate-fields-section")).toBeTruthy());
+    const input = screen.getByTestId("mandate-field-business_purpose") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Refund orders" } });
+    expect(input.value).toBe("Refund orders");
+  });
 });

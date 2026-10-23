@@ -46,7 +46,32 @@
  * full browser E2E -- Law 6 stays disclosed BLOCKED on that dependency.
  */
 
-import { useEffect, useMemo, useState } from "react";
+/*
+ * FTF-UX03 round 2 (UX_STANDARD.md): rebuilt on the UX01 components and tokens, every system string
+ * through the en/ar catalogue (`strings_04a21.ts`) with `lang`/`dir` on every state, and every
+ * failure shown in words with a way forward (never blank, never an unmounted page):
+ * - A rejected fetch, a non-2xx reply, an unreadable body or a body that fails the strict parse
+ *   (`parseManifest` / `parseEvidence`: wrong JSON type, value outside an enum, missing field) all
+ *   end in a visible error with a Retry; nothing is rendered from a reply that failed the parse.
+ * - Only a typed 2xx whose body is BOUND to what was sent counts as saved / submitted / locked
+ *   (`unboundFields`): a reply that names another manifest, drops a sent field or changes its value
+ *   is refused and the drafts stay (Law 17).
+ * - The component is keyed by API base, organization, project and manifest, so every identity change
+ *   resets drafts, results and in-flight state.
+ */
+
+import { useEffect, useId, useMemo, useState } from "react";
+
+import { Banner, Button, Pending, dirFor, resolveLocale, type Locale } from "../ui";
+import {
+  MALFORMED_FAILURE,
+  NETWORK_FAILURE,
+  failureFromResponse,
+  safeFailureMessage,
+  isRecord,
+  type Failure,
+} from "./common";
+import { evidenceTypeLabel, fieldLabel, roleLabel, t04a21, type Key04a21 } from "./strings_04a21";
 
 // Matches AgentManifest CONTENT_FIELDS minus `target_source_snapshot_id`
 // (fixed at creation) -- exactly the fields the live PATCH accepts.
@@ -79,9 +104,22 @@ export const MODEL_BINDING_FIELD = "current_model_binding_json";
 // Section 0.12's explicitly assigned roles.
 export const MODEL_ROLES = ["current_production", "baseline", "candidate", "teacher", "judge"];
 
+// Mirrors agent_manifest_schema.ALLOWED_STATUSES and manifest_evidence_schema.ALLOWED_EVIDENCE_TYPES.
+export const MANIFEST_STATUSES = ["draft", "review_required", "locked", "superseded"] as const;
+export const EVIDENCE_TYPES = [
+  "repo_file",
+  "repo_symbol",
+  "config",
+  "test",
+  "runtime_probe",
+  "user_input",
+] as const;
+
 export interface ManifestRecord {
   id: string;
   project_id: string;
+  organization_id: string;
+  target_source_snapshot_id: string;
   status: string;
   version: number;
   manifest_sha256: string | null;
@@ -90,6 +128,8 @@ export interface ManifestRecord {
 
 export interface EvidenceRecord {
   id: string;
+  organization_id: string;
+  agent_manifest_id: string;
   field_path: string;
   evidence_type: string;
   repository_commit_sha: string | null;
@@ -108,6 +148,7 @@ export interface ManifestReviewEditUIProps {
   manifestId: string;
   /** Injectable for tests; defaults to `window.localStorage` when usable. */
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
+  locale?: Locale;
 }
 
 interface StoredDraft {
@@ -151,7 +192,6 @@ export function draftStorageKey(
   return `sovra:manifest-draft:${organizationId}:${projectId}:${manifestId}`;
 }
 
-/** The text a field shows for the server's current value. */
 export function serverText(manifest: ManifestRecord, field: string): string {
   const value = manifest[field];
   if ((TEXT_FIELDS as readonly string[]).includes(field)) {
@@ -160,7 +200,6 @@ export function serverText(manifest: ManifestRecord, field: string): string {
   return JSON.stringify(value ?? null, null, 2);
 }
 
-/** Parses a JSON-field draft; `ok: false` is an invalid-JSON conflict. */
 export function parseJsonDraft(text: string): { ok: true; value: unknown } | { ok: false } {
   try {
     return { ok: true, value: JSON.parse(text) };
@@ -174,7 +213,6 @@ export interface DiffLine {
   text: string;
 }
 
-/** Line diff (longest-common-subsequence) between server and draft text. */
 export function lineDiff(before: string, after: string): DiffLine[] {
   const a = before.split("\n");
   const b = after.split("\n");
@@ -210,9 +248,143 @@ export function lineDiff(before: string, after: string): DiffLine[] {
   return out;
 }
 
-/** Evidence rows whose `field_path` leading dot-segment is `field`. */
 export function evidenceForField(evidence: EvidenceRecord[], field: string): EvidenceRecord[] {
   return evidence.filter((row) => row.field_path.split(".")[0] === field);
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isNumberOrNull(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value));
+}
+
+/**
+ * Strict parse of a manifest reply: a wrong JSON type, a status outside the four known values or a
+ * missing field is `null` (malformed), never a half-rendered manifest. Every content field must be
+ * present (its value may be any JSON, `null` meaning "not set").
+ */
+export function parseManifest(body: unknown): ManifestRecord | null {
+  if (!isRecord(body)) return null;
+  if (typeof body.id !== "string" || body.id === "") return null;
+  if (typeof body.project_id !== "string" || body.project_id === "") return null;
+  // Tenant and snapshot identity are part of the reply's shape: a manifest that does not say which
+  // organization and snapshot it belongs to cannot be shown as this organization's manifest.
+  if (typeof body.organization_id !== "string" || body.organization_id === "") return null;
+  if (typeof body.target_source_snapshot_id !== "string" || body.target_source_snapshot_id === "") {
+    return null;
+  }
+  if (
+    typeof body.status !== "string" ||
+    !(MANIFEST_STATUSES as readonly string[]).includes(body.status)
+  ) {
+    return null;
+  }
+  if (!Number.isInteger(body.version) || (body.version as number) < 1) return null;
+  if (!Object.hasOwn(body, "manifest_sha256") || !isStringOrNull(body.manifest_sha256)) return null;
+  if (!Object.hasOwn(body, "agent_name") || !isStringOrNull(body.agent_name)) return null;
+  for (const field of JSON_FIELDS) {
+    if (!Object.hasOwn(body, field)) return null;
+  }
+  return body as ManifestRecord;
+}
+
+const EVIDENCE_NULLABLE_STRINGS = [
+  "repository_commit_sha",
+  "file_path",
+  "symbol",
+  "content_hash",
+] as const;
+const EVIDENCE_NULLABLE_NUMBERS = ["line_start", "line_end", "confidence_score"] as const;
+
+/** Strict parse of the evidence list: one bad row makes the whole list malformed (never "no evidence"). */
+export function parseEvidence(
+  body: unknown,
+  expected: { manifestId: string; organizationId: string },
+): EvidenceRecord[] | null {
+  if (!Array.isArray(body)) return null;
+  for (const row of body as unknown[]) {
+    if (!isRecord(row)) return null;
+    if (typeof row.id !== "string" || row.id === "") return null;
+    // Bound to the request: a row that names another manifest or organization is never this
+    // manifest's evidence.
+    if (row.agent_manifest_id !== expected.manifestId) return null;
+    if (row.organization_id !== expected.organizationId) return null;
+    if (typeof row.field_path !== "string") return null;
+    if (
+      typeof row.evidence_type !== "string" ||
+      !(EVIDENCE_TYPES as readonly string[]).includes(row.evidence_type)
+    ) {
+      return null;
+    }
+    for (const key of EVIDENCE_NULLABLE_STRINGS) {
+      if (!Object.hasOwn(row, key) || !isStringOrNull(row[key])) return null;
+    }
+    for (const key of EVIDENCE_NULLABLE_NUMBERS) {
+      if (!Object.hasOwn(row, key) || !isNumberOrNull(row[key])) return null;
+    }
+  }
+  return body as EvidenceRecord[];
+}
+
+function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => jsonEqual(item, b[index]))
+    );
+  }
+  if (isRecord(a) && isRecord(b)) {
+    const keys = Object.keys(a);
+    return (
+      keys.length === Object.keys(b).length &&
+      keys.every((key) => Object.hasOwn(b, key) && jsonEqual(a[key], b[key]))
+    );
+  }
+  return false;
+}
+
+export type SentAction =
+  | { kind: "patch"; sent: Record<string, unknown>; previousStatus: string }
+  | { kind: "submit" }
+  | { kind: "lock" };
+
+/**
+ * The one binding function: the names of everything in the reply that does NOT match what was
+ * sent / expected. An empty list means the reply is bound; anything else is refused (the manifest is
+ * not updated and nothing is shown as done).
+ */
+export function unboundFields(
+  action: SentAction,
+  reply: ManifestRecord,
+  expected: { manifestId: string; projectId: string; organizationId: string; snapshotId: string },
+): string[] {
+  const unbound: string[] = [];
+  if (reply.id !== expected.manifestId) unbound.push("id");
+  if (reply.project_id !== expected.projectId) unbound.push("project_id");
+  if (reply.organization_id !== expected.organizationId) unbound.push("organization_id");
+  // Fixed at creation: an action reply that moves the manifest to another snapshot is not ours.
+  if (reply.target_source_snapshot_id !== expected.snapshotId) {
+    unbound.push("target_source_snapshot_id");
+  }
+  if (action.kind === "patch") {
+    if (reply.status !== action.previousStatus) unbound.push("status");
+    for (const [field, sent] of Object.entries(action.sent)) {
+      if (!jsonEqual(reply[field], sent)) unbound.push(field);
+    }
+  } else if (action.kind === "submit") {
+    if (reply.status !== "review_required") unbound.push("status");
+  } else {
+    if (reply.status !== "locked") unbound.push("status");
+    if (typeof reply.manifest_sha256 !== "string" || reply.manifest_sha256 === "") {
+      unbound.push("manifest_sha256");
+    }
+  }
+  return unbound;
 }
 
 function resolveStorage(
@@ -254,128 +426,211 @@ function readStoredDrafts(
   }
 }
 
-async function readErrorDetail(response: Response): Promise<string> {
+type RequestResult = { ok: true; body: unknown } | { ok: false; failure: Failure };
+
+/** One request that never throws: a rejected fetch, a non-2xx reply and an unreadable 2xx body are
+ * each a typed failure. */
+async function request(url: string, init: RequestInit): Promise<RequestResult> {
+  let response: Response;
   try {
-    const body = await response.json();
-    if (body && typeof body.detail === "string") return body.detail;
+    response = await fetch(url, init);
   } catch {
-    // fall through to the generic message below
+    return { ok: false, failure: NETWORK_FAILURE };
   }
-  return `request failed (${response.status})`;
+  if (!response.ok) return { ok: false, failure: await failureFromResponse(response) };
+  try {
+    return { ok: true, body: await response.json() };
+  } catch {
+    return { ok: false, failure: MALFORMED_FAILURE };
+  }
 }
 
-function networkErrorMessage(caught: unknown): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `network error: ${reason}`;
-}
+export type LockBlocker =
+  | { code: "needs_review" }
+  | { code: "conflict" | "invalid" | "unsaved" | "required"; field: string }
+  | { code: "binding_object" | "binding_unresolved" | "role" };
 
-/** Why Lock is unavailable; empty means every client-side gate is clear. */
 export function lockBlockers(
   manifest: ManifestRecord,
   fieldStates: Record<string, FieldState>,
   draftTexts: Record<string, StoredDraft>,
-): string[] {
-  const blockers: string[] = [];
+): LockBlocker[] {
+  const blockers: LockBlocker[] = [];
   if (manifest.status !== "review_required") {
-    blockers.push("manifest must be submitted for review first");
+    blockers.push({ code: "needs_review" });
   }
   for (const field of EDITABLE_FIELDS) {
     const state = fieldStates[field];
-    if (state === "conflict") blockers.push(`${field}: unresolved conflict`);
-    else if (state === "invalid") blockers.push(`${field}: invalid JSON`);
-    else if (state === "unsaved") blockers.push(`${field}: unsaved changes`);
+    if (state === "conflict") blockers.push({ code: "conflict", field });
+    else if (state === "invalid") blockers.push({ code: "invalid", field });
+    else if (state === "unsaved") blockers.push({ code: "unsaved", field });
   }
   for (const field of CRITICAL_LOCK_FIELDS) {
     if (manifest[field] === null || manifest[field] === undefined) {
-      blockers.push(`${field}: required before lock`);
+      blockers.push({ code: "required", field });
     }
   }
   const binding = manifest[MODEL_BINDING_FIELD];
   if (binding !== null && binding !== undefined && !draftTexts[MODEL_BINDING_FIELD]) {
     const record = binding as Record<string, unknown>;
     if (typeof binding !== "object" || Array.isArray(binding)) {
-      blockers.push("current model binding must be an object");
+      blockers.push({ code: "binding_object" });
     } else if (record.resolved === false) {
-      blockers.push("current model binding is unresolved");
+      blockers.push({ code: "binding_unresolved" });
     } else if (typeof record.role !== "string" || !MODEL_ROLES.includes(record.role)) {
-      blockers.push("current model role not set to an explicit role");
+      blockers.push({ code: "role" });
     }
   }
   return blockers;
 }
 
-export function ManifestReviewEditUI({
+const BLOCKER_KEY: Record<LockBlocker["code"], Key04a21> = {
+  needs_review: "blockNeedsReview",
+  conflict: "blockConflict",
+  invalid: "blockInvalid",
+  unsaved: "blockUnsaved",
+  required: "blockRequired",
+  binding_object: "blockBindingObject",
+  binding_unresolved: "blockBindingUnresolved",
+  role: "blockRole",
+};
+
+export function blockerMessage(blocker: LockBlocker, locale: string): string {
+  const field = "field" in blocker ? fieldLabel(blocker.field, locale) : "";
+  return t04a21(BLOCKER_KEY[blocker.code], locale, { field });
+}
+
+type ActionKind = "patch" | "submit" | "lock";
+type ActionFailure = Failure | { kind: "unbound" };
+
+const STATUS_KEY: Record<(typeof MANIFEST_STATUSES)[number], Key04a21> = {
+  draft: "statusDraft",
+  review_required: "statusReviewRequired",
+  locked: "statusLocked",
+  superseded: "statusSuperseded",
+};
+// Status is text AND icon, never colour alone. UX01's StatusBadge vocabulary (section 72.2) has no
+// "in review" / "locked" / "superseded" word, so the manifest lifecycle uses its own icon + word.
+const STATUS_ICON: Record<(typeof MANIFEST_STATUSES)[number], string> = {
+  draft: "✎",
+  review_required: "…",
+  locked: "■",
+  superseded: "⊘",
+};
+const STATE_KEY: Record<FieldState, Key04a21> = {
+  clean: "stateClean",
+  unsaved: "stateUnsaved",
+  invalid: "stateInvalid",
+  conflict: "stateConflict",
+};
+const STATE_ICON: Record<FieldState, string> = {
+  clean: "✓",
+  unsaved: "●",
+  invalid: "✕",
+  conflict: "!",
+};
+
+const STACK = { display: "grid", gap: "var(--space-3)" } as const;
+const ROW = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "var(--space-2)",
+  alignItems: "center",
+} as const;
+const CODE_BLOCK = {
+  whiteSpace: "pre-wrap",
+  overflowWrap: "anywhere",
+  margin: 0,
+  padding: "var(--space-2)",
+  background: "var(--color-surface-2)",
+  border: "1px solid var(--color-border)",
+} as const;
+
+export function ManifestReviewEditUI(props: ManifestReviewEditUIProps) {
+  // Identity is part of the key: any change of API base, organization, project or manifest remounts
+  // the inner component, so drafts, results, errors and in-flight state never leak across manifests.
+  const identity = [props.apiBaseUrl, props.organizationId, props.projectId, props.manifestId];
+  return <ManifestReviewEditInner key={identity.join("\u0000")} {...props} />;
+}
+
+function ManifestReviewEditInner({
   apiBaseUrl,
   organizationId,
   projectId,
   manifestId,
   storage: storageProp,
+  locale = "en",
 }: ManifestReviewEditUIProps) {
+  const tt = (key: Key04a21, vars?: Record<string, string | number>) => t04a21(key, locale, vars);
+  const uid = useId();
   const storage = useMemo(() => resolveStorage(storageProp), [storageProp]);
   const storageKey = draftStorageKey(organizationId, projectId, manifestId);
 
   const [manifest, setManifest] = useState<ManifestRecord | null>(null);
   const [evidence, setEvidence] = useState<EvidenceRecord[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<Failure | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, StoredDraft>>({});
   const [restored, setRestored] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [actionFailure, setActionFailure] = useState<ActionFailure | null>(null);
+  const [notice, setNotice] = useState<Key04a21 | null>(null);
+  const [busyAction, setBusyAction] = useState<ActionKind | null>(null);
+  const busy = busyAction !== null;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      try {
-        const [manifestResponse, evidenceResponse] = await Promise.all([
-          fetch(manifestUrl(apiBaseUrl, organizationId, projectId, manifestId), {
-            method: "GET",
-            credentials: "include",
-          }),
-          fetch(evidenceUrl(apiBaseUrl, organizationId, projectId, manifestId), {
-            method: "GET",
-            credentials: "include",
-          }),
-        ]);
-        if (!manifestResponse.ok) {
-          if (!cancelled) setLoadError(await readErrorDetail(manifestResponse));
-          return;
-        }
-        if (!evidenceResponse.ok) {
-          // Without the evidence list the review would silently show
-          // "no evidence" for everything -- refuse to render instead.
-          if (!cancelled) setLoadError(await readErrorDetail(evidenceResponse));
-          return;
-        }
-        const manifestBody: ManifestRecord = await manifestResponse.json();
-        const evidenceBody: EvidenceRecord[] = await evidenceResponse.json();
-        if (!manifestBody || typeof manifestBody.status !== "string") {
-          if (!cancelled) setLoadError("malformed manifest response");
-          return;
-        }
-        if (!Array.isArray(evidenceBody)) {
-          if (!cancelled) setLoadError("malformed evidence response");
-          return;
-        }
-        if (cancelled) return;
-        const stored = readStoredDrafts(storage, storageKey);
-        // A stored draft identical to the server text is not work to keep.
-        const kept: Record<string, StoredDraft> = {};
-        for (const [field, draft] of Object.entries(stored)) {
-          if (draft.text !== serverText(manifestBody, field)) kept[field] = draft;
-        }
-        setManifest(manifestBody);
-        setEvidence(evidenceBody);
-        setDrafts(kept);
-        setRestored(Object.keys(kept).length > 0);
-      } catch (caught) {
-        if (!cancelled) setLoadError(networkErrorMessage(caught));
+      const [manifestResult, evidenceResult] = await Promise.all([
+        request(manifestUrl(apiBaseUrl, organizationId, projectId, manifestId), {
+          method: "GET",
+          credentials: "include",
+        }),
+        request(evidenceUrl(apiBaseUrl, organizationId, projectId, manifestId), {
+          method: "GET",
+          credentials: "include",
+        }),
+      ]);
+      if (cancelled) return;
+      if (!manifestResult.ok) {
+        setLoadFailure(manifestResult.failure);
+        return;
       }
+      if (!evidenceResult.ok) {
+        // Without the evidence list the review would silently show
+        // "no evidence" for everything -- refuse to render instead.
+        setLoadFailure(evidenceResult.failure);
+        return;
+      }
+      const manifestBody = parseManifest(manifestResult.body);
+      const evidenceBody = parseEvidence(evidenceResult.body, { manifestId, organizationId });
+      // The reply must be the manifest that was asked for, not just any well-formed manifest.
+      if (
+        !manifestBody ||
+        !evidenceBody ||
+        manifestBody.id !== manifestId ||
+        manifestBody.project_id !== projectId ||
+        manifestBody.organization_id !== organizationId
+      ) {
+        setLoadFailure(MALFORMED_FAILURE);
+        return;
+      }
+      const stored = readStoredDrafts(storage, storageKey);
+      // A stored draft identical to the server text is not work to keep.
+      const kept: Record<string, StoredDraft> = {};
+      for (const [field, draft] of Object.entries(stored)) {
+        if (draft.text !== serverText(manifestBody, field)) kept[field] = draft;
+      }
+      setLoadFailure(null);
+      setManifest(manifestBody);
+      setEvidence(evidenceBody);
+      setDrafts(kept);
+      setRestored(Object.keys(kept).length > 0);
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [apiBaseUrl, organizationId, projectId, manifestId, storage, storageKey]);
+  }, [apiBaseUrl, organizationId, projectId, manifestId, storage, storageKey, loadAttempt]);
 
   function persistLocally(next: Record<string, StoredDraft>) {
     if (!storage) return;
@@ -390,6 +645,7 @@ export function ManifestReviewEditUI({
   function updateDrafts(next: Record<string, StoredDraft>) {
     setDrafts(next);
     persistLocally(next);
+    setNotice(null);
   }
 
   const fieldStates = useMemo(() => {
@@ -416,6 +672,8 @@ export function ManifestReviewEditUI({
   const editable = manifest?.status === "draft" || manifest?.status === "review_required";
 
   function handleEdit(field: string, text: string) {
+    // A save / submit / lock is in flight: an edit now would be reverted or lost when the reply lands.
+    if (busy) return;
     if (!manifest || !editable) return;
     const current = serverText(manifest, field);
     const next = { ...drafts };
@@ -457,36 +715,46 @@ export function ManifestReviewEditUI({
     );
   }
 
-  async function send(method: "PATCH" | "POST", suffix: string, body?: unknown) {
-    setBusy(true);
-    setActionError(null);
+  async function send(action: SentAction, suffix: string, body?: unknown) {
+    if (!manifest) return null;
+    setBusyAction(action.kind);
+    setActionFailure(null);
+    setNotice(null);
     try {
-      const response = await fetch(
+      const result = await request(
         manifestUrl(apiBaseUrl, organizationId, projectId, manifestId) + suffix,
         {
-          method,
+          method: action.kind === "patch" ? "PATCH" : "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         },
       );
-      if (!response.ok) {
+      if (!result.ok) {
         // Drafts stay in place: a refused request never discards work.
-        setActionError(await readErrorDetail(response));
+        setActionFailure(result.failure);
         return null;
       }
-      const updated: ManifestRecord = await response.json();
-      if (!updated || typeof updated.status !== "string") {
-        setActionError("malformed manifest response");
+      const updated = parseManifest(result.body);
+      if (!updated) {
+        setActionFailure(MALFORMED_FAILURE);
+        return null;
+      }
+      if (
+        unboundFields(action, updated, {
+          manifestId,
+          projectId,
+          organizationId,
+          snapshotId: manifest.target_source_snapshot_id,
+        }).length > 0
+      ) {
+        setActionFailure({ kind: "unbound" });
         return null;
       }
       setManifest(updated);
       return updated;
-    } catch (caught) {
-      setActionError(networkErrorMessage(caught));
-      return null;
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -496,7 +764,7 @@ export function ManifestReviewEditUI({
   const unsavedFields = Object.keys(drafts);
 
   async function handleSaveDraft() {
-    if (!manifest || unsavedFields.length === 0) return;
+    if (!manifest || !editable || unsavedFields.length === 0) return;
     const payload: Record<string, unknown> = {};
     for (const [field, draft] of Object.entries(drafts)) {
       const text = draft.text;
@@ -508,41 +776,69 @@ export function ManifestReviewEditUI({
         payload[field] = parsed.value;
       }
     }
-    const updated = await send("PATCH", "", payload);
+    const updated = await send(
+      { kind: "patch", sent: payload, previousStatus: manifest.status },
+      "",
+      payload,
+    );
     if (updated) {
       const remaining = { ...drafts };
       for (const field of unsavedFields) delete remaining[field];
       updateDrafts(remaining);
       setRestored(false);
+      setNotice("savedOk");
     }
   }
 
   async function handleSubmitForReview() {
-    await send("POST", "/submit-for-review");
+    if ((await send({ kind: "submit" }, "/submit-for-review")) !== null) setNotice("submittedOk");
   }
 
   async function handleLock() {
-    await send("POST", "/lock");
+    if ((await send({ kind: "lock" }, "/lock")) !== null) setNotice("lockedOk");
   }
 
-  if (loadError) {
+  const shell = {
+    "data-testid": "manifest-review-ui",
+    lang: resolveLocale(locale),
+    dir: dirFor(locale),
+    "aria-busy": !manifest && !loadFailure ? true : busy ? true : undefined,
+    style: STACK,
+  } as const;
+
+  if (loadFailure) {
     return (
-      <div data-testid="manifest-review-ui">
-        <p role="alert" data-testid="manifest-load-error">
-          {loadError}
-        </p>
+      <div {...shell}>
+        <div data-testid="manifest-load-error">
+          <Banner kind="error" locale={locale}>
+            {safeFailureMessage(loadFailure, locale)}
+          </Banner>
+        </div>
+        <div>
+          <Button
+            variant="primary"
+            data-testid="manifest-retry-button"
+            onClick={() => {
+              setLoadFailure(null);
+              setLoadAttempt((n) => n + 1);
+            }}
+          >
+            {tt("retry")}
+          </Button>
+        </div>
       </div>
     );
   }
   if (!manifest) {
     return (
-      <div data-testid="manifest-review-ui">
-        <p data-testid="manifest-loading">Loading manifest…</p>
+      <div {...shell}>
+        <p data-testid="manifest-loading">{tt("loading")}</p>
+        <Pending label={tt("loading")} locale={locale} />
       </div>
     );
   }
 
-  const blockers = lockBlockers(manifest, fieldStates, drafts);
+  const blockers = editable ? lockBlockers(manifest, fieldStates, drafts) : [];
   const bindingForRole = drafts[MODEL_BINDING_FIELD]
     ? parseJsonDraft(drafts[MODEL_BINDING_FIELD].text)
     : { ok: true as const, value: manifest[MODEL_BINDING_FIELD] };
@@ -555,77 +851,165 @@ export function ManifestReviewEditUI({
       : "";
   const roleEditable =
     editable &&
+    !busy &&
     bindingForRole.ok &&
     !!bindingForRole.value &&
     typeof bindingForRole.value === "object" &&
     !Array.isArray(bindingForRole.value);
 
+  const status = manifest.status as (typeof MANIFEST_STATUSES)[number];
+  const saveReason = !editable
+    ? tt("whySaveReadOnly")
+    : hasBlockingDraftState
+      ? tt("whySaveBlocked")
+      : unsavedFields.length === 0
+        ? tt("whySaveNothing")
+        : undefined;
+  const submitReason =
+    manifest.status !== "draft"
+      ? tt("whySubmitStatus")
+      : unsavedFields.length > 0
+        ? tt("whySubmitUnsaved")
+        : undefined;
+  const lockReason = !editable
+    ? tt("whySaveReadOnly")
+    : blockers.length > 0
+      ? tt("whyLockBlocked")
+      : undefined;
+  const busyLabel =
+    busyAction === "patch"
+      ? tt("saving")
+      : busyAction === "submit"
+        ? tt("submitting")
+        : busyAction === "lock"
+          ? tt("locking")
+          : null;
+  const roleId = `${uid}-role`;
+
   return (
-    <div data-testid="manifest-review-ui">
-      <header>
-        <p data-testid="manifest-status">Status: {manifest.status}</p>
-        <p data-testid="manifest-version">Version: {manifest.version}</p>
+    <div {...shell}>
+      <header style={STACK}>
+        <h2>{tt("title")}</h2>
+        <p data-testid="manifest-status" data-manifest-status={manifest.status}>
+          {tt("statusLabel")}: <span aria-hidden="true">{STATUS_ICON[status]}</span>{" "}
+          <bdi>{tt(STATUS_KEY[status])}</bdi>
+        </p>
+        <p data-testid="manifest-version">
+          {tt("versionLabel")}: <bdi>{manifest.version}</bdi>
+        </p>
         {manifest.manifest_sha256 && (
-          <p data-testid="manifest-sha256">Locked hash: {manifest.manifest_sha256}</p>
+          <p data-testid="manifest-sha256" style={{ overflowWrap: "anywhere" }}>
+            {tt("hashLabel")}: <bdi dir="ltr">{manifest.manifest_sha256}</bdi>
+          </p>
         )}
         {!editable && (
-          <p data-testid="manifest-read-only">
-            This manifest is {manifest.status} and can no longer be edited.
-          </p>
+          <div data-testid="manifest-read-only">
+            <Banner kind="info" locale={locale}>
+              {tt(status === "superseded" ? "readOnlySuperseded" : "readOnlyLocked")}
+            </Banner>
+          </div>
         )}
         {restored && (
-          <p data-testid="draft-restored">
-            Restored your unsaved edits from this browser. They are not saved to the server yet.
-          </p>
+          <div data-testid="draft-restored">
+            <Banner kind="info" locale={locale}>
+              {tt("restored")}
+            </Banner>
+          </div>
         )}
       </header>
 
-      {actionError && (
-        <p role="alert" data-testid="manifest-action-error">
-          {actionError}
-        </p>
+      {actionFailure && (
+        <div data-testid="manifest-action-error">
+          <Banner kind="error" locale={locale}>
+            {actionFailure.kind === "unbound"
+              ? tt("notBound")
+              : safeFailureMessage(actionFailure, locale)}
+          </Banner>
+        </div>
+      )}
+      {notice && (
+        <div data-testid="manifest-action-notice">
+          <Banner kind="success" locale={locale}>
+            {tt(notice)}
+          </Banner>
+        </div>
       )}
 
-      <section data-testid="model-role-section">
-        <label>
-          Current model role
-          <select
-            data-testid="model-role-select"
-            value={currentRole}
-            disabled={!roleEditable}
-            onChange={(event) => handleRoleChange(event.target.value)}
-          >
-            <option value="">Not set</option>
-            {MODEL_ROLES.map((role) => (
-              <option key={role} value={role}>
-                {role}
-              </option>
-            ))}
-          </select>
-        </label>
+      <section data-testid="model-role-section" style={{ display: "grid", gap: "var(--space-1)" }}>
+        <label htmlFor={roleId}>{tt("modelRole")}</label>
+        <div id={`${roleId}-help`}>{tt("modelRoleHelp")}</div>
+        <select
+          id={roleId}
+          data-testid="model-role-select"
+          aria-describedby={`${roleId}-help`}
+          value={currentRole}
+          disabled={!roleEditable}
+          onChange={(event) => handleRoleChange(event.target.value)}
+          style={{ minBlockSize: "var(--target-min)", maxInlineSize: "100%" }}
+        >
+          <option value="">{tt("roleNotSet")}</option>
+          {MODEL_ROLES.map((role) => (
+            <option key={role} value={role}>
+              {roleLabel(role, locale)}
+            </option>
+          ))}
+        </select>
       </section>
 
       {EDITABLE_FIELDS.map((field) => {
-        const state = fieldStates[field];
+        const state = fieldStates[field] ?? "clean";
         const draft = drafts[field];
         const current = serverText(manifest, field);
         const rows = evidenceForField(evidence, field);
+        const label = fieldLabel(field, locale);
+        const inputId = `${uid}-${field}-input`;
+        const stateId = `${uid}-${field}-state`;
+        const errorId = `${uid}-${field}-error`;
+        const conflictId = `${uid}-${field}-conflict`;
+        const textField = (TEXT_FIELDS as readonly string[]).includes(field);
+        const describedBy =
+          [stateId, state === "invalid" ? errorId : null, state === "conflict" ? conflictId : null]
+            .filter(Boolean)
+            .join(" ") || undefined;
         return (
-          <section key={field} data-testid={`field-${field}`}>
-            <h3>{field}</h3>
-            <p data-testid={`field-state-${field}`}>{state}</p>
+          <section
+            key={field}
+            data-testid={`field-${field}`}
+            style={{ display: "grid", gap: "var(--space-2)" }}
+          >
+            <h3>
+              <label htmlFor={inputId}>{label}</label>{" "}
+              {CRITICAL_LOCK_FIELDS.includes(field) && <small>{tt("requiredToLock")}</small>}
+            </h3>
+            <p id={stateId} data-testid={`field-state-${field}`} data-state={state}>
+              <span aria-hidden="true">{STATE_ICON[state]}</span> {tt(STATE_KEY[state])}
+            </p>
             <textarea
+              id={inputId}
               data-testid={`field-input-${field}`}
-              aria-label={field}
+              dir={textField ? "auto" : "ltr"}
               value={draft ? draft.text : current}
-              readOnly={!editable}
+              readOnly={!editable || busy}
+              aria-invalid={state === "invalid" ? true : undefined}
+              aria-describedby={describedBy}
+              rows={textField ? 1 : 6}
               onChange={(event) => handleEdit(field, event.target.value)}
+              style={{ inlineSize: "100%", boxSizing: "border-box" }}
             />
+            {state === "invalid" && (
+              <div id={errorId} role="alert" data-testid={`field-error-${field}`}>
+                {tt("invalidJson")}
+              </div>
+            )}
 
             {draft && state !== "conflict" && (
-              <div data-testid={`field-overridden-${field}`}>
-                <p>Overridden by you; not backed by detected evidence until saved and reviewed.</p>
-                <pre data-testid={`field-diff-${field}`}>
+              <div
+                data-testid={`field-overridden-${field}`}
+                style={{ display: "grid", gap: "var(--space-2)" }}
+              >
+                <p>{tt("overridden")}</p>
+                <p>{tt("diffHeading")}</p>
+                <pre data-testid={`field-diff-${field}`} dir="ltr" style={CODE_BLOCK}>
                   {lineDiff(current, draft.text).map((line, index) => (
                     <span key={index} data-diff={line.kind} style={{ display: "block" }}>
                       {line.kind === "added" ? "+ " : line.kind === "removed" ? "- " : "  "}
@@ -637,94 +1021,144 @@ export function ManifestReviewEditUI({
             )}
 
             {state === "conflict" && draft && (
-              <div data-testid={`field-conflict-${field}`}>
-                <p role="alert">
-                  This field changed on the server after you started editing it. Choose which
-                  version to keep.
-                </p>
-                <pre data-testid={`field-conflict-server-${field}`}>{current}</pre>
-                <pre data-testid={`field-conflict-mine-${field}`}>{draft.text}</pre>
-                <button
-                  type="button"
-                  data-testid={`keep-mine-${field}`}
-                  onClick={() => handleKeepMine(field)}
-                >
-                  Keep mine
-                </button>
-                <button
-                  type="button"
-                  data-testid={`take-server-${field}`}
-                  onClick={() => handleTakeServer(field)}
-                >
-                  Take server's
-                </button>
+              <div
+                id={conflictId}
+                data-testid={`field-conflict-${field}`}
+                style={{ display: "grid", gap: "var(--space-2)" }}
+              >
+                <Banner kind="warning" locale={locale}>
+                  {tt("conflictBody")}
+                </Banner>
+                <div>
+                  <strong>{tt("serverVersion")}</strong>
+                  <pre
+                    data-testid={`field-conflict-server-${field}`}
+                    dir={textField ? "auto" : "ltr"}
+                    style={CODE_BLOCK}
+                  >
+                    {current}
+                  </pre>
+                </div>
+                <div>
+                  <strong>{tt("yourVersion")}</strong>
+                  <pre
+                    data-testid={`field-conflict-mine-${field}`}
+                    dir={textField ? "auto" : "ltr"}
+                    style={CODE_BLOCK}
+                  >
+                    {draft.text}
+                  </pre>
+                </div>
+                <div style={ROW}>
+                  <Button
+                    data-testid={`keep-mine-${field}`}
+                    aria-label={tt("keepMineFor", { field: label })}
+                    onClick={() => handleKeepMine(field)}
+                  >
+                    {tt("keepMine")}
+                  </Button>
+                  <Button
+                    data-testid={`take-server-${field}`}
+                    aria-label={tt("takeServerFor", { field: label })}
+                    onClick={() => handleTakeServer(field)}
+                  >
+                    {tt("takeServer")}
+                  </Button>
+                </div>
               </div>
             )}
 
-            <ul data-testid={`field-evidence-${field}`}>
-              {rows.length === 0 && (
-                <li data-testid={`field-no-evidence-${field}`}>No recorded evidence</li>
-              )}
-              {rows.map((row) => (
-                <li key={row.id} data-testid={`evidence-${row.id}`}>
-                  <span data-testid={`evidence-type-${row.id}`}>{row.evidence_type}</span>{" "}
-                  {row.file_path && (
-                    <span data-testid={`evidence-location-${row.id}`}>
-                      {row.file_path}
-                      {row.line_start !== null ? `:${row.line_start}-${row.line_end}` : ""}
+            <div>
+              <strong>{tt("evidenceHeading")}</strong>
+              <ul data-testid={`field-evidence-${field}`}>
+                {rows.length === 0 && (
+                  <li data-testid={`field-no-evidence-${field}`}>{tt("noEvidence")}</li>
+                )}
+                {rows.map((row) => (
+                  <li
+                    key={row.id}
+                    data-testid={`evidence-${row.id}`}
+                    style={{ overflowWrap: "anywhere" }}
+                  >
+                    <span data-testid={`evidence-type-${row.id}`}>
+                      {evidenceTypeLabel(row.evidence_type, locale)}
+                    </span>{" "}
+                    {row.file_path && (
+                      <bdi dir="ltr" data-testid={`evidence-location-${row.id}`}>
+                        {row.file_path}
+                        {row.line_start !== null
+                          ? row.line_end !== null
+                            ? `:${row.line_start}-${row.line_end}`
+                            : `:${row.line_start}`
+                          : ""}
+                      </bdi>
+                    )}{" "}
+                    {row.symbol && (
+                      <bdi dir="ltr" data-testid={`evidence-symbol-${row.id}`}>
+                        {row.symbol}
+                      </bdi>
+                    )}{" "}
+                    {row.repository_commit_sha && (
+                      <>
+                        <span>{tt("commit")}</span>{" "}
+                        <bdi dir="ltr" data-testid={`evidence-commit-${row.id}`}>
+                          {row.repository_commit_sha.slice(0, 12)}
+                        </bdi>
+                      </>
+                    )}{" "}
+                    <span data-testid={`evidence-confidence-${row.id}`}>
+                      {row.confidence_score === null
+                        ? tt("confidenceNA")
+                        : tt("confidence", { score: row.confidence_score })}
                     </span>
-                  )}{" "}
-                  {row.symbol && (
-                    <span data-testid={`evidence-symbol-${row.id}`}>{row.symbol}</span>
-                  )}{" "}
-                  {row.repository_commit_sha && (
-                    <span data-testid={`evidence-commit-${row.id}`}>
-                      {row.repository_commit_sha.slice(0, 12)}
-                    </span>
-                  )}{" "}
-                  <span data-testid={`evidence-confidence-${row.id}`}>
-                    {row.confidence_score === null
-                      ? "confidence: n/a"
-                      : `confidence: ${row.confidence_score}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </section>
         );
       })}
 
-      <footer>
-        <button
-          type="button"
-          data-testid="save-draft-button"
-          disabled={busy || !editable || hasBlockingDraftState || unsavedFields.length === 0}
-          onClick={handleSaveDraft}
-        >
-          Save draft
-        </button>
-        <button
-          type="button"
-          data-testid="submit-for-review-button"
-          disabled={busy || manifest.status !== "draft" || unsavedFields.length > 0}
-          onClick={handleSubmitForReview}
-        >
-          Submit for review
-        </button>
-        <button
-          type="button"
-          data-testid="lock-button"
-          disabled={busy || blockers.length > 0}
-          onClick={handleLock}
-        >
-          Lock manifest
-        </button>
+      <footer style={STACK}>
+        {busyLabel && <Pending label={busyLabel} locale={locale} />}
+        <div style={ROW}>
+          <Button
+            variant="primary"
+            data-testid="save-draft-button"
+            disabled={busy}
+            disabledReason={saveReason}
+            onClick={handleSaveDraft}
+          >
+            {tt("saveDraft")}
+          </Button>
+          <Button
+            data-testid="submit-for-review-button"
+            disabled={busy}
+            disabledReason={submitReason}
+            onClick={handleSubmitForReview}
+          >
+            {tt("submitForReview")}
+          </Button>
+          <Button
+            data-testid="lock-button"
+            disabled={busy}
+            disabledReason={lockReason}
+            onClick={handleLock}
+          >
+            {tt("lockManifest")}
+          </Button>
+        </div>
         {blockers.length > 0 && (
-          <ul data-testid="lock-blockers">
-            {blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
+          <div>
+            <p>{tt("blockersHeading")}</p>
+            <ul data-testid="lock-blockers">
+              {blockers.map((blocker) => (
+                <li key={`${blocker.code}:${"field" in blocker ? blocker.field : ""}`}>
+                  {blockerMessage(blocker, locale)}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </footer>
     </div>

@@ -159,6 +159,13 @@ Each shift, in this order:
 2. Then the top QUEUE.md "## Active" item, then "## Backlog" in order.
 3. Claim before implementing: push `relay/<item-id>` or open a draft `[relay]` PR first. Skip
    any item that already has a claim branch or open PR.
+4. Pre-review before submitting (owner instruction, 2026-10-21, live): after your own self-attack,
+   merge current main and give docs/operations/l2-review-brief.md, filled in for the item, to a
+   fresh reviewer subagent that did not write the code (strongest model available). Fix what it
+   finds and repeat until it reports CERTIFY or three rounds fail (then park); paste its final
+   report into the submission. It is evidence, never certification (Law 4).
+5. Fresh base before merging: if main moved after your PR's CI run started, merge main, push, and
+   merge only on the new run's green `ci-verdict`.
 Item-level park, not a full stop: 3 failed attempts on the same item, an unclear DoD, or an
 ask-first need moves that item to QUEUE.md "## Parked" (what failed, what was tried, three
 route options; an ask-first park also gets a dated "Owner actions — current" line). Then take
@@ -171,12 +178,22 @@ docs/CONTROL_PLANE_MODES.md, or routine prompts (docs/operations/routines.md) is
 `[GOVERNANCE]`. Control plane opens it; the OWNER reviews and merges it. It is not logged in
 docs/certifications/queue.md.
 
+## UI design standard (owner instruction, 2026-10-16, live)
+Every UI change (apps/web, any screen, component or journey) is designed with the vendored
+ui-ux-pro-max skill (.claude/skills/ui-ux-pro-max) and must meet docs/design/UX_STANDARD.md: the
+NN/g 10 usability heuristics with severity-rated heuristic evaluation, NN/g form / error / empty-state /
+response-time rules, and WCAG 2.2 AA - all inside FINE_TUNING_FACTORY_RELEASE_1.md §72 (its tokens and
+component pattern are fixed; the skill never picks a new palette, font or style). A UI slice's DoD includes
+the UX_STANDARD.md §4 evidence; a severity 3-4 finding blocks certification.
+
 ## Definition of Done (per criterion)
 □ Test written and shown able to fail (failure output bound to criterion ID)
 □ Test passes — evidence bound (criterion ID, test ID, commit, hash)
 □ product_truth_check passes (live caller · user-visible assertion · fault injection reddens)
 □ data_exposure_check passes for any table/bucket/identity the criterion touches, plus a test
   that an unauthorized principal cannot read/write outside its scope (Law 18)
+□ UI slices: docs/design/UX_STANDARD.md §4 evidence (skill queries, NN/g H1-H10 heuristic evaluation, no
+  severity 3-4 finding, viewport/keyboard/zoom and WCAG 2.2 AA checks)
 □ PR opened as PROVISIONAL
 □ Appended to docs/certifications/queue.md for Control plane
 □ L2 certified by Control plane — never self-certified

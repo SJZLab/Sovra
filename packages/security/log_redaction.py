@@ -53,13 +53,31 @@ recognised -- that is what the canary-secret ledger and the content-free
 telemetry schemas are for. Key names are matched by substring, so benign keys
 such as `max_tokens` are redacted too (over-redaction by design). Records that bypass
 the logger (`logging.makeLogRecord`) are covered only at a handler with
-`attach_sink`. Detection runs in time linear in the input: the key rule is
-possessive; percent-encoded-secret candidates are found by splitting on whitespace
-once (not by backtracking a greedy `\S*` at every character position, which was
-quadratic on a long run with no closing hex pair), and each of the bounded cut
-rounds then does at most `log2(candidates)` `_reveals_secret` probes. This module is a
-pure library: no live logging configuration installs it yet; that wiring is a
-separate dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
+`attach_sink`. Detection runs in time linear in the input AND every rule is
+unbounded in the length of secret it redacts (Section 65.4/round-5 ruling: a
+bounded match is a leak, not a performance safeguard) -- the key rule and the
+bare-quoted-value shapes are possessive (the closing quote is excluded from the
+class that scans for it, so there is only ever one possible split point --
+backtracking could never find a different one, only waste time). JWT
+shape is found per maximal `[A-Za-z0-9_\\-.]` run (split on dots once, first "eyJ" per segment
+searched once), not by a regex that re-scans at every "eyJ" repeat: that keeps it linear with no
+bound on the segment length AND still redacts a JWT glued after `_`/`-` (`token_<jwt>`,
+`sess-<jwt>`), which the round-5 `(?<![_\\-])` lookbehind let through (round 6).
+The escaped-quoted-value shape allows backslashes in its own middle, so it cannot simply be
+made possessive the way the bare-quote shapes are; round 4 bounded its content to 8192 chars,
+which is the same leak-above-the-cap problem. Round 5 replaces the bound with
+an unrolled loop (alternating a possessive run of plain chars with a
+possessive backslash run that is not immediately followed by the closing
+quote) plus the same not-preceded-by-backslash exclusion on the opening run,
+so a lone, unterminated backslash run and a backslash run embedded in the
+middle of a real value are both a single linear pass, with no upper bound on
+how much of the value gets redacted. Percent-encoded-secret candidates are
+found by splitting on whitespace once (not by backtracking a greedy `\\S*` at
+every character position, which was quadratic on a long run with no closing
+hex pair), and each of the bounded cut rounds then does at most
+`log2(candidates)` `_reveals_secret` probes. This module is a pure library: no
+live logging configuration installs it yet; that wiring is a separate
+dependency-gated task, disclosed in docs/spec-matrix.yaml with a blank
 `proving_symbol`.
 """
 
@@ -140,7 +158,41 @@ _SECRET_KEY_WORDS = (
 # it) that contains a secret word (a lookahead that runs once per run): linear in the input.
 _SECRET_KEY = rf"(?=[\w.\-]*?{_SECRET_KEY_WORDS})[\w.\-]++"
 _SEP = r"""\\*["']?[ \t]*[:=][ \t]*"""
-_QUOTED_VALUE = r"""\\+"[^"\r\n]*?\\+"|"[^"\r\n]*"|'[^'\r\n]*'"""
+# Possessive `*+` on the bare-quote alternatives: the closing quote is itself excluded from the
+# preceding class, so there is only ever one possible split point -- giving back characters on
+# failure can never find a different one, only waste time re-checking positions already ruled
+# out. The escaped-quote alternative's middle allows backslashes (a real nested-JSON escape can
+# contain them), so its content cannot simply exclude backslashes the way the bare-quote
+# alternatives exclude their own quote. Round 4 bounded it to 8192 chars instead -- a leak above
+# the cap, not a real fix (round 5). Round 5 unrolls it instead, the same technique `_PAIR`'s own
+# value already uses: content is a possessive run of plain chars, OR a possessive backslash run
+# that is NOT immediately followed by the closing quote (so a backslash run that *is* followed
+# by a quote is left alone for the closing `\\+"` to consume, with no backtracking either way).
+# `(?<!\\)` on the opening run means only the first backslash of a maximal backslash run can ever
+# start an attempt -- the same "one start per run" fix as the JWT shape below -- so a long,
+# unterminated backslash run (no second quote at all) is one linear scan, not O(n) restarts.
+# Round 6 (F2 r2, BACKSLASH-PARITY): the bare-quote alternatives' own backslash branch used to be
+# `\\++[^\r\n]?` -- the whole run, then ANY one more character, whatever it is. That always
+# swallows the character right after the run, including the closing quote itself, whatever the
+# run's length: an EVEN-length run (`\\` pairs only, each one a literal backslash, nothing left to
+# escape) still ate the real terminator (`"V\\"` -- two backslashes, a plain closed string --
+# matched nothing at all through `_QUOTED_VALUE`, or over-ran into the text past the real close
+# through `_QUOTED_SECRET`'s optional one). Standard escaping pairs backslashes two at a time;
+# only a leftover, UNPAIRED single backslash escapes the next character. `(?:\\\\)++` consumes
+# whole pairs (still possessive, still one pass); the trailing `(?:\\[^\r\n])?` fires only when one
+# backslash is left unpaired, and that lone case is `\\[^\r\n]` on its own for a run of exactly one.
+# A paired (even) run never reaches the optional escape, so the real closing quote is left for the
+# literal `"`/`'` below, exactly as an even run of literal backslashes should.
+# Round 3 (F2 r3, UNTERMINATED-FAILS-CLOSED): with escape-aware bodies, a value whose last quote
+# is escaped (`password="V\\"`, an odd backslash run and no later quote) has no closing quote, so
+# the bare-quote alternative used to fail and the generic pair rule printed the secret, which
+# certified FTF-0904 redacts. An unterminated quoted value now runs to the end of the line (fail
+# closed); a terminated one still ends at its real closing quote.
+_QUOTED_VALUE = (
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+\\+"'
+    r"""|"(?:[^"\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+(?:"|(?=[\r\n])|\Z)"""
+    r"""|'(?:[^'\\\r\n]++|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+(?:'|(?=[\r\n])|\Z)"""
+)
 
 _PEM = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)",
@@ -165,16 +217,208 @@ _PREFIXES = re.compile(
     r"|(?:AKIA|ASIA|AGPA|AIDA|AROA)[A-Z0-9]{16}"
     r"|hf_[A-Za-z0-9]{20,}"
     r"|AIza[0-9A-Za-z_\-]{35,}"
-    r"|eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*"
     r")",
     re.I,
 )
+# JWT-shaped spans are found per run, not by a regex that must re-scan from every "eyJ": a
+# regex whose segments are unbounded re-consumes the rest of a dot-free run at every "eyJ" repeat
+# (quadratic), and one that refuses a start after `_`/`-` (the round-5 form) lets `token_<jwt>`,
+# `sess-<jwt>` and the like through. Instead each maximal run of `[A-Za-z0-9_\-.]` is split on
+# its dots once and each segment is searched once for its first "eyJ" (not glued after an
+# alphanumeric): linear in the run, no bound on how much is redacted.
+_JWT_RUN = re.compile(r"[A-Za-z0-9_\-.]++")
+_JWT_MIN_SEGMENT = 5
+
+
+def _jwt_start(segment: str) -> int:
+    """Offset of the first "eyJ" in `segment` that is not preceded by an alphanumeric and has at
+    least `_JWT_MIN_SEGMENT` characters after it, or -1. Only the first candidate is tried: any
+    later one has fewer characters left."""
+    lowered = segment.lower()  # the rule has always been case-insensitive
+    pos = lowered.find("eyj")
+    while pos > 0 and segment[pos - 1].isalnum():
+        pos = lowered.find("eyj", pos + 1)
+    return pos if pos >= 0 and len(segment) - pos - 3 >= _JWT_MIN_SEGMENT else -1
+
+
+def _redact_jwts_in_run(match: re.Match[str]) -> str:
+    run = match.group(0)
+    segments = run.split(".")
+    out: list[str] = []
+    i = 0
+    while i < len(segments):
+        start = _jwt_start(segments[i]) if i + 2 < len(segments) else -1
+        if start >= 0 and len(segments[i + 1]) >= _JWT_MIN_SEGMENT:
+            out.append(segments[i][:start] + REDACTED)
+            i += 3
+        else:
+            out.append(segments[i])
+            i += 1
+    return ".".join(out)
+
+
 _USERINFO = re.compile(r"(?P<scheme>(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]*://)[^/\s?#]*@")
 _KEY_VALUE = re.compile(
     rf"(?P<key>(?<![\w.\-]){_SECRET_KEY})(?P<sep>{_SEP})"
     rf"""(?P<val>\[REDACTED\]|{_QUOTED_VALUE}|[^\s&,;"'}}\])]+)""",
     re.I,
 )
+# FTF-0904-F1: generic credential-carrying parameter names (`?key=`, `?sig=`, OAuth `?code=` and
+# `?state=` on a callback, session ids, one-time codes). They cannot join `_SECRET_KEY_WORDS`: that
+# list matches a word *inside* a key run and also binds structured keys, so `state`/`code`/`key`
+# would redact `{"state": "running"}` and `monkey=1`. Round 2 (QP-NAME-CLASS, QP-POS-SERIALIZED):
+# the rule binds a parameter *name class* -- the LAST word of the name (split on `_ - .` and
+# camelCase) is one of `_QUERY_PARAM_NAMES` -- so `session_key`, `sessionKey`, `auth_code`,
+# `oauth_verifier`, `PHPSESSID` and `connect.sid` are covered, while `keyboard=`, `codec=`,
+# `monkey=`, `state_of=` and `code_path=` (last word not a name) survive. The name needs no `?` in
+# front of it: a query serialized without one (`str(request.query_params)`), a urlencoded form body
+# and a name after a space/quote/`/` are the same leak. Over-redaction (`state=CA`, prose `code=5`)
+# is FTF-0904's design.
+# (`totp`, `hotp`, `sessid` and `phpsessid` need no entry: they end in `otp` / `sid`.)
+_QUERY_PARAM_NAMES = frozenset(
+    {
+        "key",
+        "sig",
+        "auth",
+        "session",
+        "jwt",
+        "code",
+        "state",
+        "verifier",
+        "ticket",
+        "otp",
+        "pass",
+        "sid",
+        "jsessionid",
+    }
+)
+# One start per maximal key run (lookbehind) and a possessive run: linear, no restart inside a run.
+# F2: a QUOTED value after a credential name (`state="v"`, `code: 'v'`, JSON `"state": "v"`) is read
+# up to its closing quote (a quote after an ODD-length run of backslashes is escaped, so a
+# JSON-re-encoded `\\"` cannot end it early -- an EVEN-length run is a run of literal backslashes
+# with nothing left over to escape anything, so the quote right after it is the real close, not
+# more content; an unterminated quote runs to end of line, deny by default). The bare `name: value`
+# form is not a query position and stays unredacted.
+# Round 3 (F2 r3, ESCAPED-QUOTE-FORM): a JSON-escaped key (`\"state\":`) or an escaped opening
+# value quote (`: \"V\"`) left `qsep`'s lookahead unmet (it required a literal `"`/`'` right after
+# the separator), so `_QUOTED_SECRET.match` was never even attempted and the whole match (key
+# included) was skipped -- a total leak, not a truncation. `qsep` now accepts a backslash run
+# before the key's own closing quote, exactly as `_SEP` already does for the header/key_value
+# rules, and its lookahead accepts a backslash run before the value's opening quote too -- the
+# backslash itself is left unconsumed (not swallowed into `qsep`), for `_QUOTED_SECRET`'s own new
+# escaped-open alternatives below to match, the same split `_HEADER`/`_KEY_VALUE` already use with
+# `_SEP` + `_QUOTED_VALUE`.
+_QUERY_ASSIGN = re.compile(
+    r"""(?<![\w.\-])(?P<key>[\w.\-]++)"""
+    r"""(?:(?P<qsep>\\*["']?[ \t]*[:=][ \t]*)(?=\\*["'])|(?P<sep>=))"""
+)
+# Round 6 (F2 r2, BACKSLASH-PARITY, same fix as `_QUOTED_VALUE` above): the backslash branch used
+# to be `\\++[^\r\n]?` -- the whole run, then any one more character regardless of parity -- so an
+# even (paired, nothing escaped) run still swallowed the real closing quote, over-redacting into
+# whatever followed it on the line. `(?:\\\\)++` consumes whole literal-backslash pairs; only a
+# leftover single backslash (odd run) pairs with the next character via `(?:\\[^\r\n])?` / the
+# lone `\\[^\r\n]`, leaving an even run's closing quote for the optional literal `"?`/`'?` instead.
+# Round 3 (F2 r3, ESCAPED-QUOTE-FORM): the two alternatives below only ever matched a value whose
+# OPENING quote is a literal `"`/`'` -- `_QUERY_ASSIGN`'s lookahead now also admits a backslash run
+# before that opening quote (JSON-escaped `\"state\": \"V\"`, logfmt `code=\"V\"`), left
+# unconsumed for this regex to match. The two new LEADING alternatives mirror `_QUOTED_VALUE`'s own
+# escaped-open branch exactly: a possessive backslash run (one start per run, `(?<!\\)`) then the
+# opening quote, content that is either plain chars or a backslash run NOT immediately followed by
+# the SAME quote char (so a `\"` pair inside the content is reserved for the terminator, never
+# content), then the closing delimiter: a backslash run then quote, OR -- round 3's second
+# pre-review round reproduced this -- a BARE quote with no backslash at all (a value that opened
+# escaped but is truncated right at an unescaped quote, e.g. an outer logfmt wrapper's own closing
+# quote: `msg="...code=\"V"`; `\\*+` is zero-or-more, so this is just the already-possessive `\\+"`
+# widened by one case, not a new ambiguity -- the content loop's own backslash-alternative already
+# excludes ANY backslash run immediately followed by a quote from content, so there is still only
+# one terminator-eligible position, however many backslashes precede it, including zero) -- OR, if
+# neither exists, end of line/string (fail closed, the same `(?:X|(?=[\r\n])|\Z)` shape round 3's
+# own `_QUOTED_VALUE` fix above already uses). Pre-review round 1 found the "no closing escape
+# anywhere" case (`{\"state\": \"V`, cut off, nothing after); round 2 found the "closes on a bare
+# quote" case above (round 1's own fix only matched `\\+`, one-or-more, so a bare quote with zero
+# preceding backslashes still fell through to end-of-line/string, swallowing real trailing content
+# that followed the bare quote on the same line). Both are this round's own new code regressing,
+# not the pre-existing `_QUOTED_VALUE` gap disclosed below. The two bare-quote alternatives (kept
+# last, adjacent, and byte-for-byte unchanged from round 2) are the fallback for a value whose
+# opening quote is NOT escaped; they cannot match a backslash as their first character either --
+# the same disclosed limitation `_QUOTED_VALUE` already has.
+_QUOTED_SECRET = re.compile(
+    r'(?<!\\)\\++"(?:[^"\\\r\n]++|\\++(?!"))*+(?:\\*+"|(?=[\r\n])|\Z)'
+    r"""|(?<!\\)\\++'(?:[^'\\\r\n]++|\\++(?!'))*+(?:\\*+'|(?=[\r\n])|\Z)"""
+    r'|"(?:[^"\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+"?'
+    r"""|'(?:[^'\\\r\n]|(?:\\\\)++(?:\\[^\r\n])?|\\[^\r\n])*+'?"""
+)
+# `[REDACTED]` is consumed whole (with anything glued to it) so the rule is idempotent: running it
+# over its own output (the logging sink re-redacts the formatted line) never grows the marker.
+_QUERY_VALUE = re.compile(r"""\[REDACTED\][^\s&,;"'}\])]*+|[^\s&,;"'}\])]++""")
+_NAME_WORD_SPLIT = re.compile(r"[_.\-]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+# Round 4 (QP-GLUED-VOCAB, QP-CASE-SPLIT-SEPARATOR, QP-SEPSTRIP): deny by default. A name that
+# is not caught by its last word (above) is read with every separator stripped and lowercased;
+# if that run ENDS in a credential name (`mfacode`, `smscode`, `signingkey`, `connectsid`,
+# `recoverycode`, `hmacsig`, `aUtH_cOdE`, `sEsSiOn.KeY`, `co.de`) it is redacted, whatever the
+# prefix -- the old closed vocabulary of credential prefixes leaked every prefix it did not list.
+# The only way out is `_BENIGN_NAMES`, a CLOSED list of ordinary words that merely end in a
+# credential name; it is matched against the whole stripped name, so it never excuses a
+# credential prefix (`monkeysession` is still redacted) and a separator-split `mon_key` /
+# camelCase `monKey` is decided by the last-word rule above, not by this list.
+_NAME_SUFFIXES = tuple(sorted(_QUERY_PARAM_NAMES))
+_BENIGN_NAMES = frozenset(
+    {
+        "monkey", "turkey", "hockey", "jockey", "donkey", "whiskey", "lackey",
+        "decode", "encode", "barcode", "qrcode", "zipcode", "postcode", "geocode", "unicode",
+        "opcode", "statuscode", "errorcode", "exitcode", "returncode",
+        "estate", "realestate", "upstate", "restate",
+        "compass", "bypass", "overpass", "underpass", "trespass", "surpass",
+        "obsession", "possession", "concession", "profession", "procession", "recession",
+        "succession",
+    }
+)  # fmt: skip
+
+
+def _is_query_param_name(name: str) -> bool:
+    # Round 5 (QP-CASE-SPLIT-SEGMENT): check each separator-delimited segment lowercased
+    # BEFORE the camel split below. The camel split inserts a boundary at every
+    # lowercase-to-uppercase transition, which can fall *inside* a random-case spelling of a
+    # listed word that already sits in its own `_ - .`-delimited segment (`mon_KeY` -> the
+    # `e`-`Y` transition in "KeY" splits it into "Ke"+"Y", so the last-word check below never
+    # sees "key"; `status_CoDe` splits "CoDe" into "Co"+"De"). A segment produced by an actual
+    # separator is never split further by case here -- it is lowered and compared whole.
+    raw_segments = [w for w in _NAME_WORD_SPLIT.split(name) if w]
+    if raw_segments and raw_segments[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    words = [w for w in _NAME_WORD_SPLIT.split(_CAMEL_BOUNDARY.sub("_", name)) if w]
+    if words and words[-1].lower() in _QUERY_PARAM_NAMES:
+        return True
+    stripped = _NAME_WORD_SPLIT.sub("", name).lower()
+    return stripped.endswith(_NAME_SUFFIXES) and stripped not in _BENIGN_NAMES
+
+
+class _QueryParamRule:
+    """Duck-types `re.Pattern.sub(repl, text)` for `_RULES` (the replacement is built in)."""
+
+    def sub(self, _repl: object, text: str) -> str:
+        out: list[str] = []
+        pos = 0
+        for match in _QUERY_ASSIGN.finditer(text):
+            if match.start() < pos or not _is_query_param_name(match.group("key")):
+                continue
+            if match.group("qsep") is not None:
+                value = _QUOTED_SECRET.match(text, match.end())
+            else:
+                value = _QUERY_VALUE.match(text, match.end())
+            if value is None:
+                continue
+            out.append(text[pos : match.end()])
+            out.append(REDACTED)
+            pos = value.end()
+        out.append(text[pos:])
+        return "".join(out)
+
+
+_QUERY_SECRET_PARAM = _QueryParamRule()
 _BASE64_RUN = re.compile(
     r"(?<![A-Za-z0-9+/_\-])(?P<body>[A-Za-z0-9+/_\-]{16,})={0,2}(?![A-Za-z0-9+/_=\-])"
 )
@@ -188,10 +432,13 @@ _RULES: tuple[tuple[str, Any], ...] = (
     ("pair", _PAIR),
     ("bearer", _BEARER),
     ("prefix", _PREFIXES),
+    ("jwt", _JWT_RUN),
     ("userinfo", _USERINFO),
     ("key_value", _KEY_VALUE),
+    ("query_param", _QUERY_SECRET_PARAM),
 )
-_REPLACEMENTS: Mapping[str, str] = {
+_REPLACEMENTS: Mapping[str, str | Callable[[re.Match[str]], str]] = {
+    "jwt": _redact_jwts_in_run,
     "header": rf"\g<key>\g<sep>{REDACTED}",
     "pair": rf"\g<pre>{REDACTED}",
     "bearer": rf"\g<scheme> {REDACTED}",
@@ -251,7 +498,7 @@ def _reveals_secret(segment: str) -> bool:
     """True if any percent-decoded layer (up to three) of `segment` contains a secret shape."""
     layer = segment
     for _ in range(_MAX_DECODE_LAYERS):
-        layer = unquote(layer)
+        layer = _normalise(unquote(layer))  # a decoded fullwidth `=` is `=` once NFKC'd (F1)
         if _scan(layer, _BASE64_LAYERS) != layer:
             return True
     return False

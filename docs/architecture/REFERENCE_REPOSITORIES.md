@@ -10,10 +10,10 @@ Exact deployed versions, image digests, package locks, licenses, support owners,
 
 | Component | Canonical upstream source | Factory integration form | Reference documentation |
 |---|---|---|---|
-| Axolotl | https://github.com/axolotl-ai-cloud/axolotl | Pinned worker package | https://docs.axolotl.ai/docs/cli.html and https://docs.axolotl.ai/docs/telemetry.html |
+| Axolotl | https://github.com/axolotl-ai-cloud/axolotl | Pinned worker package (chat LoRA/QLoRA); training method `seq_cls_lora` only via Hugging Face Transformers `Trainer` + PEFT `SEQ_CLS` within the same pinned compatibility tuple and the same FTF-R003 supervisor (owner-approved, ADR 0004) | https://docs.axolotl.ai/docs/cli.html and https://docs.axolotl.ai/docs/telemetry.html |
 | Inspect AI | https://github.com/UKGovernmentBEIS/inspect_ai | Pinned evaluation worker package | https://inspect.aisi.org.uk/agent-bridge.html |
 | MLflow | https://github.com/mlflow/mlflow | Self-hosted tracking/registry service | https://mlflow.org/docs/latest/self-hosting/ |
-| vLLM | https://github.com/vllm-project/vllm | Private model-serving service | https://docs.vllm.ai/en/stable/usage/security/ and https://docs.vllm.ai/en/latest/features/lora/ |
+| vLLM | https://github.com/vllm-project/vllm | Private model-serving service (generate runner; pooling/classify runner for sequence-classification artifacts as an explicit supported adapter, owner-approved, ADR 0004) | https://docs.vllm.ai/en/stable/usage/security/ and https://docs.vllm.ai/en/latest/features/lora/ |
 | Temporal | https://github.com/temporalio/temporal | Self-hosted durable workflow service | https://docs.temporal.io/self-hosted-guide and https://docs.temporal.io/production-deployment/data-encryption |
 | LiteLLM | https://github.com/BerriAI/litellm | Existing organizational gateway; do not replace automatically | https://docs.litellm.ai/docs/proxy/deploy, https://docs.litellm.ai/docs/proxy/virtual_keys, and https://docs.litellm.ai/docs/proxy/model_management |
 | Argilla | https://github.com/argilla-io/argilla | Internal review/annotation service | https://docs.argilla.io/latest/getting_started/how-to-deploy-argilla-with-docker/ |
@@ -26,6 +26,9 @@ Exact deployed versions, image digests, package locks, licenses, support owners,
 | Network policy | https://kubernetes.io/docs/concepts/services-networking/network-policies/ | Verify enforcement in the installed CNI; a YAML file alone is not proof |
 | Model templates | https://huggingface.co/docs/transformers/en/chat_templating | Training and serving must share the qualified serialization contract |
 | SFT training | https://huggingface.co/docs/trl/en/sft_trainer | Use only within the approved Axolotl compatibility profile |
+| Sequence classification training | https://huggingface.co/docs/transformers/en/tasks/sequence_classification | `seq_cls_lora` only (ADR 0004); same pinned Transformers/PyTorch/Accelerate tuple as the Axolotl lock, never a silent fallback for a chat LoRA job |
+| PEFT sequence-classification adapters | https://huggingface.co/docs/peft/en/package_reference/peft_types | `task_type=SEQ_CLS` with the head saved alongside the adapter (ADR 0004); same pinned PEFT version as the Axolotl lock |
+| vLLM pooling/classify runner | https://docs.vllm.ai/en/latest/models/pooling_models.html | Explicit supported classification adapter (ADR 0004); runner flags and endpoints are validated against the pinned vLLM version, never assumed |
 | PEFT checkpoints | https://huggingface.co/docs/peft/en/developer_guides/checkpoint | Adapter metadata is not automatically a complete resumable state |
 | Managed customization | https://docs.aws.amazon.com/bedrock/latest/APIReference/API_CreateModelCustomizationJob.html | Validate actual account/model capability before admission |
 | Model lifecycle | https://docs.aws.amazon.com/bedrock/latest/userguide/model-lifecycle.html | Availability and fine-tuning support can change; discover and verify |
