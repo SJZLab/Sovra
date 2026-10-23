@@ -65,11 +65,35 @@
  * `<select>`s keep the repo's established `minBlockSize` convention since there is no `<select>`
  * design-system component yet); an empty result list now shows `EmptyState` instead of a bare `<ul>`,
  * and a long label/source/currency value is wrapped (`overflowWrap: "anywhere"`).
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): `refresh`, `handleCreate` and `handleVerify` now catch a
+ * rejected fetch and a body that is not JSON (Law 17): the error is announced (`AlertMessage`,
+ * `role="alert"`, localized, with a recovery step), `search` is cleared on any failed refresh, and
+ * "No certified cheapest rate yet" renders ONLY for a validated search response -- before one, or
+ * after a failure, the cheapest rate is shown as unknown (`cheapest-rate-unknown`), which is a
+ * different statement. An unreadable create response is announced and keeps the typed values. The
+ * four text inputs carry the same `--target-min` block size as the selects. Recorded decisions (not
+ * done, severity 2): the inputs stay native rather than `Field` (its required/optional marker lives
+ * inside the `<label>`, and the certified test asserts the exact label text), a failed submit has
+ * no `ErrorSummary` (the API returns one request-level `detail`, there are no per-field errors to
+ * link; native `required` covers empty fields), and `certifiable_cheapest`/`disqualified_reason` are
+ * shown as the server's words rather than `StatusBadge` (its vocabulary is the fixed section 72.2
+ * state set, which has no "disqualified: expired/unverified" member -- mapping them would invent one).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Button, EmptyState } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  EmptyState,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  useSingleFlight,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 
 export type ProfileType = "provider" | "local_hardware";
@@ -172,16 +196,17 @@ function disqualifiedReasonText(reason: Exclude<DisqualifiedReason, null>, local
   }
 }
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      return body.detail;
+      return uiError(body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  return phrase("requestFailedTemplate", locale, { status: response.status });
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -233,8 +258,14 @@ export function CostProfileSearchPanel({
   locale = "en",
 }: CostProfilePanelProps) {
   const [search, setSearch] = useState<CostPerSuccessSearchResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<UiError | null>(null);
+  // The mount effect starts the first search at once: begin in the loading state so the first
+  // frame never shows "cheapest rate unknown" and a Reload button for a search that is under way.
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const retryFlight = useSingleFlight();
+  const createFlight = useSingleFlight();
+  const verifyFlight = useSingleFlight();
 
   const [profileType, setProfileType] = useState<ProfileType>("provider");
   const [label, setLabel] = useState("");
@@ -244,23 +275,42 @@ export function CostProfileSearchPanel({
   const [source, setSource] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function refresh() {
+  // Submit and the search triggers disable themselves while busy (or unmount, like Verify on
+  // success) and would drop keyboard focus to <body>: give it back afterwards.
+  const armSaveFocus = useRefocusAfter(saving);
+  const armSearchFocus = useRefocusAfter(loading);
+  const panelRef = useRef<HTMLDivElement>(null);
+  function inPanel(testId: string): HTMLElement | null {
+    return panelRef.current?.querySelector<HTMLElement>(`[data-testid="${testId}"]`) ?? null;
+  }
+
+  /** `afterWrite`: the write this refresh follows DID succeed, so a failure to read the list must
+   * not be presented as if nothing happened -- the recovery is to check the current state. */
+  async function refresh(afterWrite = false) {
     setLoading(true);
     setError(null);
+    const failure = (e: UiError): UiError => (afterWrite ? { ...e, kind: "verify-state" } : e);
     try {
       const response = await fetch(costPerSuccessSearchUrl(apiBaseUrl, organizationId, projectId), {
         credentials: "include",
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response, locale));
+        setSearch(null);
+        setError(failure(await readErrorDetail(response, locale)));
         return;
       }
       const body: unknown = await response.json();
       if (!isSearchResponse(body)) {
-        setError(phrase("costProfileMalformedSearchResponse", locale));
+        setSearch(null);
+        setError(failure(uiError(phrase("costProfileMalformedSearchResponse", locale))));
         return;
       }
       setSearch(body);
+    } catch (caught) {
+      // A rejected fetch or a body that is not JSON: the previous result may be stale, and
+      // "no certified cheapest rate" must never be shown for a search that did not complete.
+      setSearch(null);
+      setError(networkError(caught, locale, { write: afterWrite }));
     } finally {
       setLoading(false);
     }
@@ -272,6 +322,10 @@ export function CostProfileSearchPanel({
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!createFlight.begin()) return;
+    setNotice(null);
+    armSaveFocus(() => inPanel("cost-profile-submit-button"));
+    armSearchFocus(() => inPanel("cost-per-success-search-results"));
     setSaving(true);
     setError(null);
     try {
@@ -293,32 +347,70 @@ export function CostProfileSearchPanel({
         setError(await readErrorDetail(response, locale));
         return;
       }
-      const created: CostProfileRecord = await response.json();
+      const created: unknown = await response.json();
+      if (!isCostProfileRecord(created)) {
+        // The server answered 2xx, so the write very likely happened, but the response cannot be
+        // read: keep the typed values, and say to check the current state before submitting again
+        // (a blind retry would record the rate twice).
+        setError(uiError(phrase("malformedWriteResponseMessage", locale), "verify-state"));
+        return;
+      }
       setLabel("");
       setRateAmount("");
       setSource("");
       onCreated?.(created);
-      await refresh();
+      setNotice(phrase("costProfileCreated", locale));
+      await refresh(true);
+    } catch (caught) {
+      setError(networkError(caught, locale, { write: true }));
     } finally {
+      createFlight.end();
       setSaving(false);
     }
   }
 
+  function retrySearch() {
+    if (!retryFlight.begin()) return;
+    armSearchFocus(() => inPanel("cost-per-success-search-results"));
+    void refresh().finally(retryFlight.end);
+  }
+
   async function handleVerify(costProfileId: string) {
+    if (!verifyFlight.begin()) return;
+    setNotice(null);
+    armSearchFocus(
+      () =>
+        inPanel(`cost-profile-result-${costProfileId}`) ??
+        inPanel("cost-per-success-search-results"),
+    );
     setError(null);
-    const response = await fetch(costProfileVerifyUrl(apiBaseUrl, organizationId, costProfileId), {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!response.ok) {
-      setError(await readErrorDetail(response, locale));
+    try {
+      const response = await fetch(
+        costProfileVerifyUrl(apiBaseUrl, organizationId, costProfileId),
+        { method: "POST", credentials: "include" },
+      );
+      if (!response.ok) {
+        setError(await readErrorDetail(response, locale));
+        verifyFlight.end();
+        return;
+      }
+    } catch (caught) {
+      setError(networkError(caught, locale, { write: true }));
+      verifyFlight.end();
       return;
     }
-    await refresh();
+    await refresh(true);
+    verifyFlight.end();
   }
 
   return (
-    <div data-testid="cost-profile-panel" lang={resolveLocale(locale)} dir={dirFor(locale)}>
+    <div
+      ref={panelRef}
+      data-testid="cost-profile-panel"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
+    >
       <form onSubmit={handleCreate} data-testid="cost-profile-create-form">
         <label htmlFor="cost-profile-type">{phrase("costProfileTypeLabel", locale)}</label>
         <select
@@ -336,6 +428,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-label"
           data-testid="cost-profile-label-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={label}
           onChange={(event) => setLabel(event.target.value)}
           required
@@ -364,6 +457,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-rate-amount"
           data-testid="cost-profile-rate-amount-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={rateAmount}
           onChange={(event) => setRateAmount(event.target.value)}
           required
@@ -373,6 +467,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-currency"
           data-testid="cost-profile-currency-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={currency}
           onChange={(event) => setCurrency(event.target.value.toUpperCase())}
           maxLength={3}
@@ -392,16 +487,18 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-source"
           data-testid="cost-profile-source-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={source}
           onChange={(event) => setSource(event.target.value)}
           required
         />
 
-        {error && (
-          <p role="alert" data-testid="cost-profile-form-error" dir={dirFor(locale)}>
-            <bdi>{error}</bdi>
+        {notice && (
+          <p role="status" data-testid="cost-profile-created-notice">
+            {notice}
           </p>
         )}
+        {error && <AlertMessage error={error} locale={locale} testId="cost-profile-form-error" />}
 
         <Button
           type="submit"
@@ -413,7 +510,7 @@ export function CostProfileSearchPanel({
         </Button>
       </form>
 
-      <section data-testid="cost-per-success-search-results">
+      <section data-testid="cost-per-success-search-results" tabIndex={-1}>
         <h2>{phrase("costPerSuccessSearchHeading", locale)}</h2>
         {loading && (
           <p role="status" aria-live="polite" data-testid="cost-profile-loading">
@@ -430,10 +527,22 @@ export function CostProfileSearchPanel({
               <bdi>{search.current_cheapest_certified.currency}</bdi> /{" "}
               <bdi>{search.current_cheapest_certified.rate_unit}</bdi>
             </p>
-          ) : (
+          ) : search ? (
             <p data-testid="no-certified-cheapest-rate">
               {phrase("costProfileNoCertifiedCheapestRate", locale)}
             </p>
+          ) : loading ? null : (
+            // The search has not produced a validated answer (it failed or has not run): the
+            // cheapest rate is UNKNOWN, which is not the same statement as "none is certified"
+            // (Law 17).
+            <>
+              <p data-testid="cheapest-rate-unknown">
+                {phrase("costProfileCheapestUnknown", locale)}
+              </p>
+              <Button data-testid="cheapest-rate-retry-button" onClick={retrySearch}>
+                {phrase("costProfileReload", locale)}
+              </Button>
+            </>
           )}
         </div>
 
@@ -442,7 +551,7 @@ export function CostProfileSearchPanel({
             title={phrase("costProfileNoResultsTitle", locale)}
             why={phrase("costProfileNoResultsWhy", locale)}
             action={
-              <Button data-testid="cost-profile-reload-button" onClick={() => void refresh()}>
+              <Button data-testid="cost-profile-reload-button" onClick={retrySearch}>
                 {phrase("costProfileReload", locale)}
               </Button>
             }
@@ -454,6 +563,7 @@ export function CostProfileSearchPanel({
             <li
               key={result.id}
               data-testid={`cost-profile-result-${result.id}`}
+              tabIndex={-1}
               style={{ overflowWrap: "anywhere" }}
             >
               <span>
