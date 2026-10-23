@@ -518,6 +518,26 @@ describe("1301 bilingual error text (F26 / N28)", () => {
   });
 });
 
+describe("1301 inputs are on the UX01 target size", () => {
+  test("R3-8 the four text inputs carry the --target-min block size, like the selects", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody({ results: [] }) });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+    for (const id of [
+      "cost-profile-label-input",
+      "cost-profile-rate-amount-input",
+      "cost-profile-currency-input",
+      "cost-profile-source-input",
+      "cost-profile-type-select",
+      "cost-profile-rate-unit-select",
+    ]) {
+      expect((screen.getByTestId(id) as HTMLElement).style.minBlockSize, id).toBe(
+        "var(--target-min)",
+      );
+    }
+  });
+});
+
 describe("1301 loading / wrapping", () => {
   test("R3-N29 the cheapest-certified paragraph wraps a long unbroken label", async () => {
     const long = rate({ label: "L".repeat(300), verified_at: "2026-10-02T00:00:00+00:00" });

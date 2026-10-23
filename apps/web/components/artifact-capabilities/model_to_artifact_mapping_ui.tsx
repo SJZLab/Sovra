@@ -89,6 +89,13 @@
  *   now render through the shared `Button` component (the §72.1-fixed component, not a new style).
  * - OVERFLOW: a long source URI/digest/revision value is not wrapped -- each now carries
  *   `style={{ overflowWrap: "anywhere" }}` in `ArtifactDetails`.
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): the mapping, artifact and change-history loads each set
+ * `aria-busy`, disable their trigger and show `Pending`; an empty artifact list (a validated 200
+ * `[]`) is an `EmptyState` with a reload action; the heading, the root and the detail list wrap
+ * unbroken values; every request-level error is an `AlertMessage` (announced, localized, with a
+ * recovery step); and a FAILED write puts keyboard focus on the announced `write-error` (the Confirm
+ * button disables while writing and would otherwise drop focus to `<body>`).
  */
 
 import { useEffect, useRef, useState } from "react";

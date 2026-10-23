@@ -64,6 +64,10 @@
  * the §72.1-fixed component, not a new style) and two long raw values with no wrap
  * (`weights_digest`, the declared-GPU-profile JSON blob -- both now carry
  * `style={{ overflowWrap: "anywhere" }}`).
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): the error is an `AlertMessage` (announced, localized,
+ * with a recovery step), `networkErrorMessage` is the shared localized helper, and the section and
+ * the dimension table wrap (fixed layout at full width) so a 320 px viewport has no horizontal scroll.
  */
 
 import { useEffect, useRef, useState } from "react";

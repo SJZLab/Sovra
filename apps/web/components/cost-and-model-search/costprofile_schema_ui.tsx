@@ -65,6 +65,20 @@
  * `<select>`s keep the repo's established `minBlockSize` convention since there is no `<select>`
  * design-system component yet); an empty result list now shows `EmptyState` instead of a bare `<ul>`,
  * and a long label/source/currency value is wrapped (`overflowWrap: "anywhere"`).
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): `refresh`, `handleCreate` and `handleVerify` now catch a
+ * rejected fetch and a body that is not JSON (Law 17): the error is announced (`AlertMessage`,
+ * `role="alert"`, localized, with a recovery step), `search` is cleared on any failed refresh, and
+ * "No certified cheapest rate yet" renders ONLY for a validated search response -- before one, or
+ * after a failure, the cheapest rate is shown as unknown (`cheapest-rate-unknown`), which is a
+ * different statement. An unreadable create response is announced and keeps the typed values. The
+ * four text inputs carry the same `--target-min` block size as the selects. Recorded decisions (not
+ * done, severity 2): the inputs stay native rather than `Field` (its required/optional marker lives
+ * inside the `<label>`, and the certified test asserts the exact label text), a failed submit has
+ * no `ErrorSummary` (the API returns one request-level `detail`, there are no per-field errors to
+ * link; native `required` covers empty fields), and `certifiable_cheapest`/`disqualified_reason` are
+ * shown as the server's words rather than `StatusBadge` (its vocabulary is the fixed section 72.2
+ * state set, which has no "disqualified: expired/unverified" member -- mapping them would invent one).
  */
 
 import { useEffect, useState } from "react";
@@ -361,6 +375,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-label"
           data-testid="cost-profile-label-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={label}
           onChange={(event) => setLabel(event.target.value)}
           required
@@ -389,6 +404,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-rate-amount"
           data-testid="cost-profile-rate-amount-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={rateAmount}
           onChange={(event) => setRateAmount(event.target.value)}
           required
@@ -398,6 +414,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-currency"
           data-testid="cost-profile-currency-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={currency}
           onChange={(event) => setCurrency(event.target.value.toUpperCase())}
           maxLength={3}
@@ -417,6 +434,7 @@ export function CostProfileSearchPanel({
         <input
           id="cost-profile-source"
           data-testid="cost-profile-source-input"
+          style={{ minBlockSize: "var(--target-min)" }}
           value={source}
           onChange={(event) => setSource(event.target.value)}
           required

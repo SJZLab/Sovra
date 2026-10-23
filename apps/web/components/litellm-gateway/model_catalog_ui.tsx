@@ -141,6 +141,13 @@
  *   `data-testid`s (confirmed by running the suite both ways).
  * - OVERFLOW: a long raw `fields`/model-group JSON blob is not wrapped (§72.5's overflow check) --
  *   both now carry `style={{ overflowWrap: "anywhere" }}`.
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): an empty project list (a validated 200 `[]`, never a
+ * failed or not-yet-run load) shows an `EmptyState` with a reload action; the project row and the
+ * component root wrap unbroken names; every request-level error is an `AlertMessage` (announced,
+ * localized, with a recovery step), and `networkErrorMessage` is the shared helper in `ui/errors.ts`
+ * (a body that is not JSON shows the localized malformed-response message, never the parser text,
+ * and an error with no message shows a localized "unknown error").
  */
 
 import { useRef, useState } from "react";
