@@ -607,6 +607,20 @@ def _artifact_unchanged(
     )
 
 
+def _inputs_unchanged(
+    session: Session, context: TenantContext, inputs: _Inputs, *, adapter: bool
+) -> bool:
+    """The artifact, and for an adapter also its base artifact, re-read share-locked in the
+    terminal transaction: a base whose license is revoked or which is archived during validation
+    never yields a succeeded adapter (Law 17)."""
+    if not _artifact_unchanged(session, context, inputs.artifact):
+        return False
+    if not adapter:
+        return True
+    base = inputs.parent.artifact if inputs.parent is not None else None
+    return base is not None and _artifact_unchanged(session, context, base)
+
+
 def _finish(
     session_factory: Callable[[], Session],
     token: ClaimToken,
@@ -628,8 +642,8 @@ def _finish(
                         text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
                         {"key": f"model_versions:{token.project_id}"},
                     )
-                if _artifact_unchanged(session, context, inputs.artifact):
-                    adapter = origin is ORIGIN_IMPORTED_ADAPTER
+                adapter = origin is ORIGIN_IMPORTED_ADAPTER
+                if _inputs_unchanged(session, context, inputs, adapter=adapter):
                     version = ModelVersion(
                         id=uuid.uuid4(),
                         created_at=now,

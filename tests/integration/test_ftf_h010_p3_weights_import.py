@@ -39,6 +39,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -769,6 +770,120 @@ def main() -> None:
         and version_count() == before,
     )
 
+    # Z7: the BASE artifact's license is revoked while an adapter validates (round 2): the
+    # terminal transaction re-reads the base too, so no adapter ModelVersion is committed
+    z7_base = add_artifact("z7-base", weights_files())
+    z7_parent_job = create_job("imported_weights", z7_base, project_a)
+    z7_parent = run("imported_weights", claim("imported_weights", z7_parent_job, project_a))
+    z7_adapter = add_artifact("z7-adapter", adapter_files())
+    z7_job = create_job(
+        "imported_adapter", z7_adapter, project_a, parent=z7_parent.model_version_id
+    )
+    token = claim("imported_adapter", z7_job, project_a)
+    z7_calls = [0]
+
+    def revoke_base_midway(*a: Any, **k: Any) -> Any:
+        result = real_resolve(*a, **k)
+        z7_calls[0] += 1
+        if z7_calls[0] == 2:  # the base manifest, after every base check passed
+            with Session(owner_engine) as s:
+                s.execute(
+                    text(
+                        "UPDATE trainable_artifacts SET license_accepted_by = NULL, license_accepted_at = NULL, status = 'registered' WHERE id = :i"
+                    ),
+                    {"i": str(z7_base)},
+                )
+                s.commit()
+        return result
+
+    before = version_count()
+    p3.resolve_local_artifact = revoke_base_midway
+    try:
+        outcome = run("imported_adapter", token)
+    finally:
+        p3.resolve_local_artifact = real_resolve
+    check(
+        "Z",
+        f"Z7 a base revoked mid-validation fails the adapter job: {outcome.state}/{outcome.failure_code} ({z7_calls[0]} resolves)",
+        z7_calls[0] == 2
+        and (outcome.state, outcome.failure_code)
+        == ("failed", "artifact_changed_during_validation")
+        and version_count() == before
+        and job_row(z7_job).result_model_version_id is None,
+    )
+
+    # Z8: a real two-session race. A concurrent transaction holds an uncommitted revoke of the
+    # artifact row; the terminal FOR SHARE re-read must WAIT for it (not read the stale committed
+    # row), then see the revoke. Run for the adapter's own row and for its base row.
+    def share_lock_race(label: str, adapter: bool, *, lock_base: bool = False) -> None:
+        if adapter:
+            base_id = add_artifact(f"z8-base-{label}", weights_files())
+            parent_job = create_job("imported_weights", base_id, project_a)
+            parent_out = run("imported_weights", claim("imported_weights", parent_job, project_a))
+            artifact_id = add_artifact(f"z8-adapter-{label}", adapter_files())
+            job_id = create_job(
+                "imported_adapter", artifact_id, project_a, parent=parent_out.model_version_id
+            )
+            kind = "imported_adapter"
+            target = base_id if lock_base else artifact_id
+        else:
+            artifact_id = add_artifact(f"z8-w-{label}", weights_files())
+            job_id = create_job("imported_weights", artifact_id, project_a)
+            kind = "imported_weights"
+            target = artifact_id
+        token = claim(kind, job_id, project_a)
+        before = version_count()
+        holder = Session(owner_engine)
+        holder.execute(
+            text(
+                "UPDATE trainable_artifacts SET license_accepted_by = NULL, license_accepted_at = NULL, status = 'registered' WHERE id = :i"
+            ),
+            {"i": str(target)},
+        )
+        results2: list[Any] = []
+
+        def validate() -> None:
+            try:
+                results2.append(run(kind, token))
+            except Exception as exc:  # noqa: BLE001
+                results2.append(f"error {type(exc).__name__}")
+
+        thread = threading.Thread(target=validate)
+        thread.start()
+        waited = False
+        import time
+
+        for _ in range(100):
+            with Session(owner_engine) as s:
+                waited = bool(
+                    s.execute(
+                        text(
+                            "SELECT count(*) FROM pg_stat_activity WHERE usename = :u AND wait_event_type = 'Lock'"
+                        ),
+                        {"u": APP_ROLE_NAME},
+                    ).scalar_one()
+                )
+            if waited or not thread.is_alive():
+                break
+            time.sleep(0.1)
+        holder.commit()
+        holder.close()
+        thread.join(timeout=60)
+        out = results2[0] if results2 else None
+        check(
+            "Z",
+            f"Z8 {label}: the terminal re-read waited on the concurrent revoke ({waited}) and saw it",
+            waited
+            and not isinstance(out, str)
+            and out is not None
+            and (out.state, out.failure_code) == ("failed", "artifact_changed_during_validation")
+            and version_count() == before,
+        )
+
+    share_lock_race("weights artifact", False)
+    share_lock_race("adapter's own artifact", True)
+    share_lock_race("adapter's base artifact", True, lock_base=True)
+
     # two workers validating the same claimed job: one terminal outcome, one version
     dup_artifact = add_artifact("w-dup", weights_files())
     dup_job = create_job("imported_weights", dup_artifact, project_a)
@@ -880,6 +995,7 @@ def main() -> None:
         outcome.failure_code == "unexpected_file" and MARK not in blob,
     )
 
+    shutil.rmtree(approved_root, ignore_errors=True)
     if FAILURES:
         print(f"{len(FAILURES)} failing check(s):")
         for failure in FAILURES:
