@@ -1545,6 +1545,19 @@ describe("[UX02-R3-FOLLOWUP2] focus on step changes and unpinned hand-offs", () 
     });
   }
 
+  test("[0516 recorded] the recorded decision is a focusable status region", async () => {
+    const page = await openState(stateOf("0516 recorded"), "en", "light");
+    try {
+      const res = await page.getByTestId("recorded-decision").evaluate((el) => ({
+        role: el.getAttribute("role"),
+        tab: el.getAttribute("tabindex"),
+      }));
+      expect(res).toEqual({ role: "status", tab: "-1" });
+    } finally {
+      await page.close();
+    }
+  });
+
   test("[0501-UI] uploading -> ready hands focus to the finalize section; accepted is a status region", async () => {
     let page = await openState(stateOf("0501-UI ready to finalize"), "en", "light");
     try {

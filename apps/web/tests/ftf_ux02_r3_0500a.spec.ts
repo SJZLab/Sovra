@@ -225,3 +225,21 @@ test("[UX02-R3-N1] a successful create focuses the new connection's option and a
   fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
   expect(screen.queryByTestId("dataset-source-created-status")).toBeNull();
 });
+
+test("[UX02-R3-N2] a Retry that succeeds hands focus to the first connection, never <body>", async () => {
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      calls += 1;
+      return calls === 1
+        ? { ok: false, status: 500, json: async () => ({}) }
+        : { ok: true, status: 200, json: async () => [GOOD] };
+    }),
+  );
+  mountUi();
+  await waitFor(() => expect(screen.getByTestId("dataset-source-list-retry-button")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("dataset-source-list-retry-button"));
+  await waitFor(() => expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy());
+  expect(document.activeElement).toBe(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+});

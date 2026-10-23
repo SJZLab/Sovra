@@ -319,6 +319,9 @@ function DatasetSourceSelectorInner({
   const wasCheckingRef = useRef(false);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
+  // Round-3 pre-review 3 finding 1: Retry unmounts as soon as the error clears; when the retry
+  // SUCCEEDS hand focus to the first connection (or the empty-state action), never <body>.
+  const retrySucceededFocusRef = useRef(false);
   // Round-3 L2 finding 1: a successful create unmounts the focused Confirm button; focus the new
   // connection's option and announce it (role=status) instead of dropping focus on <body>.
   const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
@@ -360,6 +363,15 @@ function DatasetSourceSelectorInner({
     }
   }, [listError]);
 
+  useEffect(() => {
+    if (!retrySucceededFocusRef.current || connections === null) return;
+    retrySucceededFocusRef.current = false;
+    (
+      document.querySelector<HTMLElement>('[data-testid^="dataset-source-option-"]') ??
+      document.querySelector<HTMLElement>('[data-testid="dataset-source-empty-state-action"]')
+    )?.focus();
+  }, [connections]);
+
   async function refreshConnections(options?: { focusRetryOnFailure?: boolean }) {
     setListError(null);
     const failed = (message: string) => {
@@ -389,6 +401,7 @@ function DatasetSourceSelectorInner({
         return;
       }
       setConnections(body);
+      if (options?.focusRetryOnFailure) retrySucceededFocusRef.current = true;
     } catch (caught) {
       if (!aliveRef.current) return;
       // A thrown fetch (offline, DNS failure, a dropped connection) used to leave the loading
