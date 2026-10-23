@@ -1433,3 +1433,72 @@ describe("a failed reload does not leave the previous result beside the error", 
     expect(screen.getByRole("status").textContent).toContain("Checking");
   });
 });
+
+describe("pins for faults the final fault run found GREEN", () => {
+  test("R3-S12 the refocus hook never steals focus the user moved elsewhere during the load", async () => {
+    let release: (response: unknown) => void = () => undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise((resolve) => (release = resolve))),
+    );
+    renderCatalog();
+    const trigger = screen.getByTestId("load-projects-button");
+    act(() => trigger.focus());
+    fireEvent.click(trigger);
+    act(() => screen.getByTestId("status-filter").focus());
+    await act(async () => {
+      release({ ok: true, status: 200, json: async () => PROJECT_ROWS });
+    });
+    await waitFor(() => expect(screen.getByTestId(`project-row-${PROJECT}`)).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByTestId("status-filter"));
+  });
+
+  test("R3-D02 a rejected catalog fetch is announced (not an unhandled rejection)", async () => {
+    stub(
+      { method: "GET", path: PROJECTS_PATH, body: PROJECT_ROWS },
+      { method: "GET", path: CATALOG_PATH, reject: new Error("boom") },
+    );
+    renderCatalog();
+    fireEvent.click(screen.getByTestId("load-projects-button"));
+    await waitFor(() => expect(screen.getByTestId(`project-row-${PROJECT}`)).toBeTruthy());
+    fireEvent.click(screen.getByTestId(`project-select-button-${PROJECT}`));
+    fireEvent.click(screen.getByTestId("load-catalog-button"));
+    await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+    expect(screen.getByTestId("catalog-error").textContent).toBe("network error: boom");
+    expect(screen.getByTestId("load-catalog-button").getAttribute("aria-busy")).toBe("false");
+  });
+
+  test("R3-E02/E03 a rejected artifacts / change-history fetch is announced and the trigger recovers", async () => {
+    stub(
+      { method: "GET", path: ARTIFACTS_PATH, reject: new Error("boom") },
+      { method: "GET", path: `${MAP_PATH}/changes`, reject: new Error("boom") },
+    );
+    renderMapping();
+    fireEvent.click(screen.getByTestId("load-artifacts-button"));
+    fireEvent.click(screen.getByTestId("load-changes-button"));
+    await waitFor(() => expect(screen.getByTestId("artifacts-error")).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("changes-error")).toBeTruthy());
+    expect(screen.getByTestId("artifacts-error").textContent).toBe("network error: boom");
+    expect(screen.getByTestId("changes-error").textContent).toBe("network error: boom");
+    expect((screen.getByTestId("load-artifacts-button") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("load-changes-button") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test("R3-E06 a 2xx mapping write of the wrong shape: verify-state recovery, not a blind retry", async () => {
+    await loadMappingAndArtifacts();
+    stub({ method: "POST", path: MAP_PATH, body: { nope: true } });
+    fireEvent.click(screen.getByTestId("confirm-change-button"));
+    await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+    expect(screen.getByTestId("write-error-recovery").textContent).toBe(VERIFY_EN);
+  });
+});
+
+test("R3-G06 0309: a 503 under ar shows the Arabic gateway-unavailable message", async () => {
+  stub({ method: "GET", path: CAP_PATH, status: 503, body: {} });
+  renderCompat("ar");
+  fireEvent.click(screen.getByRole("button", { name: "فحص التوافق" }));
+  await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+  expect(screen.getByRole("alert").textContent).toBe(
+    "تعذّر الوصول إلى البوابة، فلم يتمكن من تحديد التوافق. لا يُقدَّم أي توصية.",
+  );
+});
