@@ -91,7 +91,7 @@
  *   `style={{ overflowWrap: "anywhere" }}` in `ArtifactDetails`.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AlertMessage, Button, EmptyState, Pending, networkErrorMessage } from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
@@ -381,9 +381,18 @@ export function ModelToArtifactMappingUI({
     }
   }
 
+  // A failed write leaves the confirm dialog open and the (disabled-while-writing) Confirm button
+  // has just lost focus to <body>: put keyboard focus on the announced error instead, next to the
+  // retry (the same recovery as a successful write, which moves focus to the changed state).
+  const focusWriteError = useRef(false);
+  function failWrite(message: string) {
+    focusWriteError.current = true;
+    setWriteError(message);
+  }
+
   async function submit(artifactId: string | null) {
     if (!mapping) {
-      setWriteError(phrase("mappingLoadFirst", locale));
+      failWrite(phrase("mappingLoadFirst", locale));
       return;
     }
     setWriting(true);
@@ -404,12 +413,12 @@ export function ModelToArtifactMappingUI({
       );
       if (!response.ok) {
         // The view is left exactly as it was: a failed write changes nothing.
-        setWriteError(await readErrorDetail(response, locale));
+        failWrite(await readErrorDetail(response, locale));
         return;
       }
       const body: unknown = await response.json();
       if (!isMapping(body) || typeof (body as MappingResult).changed !== "boolean") {
-        setWriteError(phrase("mappingMalformedMapping", locale));
+        failWrite(phrase("mappingMalformedMapping", locale));
         return;
       }
       const result = body as MappingResult;
@@ -430,7 +439,7 @@ export function ModelToArtifactMappingUI({
       );
     } catch (caught) {
       // Nothing is shown as mapped unless the route genuinely answered.
-      setWriteError(networkErrorMessage(caught, locale));
+      failWrite(networkErrorMessage(caught, locale));
     } finally {
       setWriting(false);
     }
@@ -445,6 +454,13 @@ export function ModelToArtifactMappingUI({
     selectedArtifact.id !== mapping.trainable_artifact_id;
 
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (writeError && focusWriteError.current) {
+      focusWriteError.current = false;
+      rootRef.current?.querySelector<HTMLElement>('[data-testid="write-error"]')?.focus();
+    }
+  }, [writeError]);
 
   // Focus management for the confirm dialog (L2 return round 2, same convention
   // `mandate_editor_and_conflict_resolution_ui.tsx`'s own discard-confirm already established):
@@ -629,7 +645,9 @@ export function ModelToArtifactMappingUI({
           </div>
         )}
 
-        {writeError && <AlertMessage message={writeError} locale={locale} testId="write-error" />}
+        {writeError && (
+          <AlertMessage message={writeError} locale={locale} testId="write-error" focusable />
+        )}
         {notice && (
           <p role="status" data-testid="mapping-notice">
             {notice}

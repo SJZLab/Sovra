@@ -12,10 +12,13 @@ export function AlertMessage({
   message,
   locale = "en",
   testId,
+  focusable = false,
 }: {
   message: string;
   locale?: Locale;
   testId?: string;
+  /** Programmatically focusable (`tabIndex=-1`), for a caller that moves focus here on failure. */
+  focusable?: boolean;
 }) {
   const recoveryId = useId();
   return (
@@ -25,6 +28,7 @@ export function AlertMessage({
         data-testid={testId}
         dir={dirFor(locale)}
         aria-describedby={recoveryId}
+        tabIndex={focusable ? -1 : undefined}
         style={{ overflowWrap: "anywhere" }}
       >
         <bdi>{message}</bdi>

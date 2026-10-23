@@ -949,6 +949,26 @@ describe("named faults now pinned", () => {
     expect(screen.getByRole("status").textContent).toContain("2 -> 3");
   });
 
+  test("R3-focus 0308: a failed write puts focus on the announced write-error (the Confirm button disables while writing); success lands on the changed state", async () => {
+    await loadMappingAndArtifacts();
+    stub({
+      method: "POST",
+      path: MAP_PATH,
+      status: 503,
+      body: { detail: "gateway_unavailable" },
+    });
+    fireEvent.click(screen.getByTestId("confirm-change-button"));
+    await waitFor(() => expect(screen.getByTestId("write-error")).toBeTruthy());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("write-error")));
+    expect(screen.getByTestId("write-error").getAttribute("tabindex")).toBe("-1");
+    cleanup();
+
+    await loadMappingAndArtifacts();
+    fireEvent.click(screen.getByTestId("confirm-change-button"));
+    await waitFor(() => expect(screen.getByTestId("mapping-notice")).toBeTruthy());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("mapping-state")));
+  });
+
   test("R3-F16 0308: the confirm is a role=alertdialog (found by role, with its name)", async () => {
     await loadMappingAndArtifacts();
     const dialog = screen.getByRole("alertdialog");
