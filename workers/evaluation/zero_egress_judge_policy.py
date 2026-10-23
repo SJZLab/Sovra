@@ -853,7 +853,8 @@ def run_private_judge(
             candidate_model_id=candidate_model_id,
             # Recorded design deviation (see the submission): the design approves `judge_model_id`
             # only, but FTF-0616 refuses an echo outside this set, so an alias judge could never
-            # succeed. The echo must still equal `approval.resolved_model` and be a calibration alias.
+            # succeed. The echo must still equal `approval.resolved_model` and be a calibration
+            # alias.
             approved_judge_model_ids=frozenset({approval.judge_model_id, approval.resolved_model}),
             rubric=rubric,
             candidate_response=candidate_response,
