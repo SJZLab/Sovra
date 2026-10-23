@@ -408,8 +408,33 @@ class ArgillaClient:
         """Raw `GET /status` payload (`version`, `search_engine`,
         `memory`). `ArgillaUnavailableError` on any network failure or
         5xx -- the caller (`compute_health`) reports that as unhealthy,
-        never as a fabricated healthy result (Law 17)."""
+        never as a fabricated healthy result (Law 17).
+
+        Known upstream bug (confirmed 2026-10-22, FTF-R006-P1b round 2,
+        reproduced against a real `pip install argilla-server==2.8.0` and
+        still present on `argilla-io/argilla`'s own `develop` branch as of
+        this date): the real server's `/status` handler returns its
+        Elasticsearch client's raw `ObjectApiResponse` as the `search_engine`
+        field, but the route's own `response_model` declares that field as a
+        plain `dict` -- pydantic v2's response-model validation rejects
+        `ObjectApiResponse` (it is not a `dict` subclass), and Argilla's own
+        blanket `@app.exception_handler(ValueError)` then turns that
+        `pydantic_core.ValidationError` (a `ValueError` subclass) into an
+        opaque, silently-logged 422 on every single call, independent of
+        Elasticsearch's own version. Do not use this method as a
+        liveness/health probe against a real server -- see `get_version()`
+        for a call this same bug cannot touch (it never reaches the search
+        engine at all)."""
         return self._call("GET", "/status")
+
+    def get_version(self) -> dict[str, Any]:
+        """Raw `GET /version` payload (`version` only). Deliberately not
+        `search_engine`/`memory` -- this route never touches the search
+        engine, so it is unaffected by the real server's `/status` bug
+        documented on `get_status()` above. Prefer this over `get_status()`
+        for any liveness/health probe against a real (non-fake) Argilla
+        server."""
+        return self._call("GET", "/version")
 
     # -- workspaces ----------------------------------------------------
 
