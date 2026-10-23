@@ -9369,6 +9369,19 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      7. EVIDENCE: the canonical 39-item pro-rules checklist item by item; full H1-H10 x state tables for 0501-UI and 0516; correct the "no severity 3-4 remains" claim.
      Advisory: the Dialog's `aria-describedby` points at a dangling `radix-:r4:` id when no description is given.
      STOPPING RULE (Control plane): round 3 certifies once 1-7 land with their faults RED in real Chromium, the three parents still requalify, FTF-UX01 requalifies with the Dialog, and no severity 3-4 finding remains; a newly hand-picked variant does not block. Do not merge a PR whose own submission says PARTIAL - finish the round first.
+   - **0n. COUNT-FIRST LANES (Control-plane ruling 2026-10-23T17:46Z; the certified count has been flat at 157/304 since 2026-10-21 because recent work was child slices and UX-program rounds, which do not raise it).**
+     **Lanes.** ONE lane takes the UX-program items (the "UX lane": 0d FTF-1301-F1, 0k FTF-UX02, FTF-UX01-F1 #994, FTF-UX04 #960, and any returned FTF-UX06); the other lanes take count-path work first - returned count-path items (0b FTF-0904-F2, 0c FTF-R006-P1b, 0g FTF-H011-P2 when returned), then the COUNT-FIRST ORDER below, then the rest of the Backlog. "Returned work first" applies within each lane.
+     **Stale drafts are not claims.** A draft `[relay]` PR with no push for 5 days or more is NOT a claim (this refines the 2026-10-06 claim rule): reclaim it on `relay/<ID>-r2`, building on its branch (merge main into it first) and keeping its commits; close the old draft with a link. Today: #732 FTF-0617 (last push 10-13), #709 FTF-R004-P3 (10-13), #759 FTF-1504 (10-15).
+     **COUNT-FIRST ORDER** (dependency-ready; each closes a top-level task or its last missing child):
+       1. FTF-H010-P4 (#998): finish on its PR (green ci-verdict, merge); last child of FTF-H010.
+       2. FTF-0617 r2 from #732: nearly complete - merge main, wire 0616-F1's `deployment_fingerprint`, submission; +1.
+       3. FTF-1504 r2 from #759: test-only - finish the live PG16 + SeaweedFS IDOR matrix; +1.
+       4. FTF-R004-P3 r2 from #709: refresh onto main and submit; opens R004-P4 and the 0614 chain.
+       5. FTF-H011-P6 (XLSX mapping; FTF-0505 is CERTIFIED): small.
+       6. FTF-H011-P3 (#974): continue on #974 once FTF-H011-P2 is certified (route option 1: one more pre-review aimed at the Postgres-only input 500s, then submit).
+       7. FTF-R006-P2 (#961): continue once FTF-R006-P1b is certified, with the real pinned Argilla CI leg (the P1b ruling applies).
+       8. FTF-H011-P4, FTF-R004-P4, FTF-H011-P5, FTF-R006-P3 as their predecessors certify.
+     Control plane writes the missing designs next: the FTF-H010 parent (import wizard + disclosures), FTF-0701 (training config schema; unblocks 22 tasks), FTF-0603 and FTF-H027. Until a design lands, those are not claimable.
    - **0o.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
