@@ -30753,3 +30753,31 @@ diagnosed and documented, not fixed in place, since nothing in that PR's own dif
 no landed fix for the shared SeaweedFS-fixture issue exists yet to port. No new `BLOCKER.md` entry
 (not systemic -- every other PR and job is unaffected). No new "Owner actions" line. Certified/
 product-true counts unchanged.
+
+## 2026-10-23T0853Z -- Scheduled relay shift -- merged FTF-H010-P3 round 2 (PR #989), frontier otherwise saturated
+
+STEP 0/0.1/0.2 clean (hash matched, `BLOCKER.md` has no live entry, no `cognee-cli`). Returned-work sweep
+over all 13 open PRs via `list_pull_requests` + `actions_list`/`list_workflow_jobs` (not `pull_request_read`'s
+`get_status`, empty on this repo's Checks-API-based CI) found no red `ci-verdict`, no merge conflict, no
+`needs-fix` label anywhere -- but did find one item ready to land: PR #989 (`relay/FTF-H010-P3-r2`, QUEUE.md
+Active item 0h, round 2) had a fresh-base-merge head (`fae0606f`, already containing then-current `main`)
+with **all 83 CI jobs green including `ci-verdict`**, `mergeable_state: clean`, mutation gate 35/35 killed,
+and an independent pre-review reporting CERTIFY. Per CLAUDE.md's "Do without asking" (merge on green + L1
+doc, PROVISIONAL), merged it (`e547452`) rather than merely reporting it green -- stays PROVISIONAL (Law 4),
+not a certification, awaiting Control-plane L2.
+
+PRs #971 (FTF-R006-P1b-r2, item 0c) and #950 (FTF-0904-F2 Control-plane-produced test pin, item 0b) both had
+fresh-base-merge CI runs `in_progress` at check time -- neither red nor conflicted, left untouched. Items
+0e/0f/0g confirmed already merged from concurrent sessions in prior shifts; 0k stays PARKED (PR #947,
+untouched). Every Backlog `claim relay/...` bullet already has an open claim PR inside the Claim rule's
+"OPEN `[relay]` PR" skip condition (FTF-1504/-0617/-R004-P3/-H011-P3/-UX04/-R006-P2 -> #759/#732/#709/#974/
+#960/#961) or is already marked CERTIFIED inline. No genuinely unclaimed, non-parked item found.
+
+Full detail: `docs/progress/2026-10-23T0853Z-relay.md`.
+
+STEP 3: this file, the shift log, and the merge of PR #989 (plain docs-only PR for this entry; `QUEUE.md`
+and `docs/certifications/queue.md` untouched -- the merge itself used `merge_pull_request` directly, not a
+QUEUE.md edit). STEP 4: no new `BLOCKER.md` entry (nothing systemic). No new "Owner actions" line. No new
+item claimed -- the shift's concrete action was landing item 0h's already-green round, not opening new
+relay work. Certified/product-true counts unchanged (PR #989 is PROVISIONAL-merged only; Control plane has
+not certified anything new this shift).
