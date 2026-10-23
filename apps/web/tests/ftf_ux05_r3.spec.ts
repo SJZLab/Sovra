@@ -420,6 +420,35 @@ describe("1301 errors are announced, localized, recoverable and never read as 'n
   });
 });
 
+describe("1301 stale results", () => {
+  test("R3-1h a refresh that REJECTS after a verify also clears the previous result", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody() });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId(`cost-profile-result-${RATE_ID}`)).toBeTruthy());
+    stub(
+      { method: "POST", path: `${COST_BASE}/${RATE_ID}/verify`, body: {} },
+      { method: "GET", path: SEARCH_PATH, reject: new TypeError("Failed to fetch") },
+    );
+    fireEvent.click(screen.getByTestId(`cost-profile-verify-${RATE_ID}`));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    expect(screen.queryByTestId(`cost-profile-result-${RATE_ID}`)).toBeNull();
+    expect(screen.getByTestId("cheapest-rate-unknown")).toBeTruthy();
+  });
+
+  test("R3-1i a refresh that returns a malformed shape clears the previous result", async () => {
+    stub({ method: "GET", path: SEARCH_PATH, body: searchBody() });
+    renderCost();
+    await waitFor(() => expect(screen.getByTestId(`cost-profile-result-${RATE_ID}`)).toBeTruthy());
+    stub(
+      { method: "POST", path: `${COST_BASE}/${RATE_ID}/verify`, body: {} },
+      { method: "GET", path: SEARCH_PATH, body: { results: "nope" } },
+    );
+    fireEvent.click(screen.getByTestId(`cost-profile-verify-${RATE_ID}`));
+    await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+    expect(screen.queryByTestId(`cost-profile-result-${RATE_ID}`)).toBeNull();
+  });
+});
+
 describe("1301 bilingual error text (F26 / N28)", () => {
   test("R3-F26 a 500 with a non-JSON body under ar: the localized request-failed text", async () => {
     stub({ method: "GET", path: SEARCH_PATH, status: 500, malformedJson: true });

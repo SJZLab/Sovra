@@ -495,6 +495,13 @@ const STATES: UiState[] = [
     ready: "table",
   },
   {
+    id: "0309 loaded (short data)",
+    kind: "compat",
+    routes: [{ method: "GET", path: CAP_PATH, body: capabilityBody(ALIAS) }],
+    steps: [{ click: "__compat-check" }],
+    ready: "table",
+  },
+  {
     id: "0309 error 503",
     kind: "compat",
     routes: [{ method: "GET", path: CAP_PATH, status: 503, body: {} }],
@@ -983,7 +990,7 @@ describe("[UX05-BROWSER] round 3, point 2: OVERFLOW-LONG-NAMES, each named site 
     },
     {
       name: "0309 dimension table (short data)",
-      state: "0309 loaded, train blocked, with a long model name",
+      state: "0309 loaded (short data)",
       selector: "table",
     },
     {
