@@ -1,7 +1,7 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-22T23:27Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-10-23T05:02Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
@@ -12,6 +12,10 @@ Updated: 2026-10-22T23:27Z. Source: `python3 scripts/status.py` on main.
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T05:02Z:**
+  - CERTIFIED (child slice): FTF-UX07 after 3 rounds - the sign-in button is rebuilt on the shared accessible design: bilingual (English/Arabic), keyboard-reachable with a clearly visible focus ring, no overflow from phone to 400% zoom, 0 automated accessibility violations in light and dark, checked in a real browser in CI. The certified sign-in route still passes all its tests.
+- **2026-10-23T04:03Z:**
+  - Returned: FTF-H010-P3 r1 (validating imported model weights and adapters): it never loads unsafe pickle files and rejects every crafted bad file tried, but if the base model's licence is revoked while an adapter is being checked, the adapter is still marked as successfully imported. Round 2 fixes that and adds three missing tests.
 - **2026-10-22T23:27Z:**
   - Returned: FTF-UX05 r2 (models, capabilities and cost screens): the confirmation dialog and malformed replies are now fixed and every certified test still passes, but half of the round-2 list was not done (silent errors on the cost screen, long names still overflow, missing tests, no real-browser checks) while the submission claimed it was. Round 3 must close each point and map it to its test.
   - Returned: FTF-UX07 r2 (sign-in button): every fix and test from round 2 is correct and verified in a real browser; only the design-review paperwork is still incomplete (the 39-item checklist is grouped instead of item by item). Round 3 is documentation only.

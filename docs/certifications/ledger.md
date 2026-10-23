@@ -12338,3 +12338,23 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   Return: round-2 points 2 (1301 silent errors, fabricated empty state - Law 17), 4 (overflow up to 1131 px), 8 (all 7
   named faults still GREEN) and 9 (no browser spec, no §4 evidence) not done, points 6/7 partial; the submission's claims
   contradict the code. Faults 24/40 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T04:03Z — RETURNED: FTF-H010-P3 (r1)
+- **FTF-H010-P3: RETURNED** (child slice of FTF-H010; round 1 → 2; PR #948, merge
+  a2982f23942b29af8ecf447a05ca9fbe01a7fada, head 52b83ecb). Producer session_01Wsq53ciagmBnxqZppFLCuR ≠ certifier
+  session_01QVznorVMjnmcttUhyDnoGR. CI 83/83, ci-verdict 120172060906; gate 120078476534 "16306 checks in 26 suite runs,
+  25 faults RED"; model-weights-import-integration 120078612098 "all checks passed" on PG16. Local: task suite, P3
+  integration, P3a (129592 checks) and P2 (42547) suites, P1/P2 integrations all pass; uncapped mutation 194/194. 107
+  probes: no pickle path, crafted safetensors and archives all refused. Return: (1) base licence revoked or base archived
+  during validation still commits the adapter as succeeded (reproduced on PG16); (2)-(4) every-shard check, the terminal
+  share lock and the adapter header hash binding unpinned (faults GREEN). ci.yml additive (under a [relay] title).
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T05:02Z — CERTIFIED (child slice): FTF-UX07
+- **FTF-UX07: CERTIFIED (L2)** (round 3, evidence only, under the stopping rule; PR #982, merge 2aa77912727f66268fcbc5e5bac2a339fd447505, head f581a717).
+  Producer session_01PDKdVZqtr7bzUPWph2JqMg ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 83/83, ci-verdict
+  120207928267; gate 120206345291 installed Chromium, type-checked and ran vitest incl. ftf_ux07_browser.spec.ts (46
+  tests; step-level, log host 403) and FTF-0101. Production unchanged since round 2 (diff empty). Evidence: 39-item
+  checklist matches pro-rules.md one for one, 14 rows spot-checked true against code and 56 Chromium renders (incl.
+  375x667, 667x375, 1024x768); skill output verbatim; a severity in all 50 H1-H10 x state cells (max 2); claims corrected.
+  Local 57/57 UX07+0101 specs, vitest 2663/2663. Faults: N11a/b, focus token, F7/F8/F9, B1 RED; N2 GREEN (pin ignores
+  alpha; optional variant). FTF-0101 REQUALIFIED. No severity 3-4. Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK.

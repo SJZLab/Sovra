@@ -25220,3 +25220,5 @@ different session.
 - **Returned:** FTF-H011-P2 r1 -> r2 (0g): an explicit rejection blocks reuse; reuse requires the prior approval's connection to be live.
 - **Returned:** FTF-UX07 r2 -> r3 (0d): evidence only - 39-item checklist item by item, real skill output, severity per H1-H10 cell, two claims corrected.
 - **Returned:** FTF-UX05 r2 -> r3 (0e): 1301 catch + announce, wrap long names, empty/loading states, phrase() residue, 16 pins, browser spec in CI, §4 evidence, corrected claims.
+- **Returned:** FTF-H010-P3 r1 -> r2 (0h): re-read the base artifact FOR SHARE at the terminal write; pin every-shard, share-lock and adapter-header binding.
+- **Certified:** FTF-UX07 (#982, merge 2aa77912), round 3; FTF-0101 requalified.
