@@ -266,6 +266,18 @@ export function CostProfileSearchPanel({
   const retryFlight = useSingleFlight();
   const createFlight = useSingleFlight();
   const verifyFlight = useSingleFlight();
+  // A stale search response (e.g. the previous project's reply arriving after the current
+  // project's) must never overwrite the latest request's state (FTF-1301-F1); same `stale()`
+  // request-counter guard as the sibling FTF-0309 component.
+  const latestSearchRequest = useRef(0);
+  // FTF-1301-F1 round 2: `handleCreate`/`handleVerify` call `refresh(true)` from the render
+  // closure that was current when the user clicked -- if the project switches while that write
+  // is still in flight, that closure's own `projectId` is already stale. Read the identity
+  // `refresh` actually fetches with from a ref kept current on every render (not an effect, so
+  // it is up to date before any already-in-flight async callback resumes), never from the
+  // destructured props above.
+  const identityRef = useRef({ apiBaseUrl, organizationId, projectId });
+  identityRef.current = { apiBaseUrl, organizationId, projectId };
 
   const [profileType, setProfileType] = useState<ProfileType>("provider");
   const [label, setLabel] = useState("");
@@ -287,19 +299,36 @@ export function CostProfileSearchPanel({
   /** `afterWrite`: the write this refresh follows DID succeed, so a failure to read the list must
    * not be presented as if nothing happened -- the recovery is to check the current state. */
   async function refresh(afterWrite = false) {
+    // Captured now, compared after every await: a newer `refresh()` call (a project switch, a
+    // retry, a post-write re-check) bumps the counter and makes this call's own state writes a
+    // no-op, so an out-of-order response can never overwrite a newer request's result (Law 17).
+    const request = ++latestSearchRequest.current;
+    const stale = () => request !== latestSearchRequest.current;
+    // Read from the ref, not the destructured props: a post-write call (`refresh(true)` from
+    // `handleCreate`/`handleVerify`) runs inside the render closure that was current when the
+    // user clicked, which may by now be a stale project.
+    const {
+      apiBaseUrl: currentApiBaseUrl,
+      organizationId: currentOrganizationId,
+      projectId: currentProjectId,
+    } = identityRef.current;
     setLoading(true);
     setError(null);
     const failure = (e: UiError): UiError => (afterWrite ? { ...e, kind: "verify-state" } : e);
     try {
-      const response = await fetch(costPerSuccessSearchUrl(apiBaseUrl, organizationId, projectId), {
-        credentials: "include",
-      });
+      const response = await fetch(
+        costPerSuccessSearchUrl(currentApiBaseUrl, currentOrganizationId, currentProjectId),
+        { credentials: "include" },
+      );
       if (!response.ok) {
+        const detail = await readErrorDetail(response, locale);
+        if (stale()) return;
         setSearch(null);
-        setError(failure(await readErrorDetail(response, locale)));
+        setError(failure(detail));
         return;
       }
       const body: unknown = await response.json();
+      if (stale()) return;
       if (!isSearchResponse(body)) {
         setSearch(null);
         setError(failure(uiError(phrase("costProfileMalformedSearchResponse", locale))));
@@ -309,10 +338,11 @@ export function CostProfileSearchPanel({
     } catch (caught) {
       // A rejected fetch or a body that is not JSON: the previous result may be stale, and
       // "no certified cheapest rate" must never be shown for a search that did not complete.
+      if (stale()) return;
       setSearch(null);
       setError(networkError(caught, locale, { write: afterWrite }));
     } finally {
-      setLoading(false);
+      if (!stale()) setLoading(false);
     }
   }
 
