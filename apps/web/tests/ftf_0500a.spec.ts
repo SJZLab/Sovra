@@ -1211,6 +1211,98 @@ test("FTF-UX02 r2 pre-review r2 finding 4 (SERVER-DETAIL-ENGLISH-IN-AR): English
   );
 });
 
+test("FTF-UX02 r2 pre-review r3 (coverage): the Arabic network-error retry message is the exact catalogue translation, not just 'is in Arabic'", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => {
+        throw new Error("network down");
+      },
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe(
+      "حدث خطأ في الشبكة. يمكنك إعادة المحاولة.",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r3 (coverage): the Arabic request-failed retry message is the exact catalogue translation when the server sends no detail", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: false, status: 503, json: async () => ({}) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe(
+      "حدث خطأ أثناء التحميل. يمكنك إعادة المحاولة.",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r3 (coverage): the Arabic malformed-response retry message is the exact catalogue translation for a non-array 200 body", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => ({ ok: true, json: async () => ({}) }),
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe(
+      "تعذّرت قراءة رد الخادم. يمكنك إعادة المحاولة.",
+    ),
+  );
+});
+
+test("FTF-UX02 r2 pre-review r3 (coverage): the retry button's own label is the exact Arabic catalogue translation, not just present", async () => {
+  vi.stubGlobal(
+    "fetch",
+    mockFetch({
+      list: () => {
+        throw new Error("network down");
+      },
+    }),
+  );
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-list-retry-button").textContent).toBe(
+      "إعادة المحاولة",
+    ),
+  );
+});
+
 test("FTF-UX02 r2 pre-review r2 finding 5 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): the Authorized result carries role=status", async () => {
   const existing = connection({ allowed_purposes: ["training"] });
   vi.stubGlobal(
