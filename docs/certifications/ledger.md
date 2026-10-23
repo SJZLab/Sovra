@@ -12384,3 +12384,22 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   then "the decision is yours" for must-haves); the "Owner actions - current" ask is removed and the FTF-UX01 Dialog park
   resolved. `@radix-ui/react-progress` was not asked for and is not approved. FTF-UX02 round 2 (#947, item 0k) is
   unparked: close the round-3 pre-review's two items on the same PR, then L2 (which also requalifies the UX01 Dialog).
+## 2026-10-23T14:56Z — RETURNED: FTF-1301-F1 (r1)
+- **FTF-1301-F1: RETURNED** (follow-up on FTF-1301; round 1 → 2; PR #996, merge dab64d213dcade1121bf97407895b09cb04439da,
+  head 97c4dd5b). Producer session_01RZ7LgLXXoaujWMhsLLDrRn ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI: ci-verdict
+  120434103959; gate 120408193710 ran vitest (step-level). Local 1301 20/20, vitest 3016/3016, test_ftf_1301 passes. Fixed:
+  the named out-of-order race (Chromium probe RED on the parent, GREEN on the merge), 8 further interleavings. Return: no
+  browser test (explicit DoD clause); the old project's rate shown under the new project while loading (severity 3);
+  F3/F4/F5 stale-error guards unpinned; submission evidence. Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK.
+## 2026-10-23T14:56Z — RETURNED: FTF-UX02 (r2)
+- **FTF-UX02: RETURNED** (round 2 → 3; PR #947, merge b264be1f41257c76e5010b6568ef49e023539a08, head 449d32ef). Producers
+  session_01QvpDriE6bcGa2CK6eoya98, session_01N4pJVSDpREtHUZJFpdwuVA ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 83/83,
+  ci-verdict 120465352293; gate 120435374865 ran vitest incl. ftf_ux02_browser (step-level); resumable-upload-ui-real-api
+  120436246645 "R1/R2/R3 ... all checks passed"; OSV "333 dependencies ... 0 blocking". Dependency: only
+  @radix-ui/react-dialog 1.3.1 exact-pinned, 25 MIT/0BSD packages, no install scripts. Local vitest 3112/3112; parents
+  FTF-0500A/0501-UI/0516 REQUALIFIED (real-API suites on PG16 + SeaweedFS). Return: the shared Dialog off-screen in Arabic
+  (severity 4; FTF-UX01 not requalified for the Dialog - its certified components hold), 0500A malformed replies crash or
+  show "Authorized" falsely (severity 4/3; pre-existing in the base), overflow up to 1156 px, 0516 and most of 0501-UI not
+  rebuilt, browser spec incomplete, A9 GREEN, evidence missing. The submission itself said PARTIAL. Faults 32/33 RED.
+  Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
