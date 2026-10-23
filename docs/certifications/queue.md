@@ -25254,3 +25254,30 @@ different session.
   note. Full clause-to-test mapping, fault→RED tables, every round's verbatim reviewer report and
   this update's regression writeup: `docs/certifications/submissions/2026-10-22T0119Z-FTF-UX02-r2.md`.
   Shift log: `docs/progress/2026-10-23T1318Z-relay.md`.
+- **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
+- **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.
+
+## 2026-10-23T1800Z — PROVISIONAL: FTF-UX01-F1 round 1 merged (#994)
+- **Submitted:** follow-up on CERTIFIED FTF-UX01/FTF-UX05 (found by the FTF-UX05 r3 verifier, #983).
+  `apps/web/components/ui/AlertMessage.tsx`'s recovery-sentence lookup is now `Object.hasOwn`-safe,
+  so a `kind` outside the union (`"toString"`, `"__proto__"`, `"bogus"`, `""`) renders the retry
+  step instead of throwing during render; `errors.ts`'s `networkError` no longer passes another
+  `Error`'s English message through under `locale !== "en"`. New spec
+  `apps/web/tests/ftf_ux01_f1.spec.ts` (16 tests, jsdom) plus direct coverage for `focus.ts`,
+  `singleflight.ts` and `kindForStatus`, all RED on the pre-fix code and GREEN restored; fault→RED
+  table for all 41 injected faults in the submission (38 RED, 3 disclosed equivalent mutants —
+  `arm` recording `<body>`/an unmounted SVG target and the fallback-not-consumed case — none
+  observable). Two pre-review rounds by a fresh reviewer subagent (strongest model, did not write
+  the code; evidence only, never certification — Law 4): round 1 returned 3 findings (two stayed-
+  GREEN faults, one stale same-class-sweep sentence), all fixed; round 2's own verdict is
+  "FTF-UX01-F1 CERTIFY" (not a Control-plane action). Law 15: 13 jsdom spec files covering
+  UX01/UX03/UX05/UX06/UX07/0214/0308/0309/1301, 997/997 passing; eslint/prettier/`tsc --build`
+  clean; `validate_spec --strict`, `status.py` (157/304), `product_truth_check --fail-on-unwired`
+  (49/49) and `data_exposure_check` all pass. No Python changed (mutation gate has nothing to
+  mutate); no `ci.yml` change. Real CI on the final head (after one fresh-base merge, main had
+  advanced past the PR's originally-tested base with zero file overlap): `ci-verdict` green;
+  merged as `21e0b3a`. Not self-certified (Law 4) — `certification_state` stays PROVISIONAL,
+  awaiting Control-plane L2 review. Full submission: `docs/certifications/submissions/
+  2026-10-23T1040Z-FTF-UX01-F1.md`. Shift logs: `docs/progress/2026-10-23T1040Z-laneB.md` (lane B,
+  authored the fix) and `docs/progress/2026-10-23T1652Z-relay.md` (this session's fresh-base merge
+  and final push to green).
