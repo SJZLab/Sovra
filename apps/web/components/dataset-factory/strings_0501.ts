@@ -54,6 +54,8 @@ const STRINGS = {
     ar: "تم إنهاء جلسة الرفع هذه والتحقق منها بالفعل؛ مجموعة البيانات موجودة. لا شيء آخر للرفع.",
   },
   checkStatus: { en: "Check upload status", ar: "فحص حالة الرفع" },
+  newUpload: { en: "Start a new upload", ar: "ابدأ رفعًا جديدًا" },
+  uploadAnother: { en: "Upload another dataset", ar: "ارفع مجموعة بيانات أخرى" },
   back: { en: "Back", ar: "رجوع" },
 
   // failures / messages (English verbatim from the pre-round-3 component)
@@ -225,4 +227,31 @@ const PURPOSE_AR: Record<string, string> = {
 export function purposeWord(value: string, locale: Locale): string {
   if (resolveLocale(locale) === "en") return value;
   return Object.hasOwn(PURPOSE_AR, value) ? PURPOSE_AR[value]! : value;
+}
+
+/** Closed vocabularies shared by the dataset-factory screens (FTF-0500A shows them too). English is the raw wire value. */
+const SOURCE_TYPE_AR: Record<string, string> = {
+  upload: "رفع ملف",
+  s3: "S3",
+  minio: "MinIO",
+  database: "قاعدة بيانات",
+  agent_traces: "آثار الوكلاء",
+  production_conversations: "محادثات الإنتاج",
+  api: "واجهة برمجية",
+};
+const CLASSIFICATION_AR: Record<string, string> = {
+  public: "عامة",
+  internal: "داخلية",
+  confidential: "سرية",
+  restricted: "مقيّدة",
+};
+
+export function sourceTypeWord(value: string, locale: Locale): string {
+  if (resolveLocale(locale) === "en") return value;
+  return Object.hasOwn(SOURCE_TYPE_AR, value) ? SOURCE_TYPE_AR[value]! : value;
+}
+
+export function classificationWord(value: string, locale: Locale): string {
+  if (resolveLocale(locale) === "en") return value;
+  return Object.hasOwn(CLASSIFICATION_AR, value) ? CLASSIFICATION_AR[value]! : value;
 }

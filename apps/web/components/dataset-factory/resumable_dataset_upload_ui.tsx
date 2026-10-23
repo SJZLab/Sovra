@@ -1574,6 +1574,11 @@ function UploadInner({
           <p data-testid="upload-accepted-dataset-id" style={WRAP}>
             {dataset.id}
           </p>
+          <div>
+            <Button data-testid="upload-new-upload-button" onClick={resetToIdle}>
+              {t("uploadAnother")}
+            </Button>
+          </div>
         </section>
       )}
 
@@ -1632,6 +1637,13 @@ function UploadInner({
       )}
       {phase === "expired" && alertFor("upload-expired-text", errorMessage ?? t("expiredDefault"))}
       {phase === "rejected" && alertFor("upload-rejected-text", errorMessage)}
+      {(phase === "expired" || phase === "rejected") && (
+        <div>
+          <Button variant="primary" data-testid="upload-new-upload-button" onClick={resetToIdle}>
+            {t("newUpload")}
+          </Button>
+        </div>
+      )}
       {phase === "storage_unavailable" && alertFor("upload-storage-unavailable-text", errorMessage)}
     </section>
   );

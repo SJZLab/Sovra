@@ -66,6 +66,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button, EmptyState, Field, PendingView } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
+import { classificationWord, purposeWord, sourceTypeWord } from "./strings_0501";
 
 // Section 6.8F's own literal enumeration -- redeclared to match
 // `dataset_source_connection_schema.py::ALLOWED_SOURCE_TYPES` exactly.
@@ -230,6 +231,30 @@ function networkErrorMessage(caught: unknown, locale: Locale): string {
   void caught;
   return phrase("networkErrorRetryable", locale);
 }
+
+// FTF-UX02 round-3 finding 4 (real Chromium): native selects measured 19 px high and checkboxes
+// 13 px, under the 24 px WCAG 2.5.8 minimum. Same `--target-min` token Button and Field use.
+const SELECT_STYLE = {
+  minBlockSize: "var(--target-min)",
+  maxInlineSize: "100%",
+  boxSizing: "border-box",
+} as const;
+const CHECK_LABEL_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  gap: "var(--space-2)",
+  minBlockSize: "var(--target-min)",
+} as const;
+// FTF-UX02 round-3 finding 3 (OVERFLOW-LONG-NAMES, severity 3): a 100-character unbroken connection
+// name made the list scroll 407-588 px at 390/320 px. Names wrap anywhere and never widen the page.
+const WRAP = { overflowWrap: "anywhere", minInlineSize: 0, maxInlineSize: "100%" } as const;
+const OPTION_STYLE = {
+  ...WRAP,
+  whiteSpace: "normal",
+  textAlign: "start",
+  boxSizing: "border-box",
+} as const;
+const CHECK_STYLE = { inlineSize: "var(--target-min)", blockSize: "var(--target-min)" } as const;
 
 export function DatasetSourceSelectorPurposeAuthorizationUi(
   props: DatasetSourceSelectorPurposeAuthorizationProps,
@@ -522,7 +547,12 @@ function DatasetSourceSelectorInner({
   }
 
   return (
-    <div data-testid="dataset-source-selector" lang={resolveLocale(locale)} dir={dirFor(locale)}>
+    <div
+      data-testid="dataset-source-selector"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere", minInlineSize: 0 }}
+    >
       <section data-testid="dataset-source-list-section">
         <h2>{phrase("datasetSourceHeading", locale)}</h2>
         {listError && (
@@ -569,10 +599,12 @@ function DatasetSourceSelectorInner({
                 variant="secondary"
                 data-testid={`dataset-source-option-${connection.id}`}
                 aria-pressed={selectedConnectionId === connection.id}
+                style={OPTION_STYLE}
                 onClick={() => handleSelectConnection(connection)}
               >
-                <bdi>{connection.display_name}</bdi> ({connection.source_type},{" "}
-                {connection.security_classification},{" "}
+                <bdi style={WRAP}>{connection.display_name}</bdi> (
+                {sourceTypeWord(connection.source_type, locale)},{" "}
+                {classificationWord(connection.security_classification, locale)},{" "}
                 {connectionStatusLabel(connection.connection_status)})
               </Button>
             </li>
@@ -600,13 +632,14 @@ function DatasetSourceSelectorInner({
             </label>
             <select
               id="dataset-source-type"
+              style={SELECT_STYLE}
               data-testid="dataset-source-type-select"
               value={sourceType}
               onChange={(event) => setSourceType(event.target.value as DatasetSourceType)}
             >
               {DATASET_SOURCE_TYPES.map((type) => (
                 <option key={type} value={type}>
-                  {type}
+                  {sourceTypeWord(type, locale)}
                 </option>
               ))}
             </select>
@@ -636,14 +669,15 @@ function DatasetSourceSelectorInner({
             <fieldset data-testid="dataset-source-purposes-fieldset">
               <legend>{phrase("allowedPurposesLegend", locale)}</legend>
               {DATASET_SOURCE_PURPOSES.map((purpose) => (
-                <label key={purpose}>
+                <label key={purpose} style={CHECK_LABEL_STYLE}>
                   <input
                     type="checkbox"
+                    style={CHECK_STYLE}
                     data-testid={`dataset-source-purpose-${purpose}`}
                     checked={purposes.has(purpose)}
                     onChange={() => togglePurpose(purpose)}
                   />
-                  {purpose}
+                  {purposeWord(purpose, locale)}
                 </label>
               ))}
             </fieldset>
@@ -656,6 +690,7 @@ function DatasetSourceSelectorInner({
             </label>
             <select
               id="dataset-source-security-classification"
+              style={SELECT_STYLE}
               data-testid="dataset-source-security-classification-select"
               value={securityClassification}
               onChange={(event) =>
@@ -667,7 +702,7 @@ function DatasetSourceSelectorInner({
               <option value="">{phrase("selectPlaceholder", locale)}</option>
               {DATASET_SOURCE_SECURITY_CLASSIFICATIONS.map((classification) => (
                 <option key={classification} value={classification}>
-                  {classification}
+                  {classificationWord(classification, locale)}
                 </option>
               ))}
             </select>
@@ -687,10 +722,12 @@ function DatasetSourceSelectorInner({
             <p data-testid="dataset-source-preview-notice">{phrase("previewNotice", locale)}</p>
             <dl>
               <dt>{phrase("previewSourceTypeLabel", locale)}</dt>
-              <dd data-testid="dataset-source-preview-source-type">{sourceType}</dd>
+              <dd data-testid="dataset-source-preview-source-type">
+                {sourceTypeWord(sourceType, locale)}
+              </dd>
               <dt>{phrase("previewDisplayNameLabel", locale)}</dt>
-              <dd data-testid="dataset-source-preview-display-name">
-                <bdi>{displayName}</bdi>
+              <dd data-testid="dataset-source-preview-display-name" style={WRAP}>
+                <bdi style={WRAP}>{displayName}</bdi>
               </dd>
               <dt>{phrase("previewCredentialScopeLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-credential">
@@ -700,11 +737,13 @@ function DatasetSourceSelectorInner({
               </dd>
               <dt>{phrase("previewPurposesLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-purposes">
-                {Array.from(purposes).join(", ")}
+                {Array.from(purposes)
+                  .map((purpose) => purposeWord(purpose, locale))
+                  .join(", ")}
               </dd>
               <dt>{phrase("previewPrivacyBoundaryLabel", locale)}</dt>
               <dd data-testid="dataset-source-preview-security-classification">
-                {securityClassification}
+                {classificationWord(securityClassification, locale)}
               </dd>
             </dl>
             <Button
@@ -729,8 +768,8 @@ function DatasetSourceSelectorInner({
       {selectedConnection && (
         <section data-testid="dataset-source-authorization-section">
           <h2>{phrase("authorizationHeading", locale)}</h2>
-          <p data-testid="dataset-source-authorization-selected-connection">
-            <bdi>{selectedConnection.display_name}</bdi>
+          <p data-testid="dataset-source-authorization-selected-connection" style={WRAP}>
+            <bdi style={WRAP}>{selectedConnection.display_name}</bdi>
           </p>
           {/* FTF-UX02 round-2 pre-review round 2 (LABELS-ABOVE-FIELDS-PURPOSE-TO-CHECK): this
               label was missed when the other four got the same block-layout fix last round --
@@ -743,6 +782,7 @@ function DatasetSourceSelectorInner({
           </label>
           <select
             id="dataset-source-purpose-to-check"
+            style={SELECT_STYLE}
             data-testid="dataset-source-purpose-to-check-select"
             value={purposeToCheck}
             onChange={(event) => setPurposeToCheck(event.target.value as DatasetSourcePurpose | "")}
@@ -750,7 +790,7 @@ function DatasetSourceSelectorInner({
             <option value="">{phrase("selectPlaceholder", locale)}</option>
             {DATASET_SOURCE_PURPOSES.map((purpose) => (
               <option key={purpose} value={purpose}>
-                {purpose}
+                {purposeWord(purpose, locale)}
               </option>
             ))}
           </select>

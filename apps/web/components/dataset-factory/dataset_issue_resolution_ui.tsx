@@ -923,7 +923,7 @@ export function DatasetIssueResolutionUI({
             <dd style={{ margin: 0 }}>{loaded.report.resolution_version}</dd>
           </dl>
           <p data-testid="residual-risk" style={WRAP}>
-            {loaded.report.residual_risk_disclosure}
+            {d(loaded.report.residual_risk_disclosure)}
           </p>
           {loaded.issues.length === 0 && loaded.next === null ? (
             <EmptyState
@@ -998,13 +998,14 @@ export function DatasetIssueResolutionUI({
                           after: d(notRecorded(entry.resolution.after_evidence_sha256)),
                           actor: d(entry.resolution.actor_id),
                           role: word("role", entry.resolution.actor_role, locale),
-                          reason: entry.resolution.reason,
+                          reason: d(entry.resolution.reason),
                         }}
                       />
                     </span>
                   ) : null}
                   <div>
                     <Button
+                      data-testid={`review-${entry.issue_id}`}
                       onClick={() => {
                         setSelected(entry.issue_id);
                         setDraft({ ...EMPTY_DRAFT, action: allowedActions(entry)[0] ?? "exclude" });
@@ -1012,7 +1013,11 @@ export function DatasetIssueResolutionUI({
                         setError(null);
                       }}
                     >
-                      {t("reviewButton", { id: entry.issue_id.slice(0, 8) })}
+                      <Tpl
+                        k="reviewButton"
+                        locale={locale}
+                        vars={{ id: d(entry.issue_id.slice(0, 8)) }}
+                      />
                     </Button>
                   </div>
                 </li>
@@ -1064,6 +1069,7 @@ export function DatasetIssueResolutionUI({
                     </label>
                     <select
                       id={actionId}
+                      data-testid="resolution-action-select"
                       value={draft.action}
                       style={CONTROL_STYLE}
                       onChange={(event) =>
@@ -1092,6 +1098,7 @@ export function DatasetIssueResolutionUI({
                         >
                           <input
                             type="checkbox"
+                            data-testid={`position-${position}`}
                             checked={draft.positions.includes(position)}
                             onChange={() => togglePosition(position)}
                             style={{
@@ -1129,6 +1136,7 @@ export function DatasetIssueResolutionUI({
                     </p>
                     <textarea
                       id={rationaleId}
+                      data-testid="resolution-rationale"
                       value={draft.reason}
                       aria-required="true"
                       aria-invalid={rationaleProblem ? true : undefined}
@@ -1145,7 +1153,12 @@ export function DatasetIssueResolutionUI({
                     </ul>
                   ) : null}
                   <div>
-                    <Button type="submit" variant="primary" disabled={!canSubmit}>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      data-testid="resolution-submit"
+                      disabled={!canSubmit}
+                    >
                       {submitting ? t("submittingButton") : t("submitButton")}
                     </Button>
                   </div>
@@ -1179,7 +1192,7 @@ export function DatasetIssueResolutionUI({
                     actor: d(item.actor_id),
                     role: word("role", item.actor_role, locale),
                     at: d(item.created_at),
-                    reason: item.reason,
+                    reason: d(item.reason),
                   }}
                 />
               </li>
