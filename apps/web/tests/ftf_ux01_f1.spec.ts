@@ -155,6 +155,7 @@ function RefocusHarness({
 }): ReactElement {
   const [busy, setBusy] = useState(false);
   const [mounted, setMounted] = useState(showSecond);
+  const [, setTicks] = useState(0);
   const arm = useRefocusAfter(busy);
   return createElement(
     "div",
@@ -181,6 +182,22 @@ function RefocusHarness({
       "button",
       { "data-testid": "start-unarmed", onClick: () => setBusy(true) },
       "start without arming",
+    ),
+    createElement(
+      "button",
+      {
+        "data-testid": "arm-only",
+        onClick: (e: { currentTarget: HTMLElement }) => {
+          arm();
+          e.currentTarget.blur();
+        },
+      },
+      "arm only",
+    ),
+    createElement(
+      "button",
+      { "data-testid": "tick", onClick: () => setTicks((n) => n + 1) },
+      "tick",
     ),
     createElement("button", { "data-testid": "unmount", onClick: () => setMounted(false) }, "um"),
   );
@@ -265,4 +282,22 @@ test("[UX01-F1-3g] the armed target is consumed by one refocus: a later busy cyc
   expect(document.activeElement).toBe(document.body);
   act(() => screen.getByTestId("finish").click());
   expect(document.activeElement).toBe(document.body); // a stale target must not pull focus back
+});
+
+test("[UX01-F1-3h] a still-connected control gets focus back even when a fallback was given", () => {
+  render(createElement(RefocusHarness, { withFallback: true }));
+  const go = focusAndArm("go");
+  act(() => go.click());
+  act(() => screen.getByTestId("finish").click());
+  expect(document.activeElement).toBe(go);
+  expect(document.activeElement).not.toBe(screen.getByTestId("fb"));
+});
+
+test("[UX01-F1-3i] only a busy true->false transition refocuses: an unrelated re-render with a target armed does nothing", () => {
+  render(createElement(RefocusHarness));
+  const armOnly = focusAndArm("arm-only");
+  act(() => armOnly.click()); // armed on arm-only, focus dropped to <body>, busy never flipped
+  expect(document.activeElement).toBe(document.body);
+  act(() => screen.getByTestId("tick").click()); // re-render, busy unchanged (false)
+  expect(document.activeElement).toBe(document.body);
 });
