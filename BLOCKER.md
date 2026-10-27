@@ -1,5 +1,81 @@
 # BLOCKER.md
 
+## LIVE 2026-10-27T12:52Z — GitHub Actions cannot provision runners for this repo at all; `ci-verdict` red on every open PR; no shift has progressed in 4 days
+
+**What failed:** no job in `.github/workflows/ci.yml` can execute right now — not a code defect, a
+flake, or a single job's own dependency. Every job I attempted to run or re-run today completed in
+2–3 seconds with `runner_id: 0`, `runner_name: ""` (no runner was ever assigned) and no job log
+exists for any of them (consistent `HTTP 404` on `get_job_logs`, including for a job that finished
+seconds earlier). This reproduces even on `classify`, `gate`, `secret-scanning` and `mutation-gate`
+— the very first jobs in the workflow, which have no service containers, no external calls and no
+dependency on any other job.
+
+**What was tried (today, this shift):**
+1. STEP 0.1 read PROGRESS.md/QUEUE.md/docs/certifications/queue.md; STEP 0 hash check passed
+   (`sha256sum CLAUDE.md` matches the committed `CLAUDE.md.sha256`) — not the cause.
+2. Found all 18 open PRs last updated ~2026-10-23T22:49Z — nothing has merged, certified or even
+   re-run successfully in the ~4 days since, despite the relay's stated 2-hour shift cadence.
+3. On PR #1005 (`[relay] FTF-1301-F1` round 2, run `40029366410`): `ci-verdict` was red with two
+   failing jobs, `json-import-integration` and `egress-verification-integration` — both pure Python
+   backend integration tests, while PR #1005's own diff touches only `apps/web/**` (a frontend
+   cost-profile component). Confirmed this could not be the PR's own fault: pulled the PR's full
+   file list (5 files, all `apps/web`/docs, zero overlap with `workers/data/json_importer.py`,
+   `packages/security/egress_capture_verification.py`, or their tests) and ran
+   `tests/integration/test_ftf_0906_egress_verification.py` locally against the current `main` head
+   — passes cleanly (`FTF-0906 egress-verification integration: all checks passed`). Also ran
+   `tests/unit/test_ci_policy.py` locally — 72/72 pass, so the base-branch policy script itself
+   (which `ci-verdict` always re-fetches fresh from `origin/$BASE_REF` at verdict time) is not
+   broken either. (Could not run `json-import-integration` locally — no `docker` daemon available
+   in this sandbox — but the diff-overlap and egress-verification results already rule out
+   "the PR's own code" as the cause.)
+4. Per the CI contract's flake rule, re-ran only the failed jobs (`rerun_failed_jobs`, attempt 3 on
+   run `40029366410`): `ci-verdict`, `json-import-integration` and `egress-verification-integration`
+   all failed again, each in ~2 seconds with `runner_id: 0` — died before any test body ran, which
+   the rule treats as grounds for one more re-run (not a second "real" failure).
+5. Re-ran the **entire** workflow fresh (`rerun_workflow_run`, attempt 4, same run id): every job
+   that was actually attempted today — `classify`, `relay-policy`, `secret-scanning`, `gate`,
+   `mutation-gate` — failed in 2–3 seconds with `runner_id: 0`; every job `needs`-dependent on
+   `classify` was then correctly marked `skipped`, and `ci-verdict` itself failed in 3 seconds.
+   Nothing GitHub-side ever picked up a runner for any of them.
+6. Checked check-runs on five other independent open PRs (#998 FTF-H010-P4-r1, #1011 FTF-0617-r2,
+   #1003 `[GOVERNANCE]` FTF-0904 sharding, #950 FTF-0904-F2 tests-only, #1009 `[CERT]` tracker-only)
+   — every one shows the identical shape: `ci-verdict` red while every job that *did* get a runner
+   (all from the original Oct-23 attempt) succeeded or was correctly skipped. No two of these PRs
+   share a code-level cause — the common factor is the CI platform itself, not any PR's diff.
+7. Attempted to pull a job log for every failing job above (including the fresh attempt-4 jobs,
+   checked within ~90 seconds of completion) — `HTTP 404` every time, consistent with "no runner
+   ever started, so no log file was ever created," not an expired/purged log.
+
+**Why this is a systemic blocker, not an item-level park:** `ci-verdict` is the sole definition of
+"CI green" in this repo (CLAUDE.md's `CI_PROVIDER` line; `docs/operations/routines.md` "CI
+contract"). If no job can ever acquire a runner, no PR — not this shift's, not any of the 18
+already open, not a future one — can ever reach a green `ci-verdict`, so nothing can merge, nothing
+can be certified, and no new relay work can be validated. This also explains why PROGRESS.md/
+QUEUE.md/docs/certifications/queue.md show no shift activity since ~2026-10-23T22:49Z despite the
+relay's 2-hour cadence: every subsequent attempt would have hit this same wall.
+
+**Three route options (owner decision needed — none of these are mine to change):**
+1. **Billing/usage limit.** Check Settings → Billing → Plans and usage for `SJZLab` — if the
+   GitHub Actions included-minutes quota or a configured spending limit was hit around
+   2026-10-23T22:49Z (the last successful job start time I found), that alone would produce exactly
+   this signature (jobs queued, never assigned a runner, reported as a quick "failure" rather than
+   staying queued). Raise the limit or wait for the billing cycle to reset.
+2. **Actions disabled or restricted at the repo/org level.** Check Settings → Actions → General for
+   `SJZLab/Sovra` (and the `SJZLab` org settings) for "Actions permissions" — confirm Actions are
+   still allowed to run, and that nothing (a policy, a runner-group restriction, a disabled
+   workflow) changed in the last 4 days.
+3. **GitHub-side runner outage.** If 1 and 2 both check out clean, check
+   https://www.githubstatus.com for an Actions incident covering `ubuntu-latest` hosted runners
+   around this window, or open a GitHub support ticket — the failure signature (instant failure,
+   `runner_id: 0`, no logs) is consistent with GitHub never dispatching the job to any runner at
+   all, which is outside anything a workflow-file or application-code change can fix.
+
+**Stopping this shift here** per STEP 4(b)/(c) (systemic CI/config failure; same action, same
+failure, reproduced 3+ times today across unrelated jobs and unrelated PRs — not retrying a 4th
+time). No PR was merged, certified, or newly opened this shift. PR #1005 was left subscribed
+(already was) with the re-run queued, in case runners recover on their own; no code or tracker
+change was made to any of the 18 open PRs. Certified/product-true counts unchanged.
+
 ## RESOLVED 2026-10-20T04:45Z — `docs/certifications/mutation-allowlist.yaml` decision (was LIVE 2026-10-19T09:10Z)
 
 **Resolution:** a Control-plane session reviewed all six survivors against the PR heads (#869
