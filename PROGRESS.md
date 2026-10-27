@@ -30983,3 +30983,32 @@ STEP 4 stop condition: single-item outcome -- FTF-UX01-F1 round 1 (lane B's item
 `main`, PROVISIONAL, awaiting Control-plane L2 certification. No new `BLOCKER.md` entry. No new
 "Owner actions" line. Certified count unchanged (merge != certification, Law 4); product-true
 count unchanged (this item touches no `proving_symbol` -- UNWIRED, same as its UX01/UX05 parents).
+
+## 2026-10-27T1512Z -- Scheduled relay shift -- systemic CI outage still live (PR #1012), reconfirmed fresh, no new claim
+
+Hash check clean (`sha256sum CLAUDE.md` == `CLAUDE.md.sha256`). No live `BLOCKER.md` entry on
+`main` (every entry there is RESOLVED) -- but PR #1012 (opened 2026-10-27T13:03Z, ~2h before this
+fire) had already diagnosed a systemic GitHub Actions runner-provisioning outage with full
+evidence and written a LIVE `BLOCKER.md` entry + `QUEUE.md` owner-actions line that simply
+cannot land on `main` yet, because merging requires the exact green `ci-verdict` the outage
+prevents. That catch-22 is why `main`'s own copy of both files still reads clean.
+
+Re-confirmed independently and fresh this shift rather than trusting the 2-hour-old report:
+re-ran PR #1012's own failed jobs (the one sanctioned retry for "died before any test body ran").
+Result 2026-10-27T15:11:44Z-15:11:46Z: `gate`/`classify`/`secret-scanning` failed again in exactly
+2 seconds each, identical runner-never-assigned signature (no job log, nothing scheduled). No
+other workflow run anywhere in the repo has fired since the original 13:03:22Z failure -- every
+session in between independently hit the same wall and pushed nothing.
+
+Per this repo's own precedent for this exact situation ("re-check one fresh run first; if still
+`runner_id: 0`, this entry already covers it ... stop immediately rather than re-diagnose"), wrote
+no new `BLOCKER.md`/`QUEUE.md` entry -- PR #1012's stands and is correct. Did not start new
+implementation work: with 240+ open `relay/*` branches and 20 open PRs already outstanding and no
+way to run CI/mutation-gate/pre-review on anything new until Actions recovers, starting a fresh
+item blind would add risk without being verifiable. Full detail:
+`docs/progress/2026-10-27T1512Z-relay.md`.
+
+STEP 3: this file and the designated-branch docs-only PR (`QUEUE.md`/`docs/certifications/queue.md`
+untouched -- PR #1012 already owns that change). STEP 4 stop condition: (b) true blocker, already
+reported, independently reconfirmed. No new `BLOCKER.md` entry. No new "Owner actions" line. No
+item claimed. Certified/product-true counts unchanged.
