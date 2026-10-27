@@ -9274,6 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
+- 2026-10-27: GitHub Actions cannot provision a runner for ANY job in this repo right now (every job attempted today, including `classify`/`gate`/`secret-scanning`/`mutation-gate` with zero service containers or cross-job dependencies, fails in 2-3s with `runner_id: 0`, no log ever created). No PR -- open or future -- can reach a green `ci-verdict` until this clears, so no relay work can merge or certify. Full evidence and three route options (Actions billing/usage limit, Actions disabled/restricted at repo or org level, a GitHub-side runner-provisioning outage) in `BLOCKER.md`'s new LIVE entry. Remove this line the moment Actions is confirmed working again (a green `ci-verdict` on any PR is sufficient proof).
 - 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 

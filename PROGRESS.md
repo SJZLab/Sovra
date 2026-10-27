@@ -30983,3 +30983,54 @@ STEP 4 stop condition: single-item outcome -- FTF-UX01-F1 round 1 (lane B's item
 `main`, PROVISIONAL, awaiting Control-plane L2 certification. No new `BLOCKER.md` entry. No new
 "Owner actions" line. Certified count unchanged (merge != certification, Law 4); product-true
 count unchanged (this item touches no `proving_symbol` -- UNWIRED, same as its UX01/UX05 parents).
+
+## 2026-10-27T12:52Z -- Scheduled relay shift -- systemic CI outage discovered; BLOCKER.md written, shift stopped
+
+STEP 0/0.1 clean: hash matched (`sha256sum CLAUDE.md` == `CLAUDE.md.sha256`); read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh rather than assuming state. Found the
+designated branch already at current `origin/main` HEAD (`bb940d3`) -- a prior session's
+designated branch had already been merged, so this one restarted clean per the normal rule.
+STEP 0.2: no `cognee-cli` available; text-search fallback used throughout (declared here per the
+routine's own instruction).
+
+Surveyed all 18 open PRs (none merged into `main`, none stale-claimed inside the 3-hour window --
+every one genuinely open and unclaimed by this shift). Every PR's `updated_at` stopped at
+~2026-10-23T22:49Z -- four days of no shift progress despite the stated 2-hour relay cadence.
+
+Per "Returned work first," checked CI on every non-draft relay/governance PR (#998, #1005, #1011,
+#1003, #950, #1009): all six show `ci-verdict` red. Investigated PR #1005 (FTF-1301-F1 round 2)
+first since it had the clearest signature -- two failing integration jobs
+(`json-import-integration`, `egress-verification-integration`) entirely unrelated to its own
+frontend-only diff (confirmed via `pull_request_read get_files`: 5 files, all `apps/web`/docs, zero
+overlap with the failing jobs' own source files). Ruled out "this PR's own fault": pulled
+`tests/integration/test_ftf_0906_egress_verification.py` and ran it locally against the current
+`main` head -- passes cleanly; ran `tests/unit/test_ci_policy.py` locally -- 72/72 pass (the
+base-branch policy script `ci-verdict` always re-fetches fresh is not broken either). Re-ran the
+failed jobs once (CI contract's flake-confirmation allowance) -- failed again in ~2s with
+`runner_id: 0` (no runner ever assigned, died before any test body ran). Re-ran the entire workflow
+fresh -- `classify`/`relay-policy`/`secret-scanning`/`gate`/`mutation-gate` (zero service
+containers, zero cross-job dependencies) ALL failed in 2-3s with `runner_id: 0`; every job
+depending on `classify` was then correctly `skipped`. No job log exists for any of these (`HTTP
+404` on every attempt, including seconds after completion) -- consistent with "no runner was ever
+dispatched," not an expired log.
+
+Cross-checked the other five PRs' check-runs: identical shape on every one -- `ci-verdict` red,
+every job that actually got a runner (all from the original 2026-10-23 attempts) succeeded or was
+correctly skipped, nothing attempted today got a runner. No shared code-level cause links these six
+PRs; the common factor is the CI platform itself failing to provision runners at all, not any PR's
+diff, not a flaky test, not a policy-script bug.
+
+This is a systemic CI/config failure per STEP 4(b)/(c) -- not an item-level park. `ci-verdict` is
+the sole definition of "CI green" in this repo; if no job can ever acquire a runner, no PR (open or
+future) can ever reach green, so nothing can merge or certify, and no new relay work can be
+validated or claimed. Wrote the full evidence trail and three owner-facing route options
+(Actions billing/usage limit, Actions disabled/restricted at repo or org level, a GitHub-side
+runner-provisioning outage) to `BLOCKER.md` under a new LIVE entry and stopped there, per
+"same action, same failure, reproduced 3x -- never retry a 4th time."
+
+STEP 3: this file and `BLOCKER.md` only (docs-only, this designated branch; no `[relay]`-titled PR,
+no item claimed, no shared-file edit beyond these two). No code or tracker file was touched on any
+of the 18 open PRs -- PR #1005 was left subscribed with its re-run already queued, in case runners
+recover on their own, but nothing was pushed to it. STEP 4 stop condition: (b)/(c) true blocker --
+`BLOCKER.md` written, shift stopped. Certified/product-true counts unchanged (0 items claimed, 0
+merged, 0 certified this shift).
