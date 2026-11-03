@@ -1,0 +1,22 @@
+# Wiring: web shell and the first journey (2026-11-03)
+
+Finding (real, from the code at main 7601335b): 30 of 30 backend routers are mounted in
+apps/api/app/main.py, but 25 of 28 UI components under apps/web/components are imported by
+nothing. apps/web had no page or route entry, so no screen could reach them.
+
+Decision: the architecture already fixes the UI as Next.js + TypeScript (task packets FTF-0002,
+FTF-0003, FTF-0004, FTF-0005, FTF-0006, FTF-R001, FTF-R017, FTF-H011). Next.js is therefore
+adopted without an owner ask (default resolution rule). Version: next@14.2.34 (released
+2025-12-11, React 18 compatible; 14.2.35 is too new for the two-week rule and is not used).
+
+Done in this change:
+- app/layout.tsx, app/page.tsx (front door at "/", Law 6), app/artifact-mapping/page.tsx
+  (journey page that mounts ModelToArtifactMappingUI).
+- Verified in a real Chromium: form on "/" -> /artifact-mapping?organizationId&connectionId&modelName
+  -> "Load mapping" sends GET /api/v1/organizations/{org}/connections/litellm/{conn}/models/{model}/training-artifact
+  (route defined in apps/api/app/litellm/model_catalog_mapping_routes.py). No API was running, so
+  the component showed its network-error state.
+- next build, typecheck and eslint pass.
+
+Still unwired (24 components): see the list produced by the wiring map; each becomes its own
+journey page.
