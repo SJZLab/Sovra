@@ -20,3 +20,9 @@ Done in this change:
 
 Still unwired (24 components): see the list produced by the wiring map; each becomes its own
 journey page.
+
+## Revision after CI (2026-11-04)
+- CI found critical and high advisories on next@14.2.34 (OSV gate, 15 findings). The 14.x line has no fixed release for them; the fixes start in 15.x. Pinned next@15.5.28 (released 2026-10-14).
+- Next 15's App Router requires React 19. The repo is on React 18, and the peer range of 15.5.28 accepts 18.2+. Moved the two pages to the Pages Router (`pages/index.tsx`, `pages/artifact-mapping.tsx`) so React stays 18.3.1 with no framework-wide change.
+- `next build` rewrites apps/web/tsconfig.json to `jsx: preserve`. Vite 8 then fails to parse TSX in the Vitest suites. `vitest.config.ts` sets `oxc.jsx.runtime = automatic`, so unit tests compile JSX regardless of that tsconfig value.
+- Local checks: typecheck, eslint and Vitest unit suites pass (27 files pass; the 8 failing files are browser specs that need a Playwright browser binary this sandbox does not have, and CI installs its own).
