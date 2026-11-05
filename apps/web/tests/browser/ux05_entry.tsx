@@ -5,7 +5,7 @@
 // table that answers with REAL `Response` objects -- so a non-JSON 200 produces the browser's own
 // SyntaxError from `response.json()`, not a stand-in -- same technique as `ux06_entry.tsx`.
 import { createElement } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 
 import { CapabilityCompatibilityUI } from "../../components/artifact-capabilities/capability_compatibility_ui";
 import { ModelToArtifactMappingUI } from "../../components/artifact-capabilities/model_to_artifact_mapping_ui";
@@ -26,12 +26,21 @@ export interface Route {
   reject?: boolean;
   /** Answers with this raw text instead of JSON (a malformed 200 -- the browser's real parser fails). */
   rawText?: string;
+  /** FTF-1301-F1 round 2: never resolves until the test calls `release(index, ...)`, by this
+   * route's own order among every `hold: true` route matched so far (0-based) -- unlike
+   * `pending` (never resolves at all), this lets a test control the ARRIVAL ORDER of several
+   * requests still in flight at once (an out-of-order-response race in a real browser). */
+  hold?: boolean;
 }
 
 export type Kind = "catalog" | "mapping" | "compat" | "cost";
 
+/** FTF-1301-F1 round 2: resolvers for every in-flight `hold: true` request, in match order. */
+let heldResolvers: Array<(value: Response) => void> = [];
+
 function stubFetch(routes: Route[]): void {
   const counts = new Map<Route, number>();
+  heldResolvers = [];
   (window as unknown as { __requests: string[] }).__requests = [];
   window.fetch = ((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -39,6 +48,11 @@ function stubFetch(routes: Route[]): void {
     (window as unknown as { __requests: string[] }).__requests.push(`${method} ${pathname}`);
     for (const route of routes) {
       if (route.method !== method || !pathname.endsWith(route.path)) continue;
+      if (route.hold) {
+        return new Promise<Response>((resolve) => {
+          heldResolvers.push(resolve);
+        });
+      }
       if (route.pending) return new Promise(() => undefined);
       if (route.reject) return Promise.reject(new TypeError("Failed to fetch"));
       const status = route.status ?? 200;
@@ -54,6 +68,15 @@ function stubFetch(routes: Route[]): void {
   }) as typeof window.fetch;
 }
 
+/** FTF-1301-F1 round 2: resolve the `index`-th still-held request (0-based, in the order it was
+ * first matched) with a real `Response`. Throws if that index was never held or is unknown yet --
+ * a test must wait for the request to actually fire before releasing it. */
+function release(index: number, status: number, body: unknown): void {
+  const resolve = heldResolvers[index];
+  if (!resolve) throw new Error(`release: no held request at index ${index}`);
+  resolve(new Response(JSON.stringify(body ?? {}), { status }));
+}
+
 const COMPONENTS = {
   catalog: ModelCatalogUI,
   mapping: ModelToArtifactMappingUI,
@@ -61,10 +84,16 @@ const COMPONENTS = {
   cost: CostProfileSearchPanel,
 } as const;
 
+/** FTF-1301-F1 round 2: the SAME root across calls within one page, so a second `mount()` with
+ * new props (e.g. a different `projectId`) is a real React prop-change re-render of the already-
+ * mounted component -- not a fresh mount of a new instance, which would not reproduce a race in
+ * that instance's own in-flight closures. Every test still gets its own fresh `root` (a new
+ * Playwright `page` is a new JS realm), so no existing single-mount test is affected. */
+let root: Root | undefined;
+
 function mount(kind: Kind, props: Record<string, unknown>) {
-  createRoot(document.getElementById("root")!).render(
-    createElement(COMPONENTS[kind] as never, props as never),
-  );
+  root ??= createRoot(document.getElementById("root")!);
+  root.render(createElement(COMPONENTS[kind] as never, props as never));
 }
 
-(window as unknown as { UX05: unknown }).UX05 = { stubFetch, mount };
+(window as unknown as { UX05: unknown }).UX05 = { stubFetch, mount, release };

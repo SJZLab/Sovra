@@ -1616,3 +1616,178 @@ describe("[UX05-BROWSER] pre-review round 1: fetch failure under ar, unreadable 
     }
   });
 });
+
+describe("[UX05-BROWSER] FTF-1301-F1 round 2: out-of-order project-switch race (real Chromium)", () => {
+  const PROJECT_B = "44444444-4444-4444-4444-444444444444";
+
+  async function openCostPanel(): Promise<{ page: Page; uncaught: string[] }> {
+    const page = await browser.newPage({
+      colorScheme: "light",
+      viewport: { width: 1280, height: 900 },
+    });
+    const uncaught: string[] = [];
+    page.on("pageerror", (error) => uncaught.push(String(error)));
+    await page.addInitScript(() => {
+      window.addEventListener("unhandledrejection", (event) => {
+        (window as unknown as { __unhandled: string[] }).__unhandled ??= [];
+        (window as unknown as { __unhandled: string[] }).__unhandled.push(String(event.reason));
+      });
+    });
+    await page.setContent(
+      `<!doctype html><html lang="en" dir="ltr"><head><meta charset="utf-8" />` +
+        `<title>FTF-1301-F1 round 2 evidence</title><style>${TOKENS_CSS}</style></head>` +
+        `<body><main><div id="root"></div></main></body></html>`,
+      { waitUntil: "load" },
+    );
+    await page.addScriptTag({ content: bundle });
+    return { page, uncaught };
+  }
+
+  type Ux05 = {
+    stubFetch: (routes: Route[]) => void;
+    mount: (kind: string, props: unknown) => void;
+    release: (index: number, status: number, body: unknown) => void;
+  };
+
+  test("the previous project's reply, arriving after the new project's, never overwrites the panel (MISSING-BROWSER-TEST)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      // Both the project-A and project-B search requests are HELD -- their own routes are
+      // distinguished by the project id embedded in the path (not by call order), matching the
+      // real app's own URL contract.
+      await page.evaluate(
+        ({ routes, kind, props }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.stubFetch(routes as never);
+          ux.mount(kind, props);
+        },
+        {
+          routes: [
+            {
+              method: "GET",
+              path: `/projects/${PROJECT}/costs/cost-per-success/search`,
+              hold: true,
+            },
+            {
+              method: "GET",
+              path: `/projects/${PROJECT_B}/costs/cost-per-success/search`,
+              hold: true,
+            },
+          ],
+          kind: "cost",
+          props: { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT, locale: "en" },
+        },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 1,
+      );
+
+      // Switch to project B -- a real React prop-change re-render of the SAME mounted instance,
+      // not a fresh mount (round-1's identity ref only survives a genuine re-render).
+      await page.evaluate(
+        ({ kind, props }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.mount(kind, props);
+        },
+        {
+          kind: "cost",
+          props: { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT_B, locale: "en" },
+        },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 2,
+      );
+
+      // Project B's own reply arrives FIRST.
+      await page.evaluate(
+        ({ index, body }) => {
+          (window as unknown as { UX05: Ux05 }).UX05.release(index, 200, body);
+        },
+        {
+          index: 1,
+          body: {
+            results: [],
+            current_cheapest_certified: rate({ id: "b-cheapest", label: "Project B cheapest" }),
+          },
+        },
+      );
+      await page.getByText("Project B cheapest").waitFor({ state: "visible", timeout: 10_000 });
+
+      // Project A's (stale) reply arrives LAST -- it must never overwrite project B's result.
+      await page.evaluate(
+        ({ index, body }) => {
+          (window as unknown as { UX05: Ux05 }).UX05.release(index, 200, body);
+        },
+        {
+          index: 0,
+          body: {
+            results: [],
+            current_cheapest_certified: rate({ id: "a-cheapest", label: "Project A cheapest" }),
+          },
+        },
+      );
+      await page.waitForTimeout(200);
+      expect(await page.getByText("Project B cheapest").count()).toBe(1);
+      expect(await page.getByText("Project A cheapest").count()).toBe(0);
+      expect(uncaught).toEqual([]);
+      expect(await unhandled(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("switching project clears the previous project's rate instead of showing it under the new project's loading indicator (STALE-WHILE-LOADING)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await page.evaluate(
+        ({ routes, kind, props }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.stubFetch(routes as never);
+          ux.mount(kind, props);
+        },
+        {
+          routes: [
+            {
+              method: "GET",
+              path: `/projects/${PROJECT}/costs/cost-per-success/search`,
+              body: {
+                results: [],
+                current_cheapest_certified: rate({ id: "a-cheapest", label: "Project A cheapest" }),
+              },
+            },
+            {
+              method: "GET",
+              path: `/projects/${PROJECT_B}/costs/cost-per-success/search`,
+              hold: true,
+            },
+          ],
+          kind: "cost",
+          props: { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT, locale: "en" },
+        },
+      );
+      await page.getByText("Project A cheapest").waitFor({ state: "visible", timeout: 10_000 });
+
+      await page.evaluate(
+        ({ kind, props }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.mount(kind, props);
+        },
+        {
+          kind: "cost",
+          props: { apiBaseUrl: API, organizationId: ORG, projectId: PROJECT_B, locale: "en" },
+        },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 2,
+      );
+
+      // Project B's own request is still held (in flight): project A's rate must already be gone.
+      expect(await page.getByText("Project A cheapest").count()).toBe(0);
+      expect(await page.getByTestId("cost-profile-loading").count()).toBe(1);
+      expect(uncaught).toEqual([]);
+      expect(await unhandled(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+});
