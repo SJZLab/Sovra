@@ -11,7 +11,11 @@ export default function ProjectSetupPage(): ReactElement {
     <JourneyPage
       journey={journey}
       render={(v, apiBaseUrl) => (
-        <ProjectSetupForm apiBaseUrl={apiBaseUrl} organizationId={v("organizationId")} workspaceId={v("workspaceId")} />
+        <ProjectSetupForm
+          apiBaseUrl={apiBaseUrl}
+          organizationId={v("organizationId")}
+          workspaceId={v("workspaceId")}
+        />
       )}
     />
   );

@@ -11,7 +11,11 @@ export default function ModelCatalogPage(): ReactElement {
     <JourneyPage
       journey={journey}
       render={(v, apiBaseUrl) => (
-        <ModelCatalogUI apiBaseUrl={apiBaseUrl} organizationId={v("organizationId")} connectionId={v("connectionId")} />
+        <ModelCatalogUI
+          apiBaseUrl={apiBaseUrl}
+          organizationId={v("organizationId")}
+          connectionId={v("connectionId")}
+        />
       )}
     />
   );
