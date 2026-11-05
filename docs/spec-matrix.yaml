@@ -9601,16 +9601,22 @@ FTF-0616:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0616.py
 FTF-0617:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Zero-egress judge policy
   evidence_hash: ''
-  implementation_state: ABSENT
+  implementation_state: IMPLEMENTED
   notes: kind=retained_feature; requirements=AF-25; scenarios=Q16, Q17, Q18; deps=FTF-0402, FTF-0601,
-    FTF-0616
-  proof_state: UNPROVEN
+    FTF-0616. Round 2 (relay/FTF-0617-r2, from #732). workers/evaluation/zero_egress_judge_policy.py
+    decide_judge_plan / run_private_judge. Acceptance (private-only judge or authorized humans on strict
+    projects) -> tests/tasks/test_ftf_0617.py E1-E5 plus the PG16 suite
+    tests/integration/test_ftf_0617_zero_egress_judge.py; negative acceptance (external fallback or unknown
+    upstream judge fails closed even when the LiteLLM alias looks local) -> D1/looks-local, admission and
+    per-call deployment_fingerprint scenarios. proving_symbol blank - no live caller yet (UNWIRED
+    disclosed, same class as FTF-0616). Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0617.py
 FTF-0618:
   certification_state: NONE
   criticality: MUST
