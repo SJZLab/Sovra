@@ -12,6 +12,13 @@ export interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   /** Required or optional is always marked, consistently. */
   requirement: "required" | "optional";
   locale?: Locale;
+  /**
+   * Where the required/optional marker sits. `"label"` (the default) puts it inside the label text.
+   * `"hint"` keeps the label text EXACTLY the caller's string and announces the marker through
+   * `aria-describedby` instead -- for a screen whose pinned suites query the control by that exact
+   * label (FTF-0516), without giving up Field's block label, target size and error wiring.
+   */
+  requirementPlacement?: "label" | "hint";
 }
 
 export function Field({
@@ -21,6 +28,7 @@ export function Field({
   error,
   requirement,
   locale = "en",
+  requirementPlacement = "label",
   "aria-describedby": callerDescribedBy,
   style: callerStyle,
   ...rest
@@ -28,18 +36,29 @@ export function Field({
   const trimmedError = cleanText(error);
   const helperId = helper ? `${id}-helper` : undefined;
   const errorId = trimmedError ? `${id}-error` : undefined;
-  const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
+  const markerId = requirementPlacement === "hint" ? `${id}-requirement` : undefined;
+  const describedBy =
+    [callerDescribedBy, markerId, helperId, errorId].filter(Boolean).join(" ") || undefined;
+  const marker = (
+    <span id={markerId}>
+      {phrase(requirement === "required" ? "fieldRequired" : "fieldOptional", locale)}
+    </span>
+  );
   return (
     <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
       {/* FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS): a block label forces the
           control onto its own line below it in real layout (NN/g forms) -- DOM order alone is
           not visual layout, since two inline-level elements still sit side by side. */}
       <label htmlFor={id} style={{ display: "block", marginBlockEnd: "var(--space-1)" }}>
-        {label}{" "}
-        <span>
-          {phrase(requirement === "required" ? "fieldRequired" : "fieldOptional", locale)}
-        </span>
+        {requirementPlacement === "label" ? (
+          <>
+            {label} {marker}
+          </>
+        ) : (
+          label
+        )}
       </label>
+      {requirementPlacement === "hint" ? marker : null}
       {helper ? <div id={helperId}>{helper}</div> : null}
       <input
         {...rest}

@@ -1,6 +1,7 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { useId, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
+import { Button } from "./Button";
 import { dirFor, phrase, resolveLocale, type Locale } from "./phrases";
 
 export interface DialogProps {
@@ -41,8 +42,6 @@ export function Dialog({
   "data-testid": testId,
   restoreFocusTo,
 }: DialogProps) {
-  const titleId = useId();
-  const descriptionId = useId();
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -55,8 +54,7 @@ export function Dialog({
         />
         <RadixDialog.Content
           role={role}
-          aria-labelledby={titleId}
-          aria-describedby={descriptionId}
+          aria-modal="true"
           lang={resolveLocale(locale)}
           dir={dirFor(locale)}
           data-testid={testId}
@@ -77,32 +75,39 @@ export function Dialog({
             }
           }}
           style={{
+            // FTF-UX02 r3 finding 1 (DIALOG-RTL-OFFSCREEN): centre with `inset: 0` + `margin: auto`
+            // on a sized box. `insetInlineStart: 50%` + `translate(-50%)` resolves to `right: 50%`
+            // in RTL while the translate always shifts left, drawing the dialog half off-screen.
+            // Auto margins centre identically in both directions.
             position: "fixed",
-            insetInlineStart: "50%",
-            insetBlockStart: "50%",
-            transform: "translate(-50%, -50%)",
+            inset: 0,
+            margin: "auto",
+            inlineSize: "min(92vw, 480px)",
+            blockSize: "fit-content",
+            maxBlockSize: "90vh",
+            overflowY: "auto",
+            overflowWrap: "anywhere",
+            boxSizing: "border-box",
             background: "var(--color-surface)",
             color: "var(--color-text)",
             border: "1px solid var(--color-border)",
             borderRadius: "4px",
             padding: "var(--space-5)",
-            maxInlineSize: "min(92vw, 480px)",
             display: "grid",
             gap: "var(--space-3)",
           }}
         >
-          <RadixDialog.Title id={titleId} style={{ margin: 0 }}>
-            {title}
-          </RadixDialog.Title>
-          <RadixDialog.Description id={descriptionId} style={{ margin: 0 }}>
-            {description}
-          </RadixDialog.Description>
+          <RadixDialog.Title style={{ margin: 0 }}>{title}</RadixDialog.Title>
+          <RadixDialog.Description style={{ margin: 0 }}>{description}</RadixDialog.Description>
           {children}
-          <RadixDialog.Close
-            aria-label={phrase("cancel", locale)}
-            style={{ position: "absolute", insetInlineEnd: "8px", insetBlockStart: "8px" }}
-          >
-            {"×"}
+          <RadixDialog.Close asChild>
+            <Button
+              aria-label={phrase("cancel", locale)}
+              data-testid="dialog-close"
+              style={{ position: "absolute", insetInlineEnd: "8px", insetBlockStart: "8px" }}
+            >
+              {"×"}
+            </Button>
           </RadixDialog.Close>
         </RadixDialog.Content>
       </RadixDialog.Portal>
