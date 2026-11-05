@@ -26,3 +26,18 @@ journey page.
 - Next 15's App Router requires React 19. The repo is on React 18, and the peer range of 15.5.28 accepts 18.2+. Moved the two pages to the Pages Router (`pages/index.tsx`, `pages/artifact-mapping.tsx`) so React stays 18.3.1 with no framework-wide change.
 - `next build` rewrites apps/web/tsconfig.json to `jsx: preserve`. Vite 8 then fails to parse TSX in the Vitest suites. `vitest.config.ts` sets `oxc.jsx.runtime = automatic`, so unit tests compile JSX regardless of that tsconfig value.
 - Local checks: typecheck, eslint and Vitest unit suites pass (27 files pass; the 8 failing files are browser specs that need a Playwright browser binary this sandbox does not have, and CI installs its own).
+
+## Second batch: five more journeys (2026-11-05)
+- Journeys now wired, each mounted from "/" with its parameters: model-catalog (ModelCatalogUI),
+  capability-compatibility (CapabilityCompatibilityUI), dataset-upload (ResumableDatasetUploadUI),
+  requirements (RequirementsPanel), project-setup (ProjectSetupForm).
+- One registry (apps/web/lib/journeys.ts) drives the front-door forms and the shared shell
+  (apps/web/lib/JourneyPage.tsx). A journey needs NEXT_PUBLIC_API_BASE_URL and its parameters;
+  without them it shows the reason, never a silent default.
+- Browser check (Chromium, local build, no API running): all six journeys mount with zero page errors.
+- Defect fixed: RequirementsPanel fired its loads with `void` and no catch, so an unreachable API
+  became an unhandled rejection with no message shown (Law 17). The loads and the budget submit now
+  catch network failures and show them in the panel's own error slots.
+- Still unwired: CostProfileSearchPanel, OIDC login, GitHub target-application components, the
+  dataset-issue and dataset-source components, the evaluation-case import, and the candidate and
+  manifest review components. Each still needs its journey.
