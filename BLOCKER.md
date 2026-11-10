@@ -1,6 +1,23 @@
 # BLOCKER.md
 
-## LIVE 2026-10-27T12:52Z — GitHub Actions cannot provision runners for this repo at all; `ci-verdict` red on every open PR; no shift has progressed in 4 days
+## RESOLVED 2026-11-10T09:50Z — GitHub Actions runner outage (was LIVE 2026-10-27T12:52Z)
+
+**Resolution:** GitHub Actions is provisioning runners normally again. Confirmed directly: PR #1005
+(`relay/FTF-1301-F1-r2`, the same PR this entry's evidence was gathered on) got a fully green
+`ci-verdict` on 2026-11-10T09:48Z (run `42786224839`, 92/92 check-runs `success`, including
+`classify`/`gate`/`secret-scanning`/`mutation-gate`/the `ftf0904-fault-matrix` shards and every
+`*-integration` job — the exact job family that was failing with `runner_id: 0` across every PR
+when this entry was written). `main` has also advanced through multiple merges in the interim
+(PR #998 FTF-H010-P4 among them), each presumably needing its own green `ci-verdict` first,
+confirming the platform-wide nature of the original failure and its recovery. Whatever caused the
+outage (billing/usage limit, a disabled-Actions window, or a GitHub-side incident — this session
+never got visibility into which) cleared on its own or via an owner action taken outside this
+session; no code or workflow change was needed or made. The original evidence trail below is kept
+for the record rather than deleted, per this file's own convention.
+
+**Original entry, preserved for context:**
+
+## (historical) LIVE 2026-10-27T12:52Z — GitHub Actions cannot provision runners for this repo at all; `ci-verdict` red on every open PR; no shift has progressed in 4 days
 
 **What failed:** no job in `.github/workflows/ci.yml` can execute right now — not a code defect, a
 flake, or a single job's own dependency. Every job I attempted to run or re-run today completed in

@@ -128,6 +128,183 @@ paths:
           description: >-
             `not_found` -- identical for a missing id, another
             organization's id, and another project's id.
+  /api/v1/organizations/{organization_id}/projects/{project_id}/model-versions/{model_version_id}/roles:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        List every role assignment of the version, active and revoked, oldest first
+        (FTF-H010-P4).
+      operationId: listModelRoleAssignments
+      responses:
+        '200':
+          description: The version's role assignments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelRoleAssignment'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found` -- identical for a missing id, another organization's id and another
+            project's id.
+    post:
+      summary: >-
+        Assign a role to a validated model version (FTF-H010-P4). `current_production` and
+        `judge` are `organization_admin` only; `baseline`, `candidate` and `teacher` use the
+        model-version write roles. A judge role does not make a qualified judge (FTF-0616
+        calibration and the FTF-0617 policy still decide) and `current_production` records the
+        incumbent only -- it deploys or routes nothing.
+      operationId: assignModelRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelRoleAssignRequest'
+      responses:
+        '200':
+          description: >-
+            A replay: the same `idempotency_key` with the same request. No row and no audit event
+            is written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRoleAssignment'
+        '201':
+          description: The new assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRoleAssignment'
+        '400':
+          description: >-
+            `invalid_body` (not a JSON object, a missing or unknown key, a non-string role, an
+            idempotency key outside 1..128 printable ASCII characters) or `invalid_role` (a string
+            that is not exactly one of the five roles; no case folding or trimming).
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: >-
+            `not_found` -- identical for a missing id, another organization's id and another
+            project's id.
+        '409':
+          description: >-
+            `role_already_assigned`, `incumbent_exists`, `self_judging_role_conflict` (a version is
+            never both judge and candidate), `idempotency_key_reused` (the same key with another
+            request) or `import_not_validated` (no succeeded import job and not factory trained).
+  /api/v1/organizations/{organization_id}/projects/{project_id}/model-versions/{model_version_id}/roles/{role}/revoke:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: role
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/ModelRole'
+    post:
+      summary: >-
+        Revoke the active assignment of `role` (FTF-H010-P4). The body is empty or `{}`. A revoked
+        assignment never changes again; assigning the role again is a new row.
+      operationId: revokeModelRole
+      responses:
+        '200':
+          description: The revoked assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRoleAssignment'
+        '400':
+          description: '`invalid_role` (the path role is not exactly one of the five) or `invalid_body`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found` -- identical for a missing, foreign or wrong-project id.'
+        '409':
+          description: '`role_not_assigned` -- no active assignment (a second revoke lands here).'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/model-versions/{model_version_id}/actions:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: model_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        The server-side decision for every action on the version (FTF-H010-P4): allowed, or the
+        precise reason code. Built from database rows, never from the version's name, reference
+        or alias text.
+      operationId: getModelVersionActions
+      responses:
+        '200':
+          description: One decision per action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelVersionActions'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found` -- identical for a missing, foreign or wrong-project id.'
+        '409':
+          description: '`model_facts_invalid` -- a stored row fails the fact checks (fail closed).'
 components:
   responses:
     NotAuthenticated:
@@ -227,4 +404,161 @@ components:
         updated_at:
           type: string
           format: date-time
+      additionalProperties: false
+    ModelRole:
+      type: string
+      description: Exact, case sensitive (no folding, trimming or Unicode normalisation).
+      enum: [current_production, baseline, candidate, teacher, judge]
+    ModelRoleAssignRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/ModelRole'
+        idempotency_key:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[ -~]{1,128}$'
+      required: [role, idempotency_key]
+      additionalProperties: false
+    ModelRoleAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        model_version_id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/ModelRole'
+        assigned_by:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+        idempotency_key:
+          type: string
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_by:
+          type: [string, 'null']
+        revoke_reason_code:
+          type: [string, 'null']
+      additionalProperties: false
+    ModelActionName:
+      type: string
+      enum:
+        - evaluate
+        - compare
+        - continue_tuning
+        - exact_resume
+        - request_qualification
+        - retain_incumbent
+        - deploy_route
+        - retire
+    ModelActionCode:
+      type: string
+      enum:
+        - import_not_validated
+        - license_not_accepted
+        - adapter_base_incompatible
+        - endpoint_not_trainable
+        - no_trusted_checkpoint
+        - prerequisite_not_available
+        - not_current_production
+    ModelContinuationPlan:
+      type: object
+      description: >-
+        `new_run` starts at step 0 with no optimizer state under a proposed new run id and its own
+        cost; `exact_resume` starts at the checkpoint's step (>= 1) in the checkpoint's run
+        lineage. The run id of a `new_run` is proposed, not reserved.
+      properties:
+        kind:
+          type: string
+          enum: [new_run, exact_resume]
+        run_id:
+          type: string
+        start_step:
+          type: integer
+          minimum: 0
+        parent_model_version_id:
+          type: string
+        optimizer_state:
+          type: string
+        separate_cost:
+          type: boolean
+        checkpoint_id:
+          type: string
+        same_run_lineage:
+          type: boolean
+      required: [kind, run_id, start_step]
+      additionalProperties: false
+    ModelActionDecision:
+      type: object
+      properties:
+        allowed:
+          type: boolean
+        code:
+          oneOf:
+            - $ref: '#/components/schemas/ModelActionCode'
+            - type: 'null'
+        plan:
+          oneOf:
+            - $ref: '#/components/schemas/ModelContinuationPlan'
+            - type: 'null'
+      required: [allowed, code, plan]
+      additionalProperties: false
+    ModelVersionActions:
+      type: object
+      properties:
+        model_version_id:
+          type: string
+          format: uuid
+        origin:
+          type: string
+          enum: [factory_trained, imported_weights, imported_adapter, external_endpoint]
+        validated:
+          type: boolean
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelRole'
+        actions:
+          type: object
+          properties:
+            evaluate:
+              $ref: '#/components/schemas/ModelActionDecision'
+            compare:
+              $ref: '#/components/schemas/ModelActionDecision'
+            continue_tuning:
+              $ref: '#/components/schemas/ModelActionDecision'
+            exact_resume:
+              $ref: '#/components/schemas/ModelActionDecision'
+            request_qualification:
+              $ref: '#/components/schemas/ModelActionDecision'
+            retain_incumbent:
+              $ref: '#/components/schemas/ModelActionDecision'
+            deploy_route:
+              $ref: '#/components/schemas/ModelActionDecision'
+            retire:
+              $ref: '#/components/schemas/ModelActionDecision'
+          required:
+            - evaluate
+            - compare
+            - continue_tuning
+            - exact_resume
+            - request_qualification
+            - retain_incumbent
+            - deploy_route
+            - retire
+          additionalProperties: false
+      required: [model_version_id, origin, validated, roles, actions]
       additionalProperties: false

@@ -12403,3 +12403,39 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   show "Authorized" falsely (severity 4/3; pre-existing in the base), overflow up to 1156 px, 0516 and most of 0501-UI not
   rebuilt, browser spec incomplete, A9 GREEN, evidence missing. The submission itself said PARTIAL. Faults 32/33 RED.
   Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-23T18:52Z — CONTROL-PLANE DESIGNS: FTF-0701 (P1-P3) and the FTF-H010 parent remainder (P5-P6)
+- Designs added to the top of the QUEUE.md Backlog with recorded rulings on their spec conflicts (07 contract declares only
+  the routes FTF-0701 builds; AUTO/full_sft/seq_cls_lora refused with stable codes; §68.1 rights/privacy reading; admin-only
+  connection routes not widened; "evaluate"/"load" disclosed blocked per the FTF-0616 precedent). No ask-first item for the
+  relay. The FTF-0616 owner ask is amended to also name one fine-tuned deployment id.
+## 2026-10-23T18:52Z — RETURNED: FTF-R006-P1b (r2)
+- **FTF-R006-P1b: RETURNED** (round 2 → 3; PR #971, merge 264f53d67bc7969fbea3791eacdce0a048947d48, head f14d1b9b).
+  Producers session_01AdkmA4u9UVHYQec35s96tE, session_014C2g7EL2fR4UNWjCMsGiiK, session_01NRbmWMXHtq3ZnTNo7W3cAS (9 commits
+  without a trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 84/84, ci-verdict 120528030069;
+  argilla-real-server-integration 120415148677 "All FTF-R006-P1b real-Argilla-server checks passed" (only /version and
+  /me/workspaces called); mutation-gate 38/38. Verified on a local real argilla-server 2.8.0 + OpenSearch 2.19.6: the
+  cross-tenant write is FIXED (0 Argilla calls on a foreign scope; org1 annotator 403 on org2), concurrent sync converges,
+  the UPDATE grant is closed. Return: a revoked identity still reads a dataset (HTTP 200) in two deterministic
+  interleavings and 2/5 free runs; F14/F16 GREEN; the real-server CI job tests none of the access clauses; the CI stack uses
+  Elasticsearch 8.8.2 and Redis 7.4.11 against the recorded licence rulings; no gate step; [relay] title on a ci.yml change.
+  UNWIRED: nothing exposed. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T18:52Z — RETURNED: FTF-UX06 (r2)
+- **FTF-UX06: RETURNED** (round 2 → 3; PR #979, merge 8fa5187518e39dabf279099020da177afaae87b6, head 0a0ca719). Producers
+  session_013sdtmd5nis31i2LstSad9T, session_01UPYrEmHzuYi5scj3ozKgc2 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82,
+  ci-verdict 120154580671; gate 120142014289 installed Chromium and ran vitest incl. ftf_ux06_browser (step-level) and
+  "FTF-0602-P1 evaluation case tests: all checks passed". Local 3112/3112; FTF-0602 REQUALIFIED. 168 real-Chromium pages:
+  axe 0, lang/dir, malformed replies announced with recovery and no unmount, round-1 overflow fixed. Return: saved-notice
+  overflow up to 2609 px and a 403 save that unmounts the form with focus on <body> (severity 3 each), raw codes and
+  English words under ar, 5 named faults still GREEN, wrong recovery on 403, static ids (ruling: useId), evidence.
+  Faults: round-1 11/16 now RED; new 21/24 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T18:52Z — CERTIFIED (child slice): FTF-H011-P2
+- **FTF-H011-P2: CERTIFIED (L2)** (round 2 under the stopping rule; PR #978, merge df2218effe11d4bb7b8da2b1bc6a06ab6f275072, head 25e7e97b). Producer
+  session_0184kEDzTAo4bXYZtvM3vh3G ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 82/82, ci-verdict 120172546371;
+  dataset-mapping-store-integration 120155287358 and gate 120155082613 "all checks passed"; mutation-gate 50/50. Local:
+  task script 752/0, PG16 integration 238/0; both suites RED on the round-1 store (RET2-2/3c/6/7 "got None"); uncapped
+  mutation 316/316; one Alembic head. Rulings met: an explicit own rejection returns mapping_reapproval_required before any
+  prior lookup; reuse re-authorizes the prior approval's own connection (Law 16). Probes: R1 and P13l refuse with no
+  writes; rejection then re-approval, older-version rejections, revoked-then-restored connection, grant variants,
+  cross-tenant/project, 12 rounds of reject-vs-resolve races all correct. Faults F1-F3/F5-F7/F9-F12 RED; F4 equivalent,
+  F8 refusal-code only (fails closed). FTF-H011-P1 REQUALIFIED. Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK. UNWIRED.
