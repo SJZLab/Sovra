@@ -25286,6 +25286,9 @@ different session.
 - **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
 - **Returned:** FTF-H010-P4 r1 -> r2 (0p): archived or digest-drifted weights artifact must stop continue_tuning (derive via the lineage manifest, fail closed, add rows to the decision table and integration suite), pin the advisory lock with a deterministic two-session interleaving test, pin the revocation all-NULL-or-all-set CHECK by name; PR #998 merge 43512af4; P5 and P6 remain.
 - **Certified:** FTF-UX01-F1 (#994 merge 21e0b3a8 + #1008 merge bb940d33), round 2; FTF-UX01 and FTF-UX05 requalified.
+- **Certified:** FTF-0617 (#1011, merge 816f0fb3), round 2; 158/304; UNWIRED.
+- **Returned:** FTF-1301-F1 r2 -> r3 (0q): tests only - pin setNotice(null) and organization-in-identityKey in jsdom and Chromium, Chromium tests for stale 500 / network error / pending reply (F3/F4/F5), fix the stale docstring.
+- **Ruled:** draft #1020 (FTF-1504 r2) is a dead claim; next lane claims relay/FTF-1504-r3 on top of relay/FTF-1504-r2.
 
 ## 2026-11-10T11:38Z — PROVISIONAL: FTF-1301-F1 round 2 merged (#1005)
 - **Submitted:** round 2 on QUEUE.md item 0d (Control-plane return on #996, `dab64d2`). Four
