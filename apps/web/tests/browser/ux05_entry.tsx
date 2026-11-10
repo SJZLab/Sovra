@@ -37,10 +37,12 @@ export type Kind = "catalog" | "mapping" | "compat" | "cost";
 
 /** FTF-1301-F1 round 2: resolvers for every in-flight `hold: true` request, in match order. */
 let heldResolvers: Array<(value: Response) => void> = [];
+let heldRejecters: Array<(reason: unknown) => void> = [];
 
 function stubFetch(routes: Route[]): void {
   const counts = new Map<Route, number>();
   heldResolvers = [];
+  heldRejecters = [];
   (window as unknown as { __requests: string[] }).__requests = [];
   window.fetch = ((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -49,8 +51,9 @@ function stubFetch(routes: Route[]): void {
     for (const route of routes) {
       if (route.method !== method || !pathname.endsWith(route.path)) continue;
       if (route.hold) {
-        return new Promise<Response>((resolve) => {
+        return new Promise<Response>((resolve, reject) => {
           heldResolvers.push(resolve);
+          heldRejecters.push(reject);
         });
       }
       if (route.pending) return new Promise(() => undefined);
@@ -77,6 +80,14 @@ function release(index: number, status: number, body: unknown): void {
   resolve(new Response(JSON.stringify(body ?? {}), { status }));
 }
 
+/** FTF-1301-F1 round 3: reject the `index`-th still-held request like a real network failure, so a
+ * test controls WHEN a stale request fails relative to the fresh one. */
+function releaseReject(index: number): void {
+  const reject = heldRejecters[index];
+  if (!reject) throw new Error(`releaseReject: no held request at index ${index}`);
+  reject(new TypeError("Failed to fetch"));
+}
+
 const COMPONENTS = {
   catalog: ModelCatalogUI,
   mapping: ModelToArtifactMappingUI,
@@ -96,4 +107,4 @@ function mount(kind: Kind, props: Record<string, unknown>) {
   root.render(createElement(COMPONENTS[kind] as never, props as never));
 }
 
-(window as unknown as { UX05: unknown }).UX05 = { stubFetch, mount, release };
+(window as unknown as { UX05: unknown }).UX05 = { stubFetch, mount, release, releaseReject };

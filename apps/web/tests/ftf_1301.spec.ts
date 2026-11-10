@@ -1110,3 +1110,112 @@ test("FTF-1301-F1 round 2 (P8, Create): a Create error from the project open whe
   });
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+// ---- FTF-1301-F1 round 3 (L2 return of #996 + #1005): pin the reset-notice and the
+// organization half of the identity key in jsdom (Chromium twins live in ftf_ux05_browser.spec.ts).
+
+const ORG_B = "55555555-5555-5555-5555-555555555555";
+
+test("FTF-1301-F1 round 3 (UNPINNED-RESET-NOTICE): 'Rate recorded.' for project A is gone after switching to project B", async () => {
+  const PROJECT_B = "60606060-6060-6060-6060-606060606060";
+  const emptySearch = { results: [], current_cheapest_certified: null };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return { ok: true, json: async () => baseRecord() };
+      return { ok: true, json: async () => emptySearch };
+    }),
+  );
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), { target: { value: "Node" } });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "2.5000000000" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+    target: { value: "TCO v3" },
+  });
+  fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("cost-profile-created-notice").textContent).toBe("Rate recorded."),
+  );
+
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  // Project B's own search resolves; the notice belonged to project A's write and must be gone.
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+  expect(screen.queryByTestId("cost-profile-created-notice")).toBeNull();
+});
+
+test("FTF-1301-F1 round 3 (UNPINNED-RESET-ORGANIZATION): same project id, new organization -- the old organization's rate is cleared while the new search is in flight, and an old reply arriving last is ignored", async () => {
+  const pending: Array<(value: unknown) => void> = [];
+  const urls: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          urls.push(url);
+          pending.push(resolve);
+        }),
+    ),
+  );
+  const ok = (label: string) => ({
+    ok: true,
+    json: async () => ({
+      results: [],
+      current_cheapest_certified: baseRecord({ id: label, label }),
+    }),
+  });
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  await act(async () => {
+    pending[0]!(ok("Org one rate"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Org one rate")).toBeTruthy());
+
+  // Same project id, different organization.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_B,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+  expect(urls[1]).toContain(ORG_B);
+  // The new organization's search is still in flight: organization one's rate must already be gone.
+  expect(screen.queryByText("Org one rate")).toBeNull();
+  expect(screen.getByTestId("cost-profile-loading")).toBeTruthy();
+
+  // Organization two's reply lands, then a second organization-one reply (a stale retry) lands last.
+  await act(async () => {
+    pending[1]!(ok("Org two rate"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Org two rate")).toBeTruthy());
+  await act(async () => {
+    pending[0]!(ok("Org one rate"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByText("Org one rate")).toBeNull();
+  expect(screen.getByText("Org two rate")).toBeTruthy();
+});
