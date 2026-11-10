@@ -116,10 +116,12 @@ def make_facts(
     checkpoint: Any = None,
     prerequisites: Any = None,
     new_run_id: str = RUN_NEW,
-    weights_usable: Any = None,
+    weights_usable: Any = "auto",
 ) -> Any:
     if license_accepted == "auto":
         license_accepted = None if origin == "external_endpoint" else True
+    if weights_usable == "auto":
+        weights_usable = True if origin in ("imported_weights", "factory_trained") else None
     if base_compatible == "auto":
         base_compatible = True if origin == "imported_adapter" else None
     if model_ref is None and origin == "external_endpoint":
@@ -240,12 +242,42 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
         got = m.evaluate_model_actions(make_facts(m, origin=origin, weights_usable=True))
         check("A1w", f"{origin}: usable weights allow evaluate", got["evaluate"].allowed)
     for bad in (0, 1, "yes", "False"):
+        for origin in ("imported_weights", "factory_trained"):
+            try:
+                make_facts(m, origin=origin, weights_usable=bad)
+                ok = False
+            except m.ContinuationFactsError:
+                ok = True
+            check("A1w", f"{origin}: weights_usable {bad!r} is refused", ok)
+    for origin in ("imported_weights", "factory_trained"):
         try:
-            make_facts(m, weights_usable=bad)
+            make_facts(m, origin=origin, weights_usable=None)
             ok = False
         except m.ContinuationFactsError:
             ok = True
-        check("A1w", f"weights_usable {bad!r} is refused", ok)
+        check("A1w", f"{origin}: a missing weights_usable is refused (no fail-open)", ok)
+    for origin in ("external_endpoint", "imported_adapter"):
+        for val in (True, False):
+            try:
+                make_facts(m, origin=origin, weights_usable=val)
+                ok = False
+            except m.ContinuationFactsError:
+                ok = True
+            check("A1w", f"{origin}: weights_usable {val} is refused (wrong origin)", ok)
+    try:
+        m.ModelActionFacts(
+            model_version_id=VID,
+            origin="imported_weights",
+            validated=True,
+            license_accepted=True,
+            base_compatible=None,
+            roles=frozenset(),
+            new_run_id=RUN_NEW,
+        )
+        ok = False
+    except TypeError:
+        ok = True
+    check("A1w", "weights_usable has no default (omitting it is a TypeError)", ok)
 
     # ---- A2: unvalidated rows ---------------------------------------------------------
     for origin in ORIGINS:
@@ -550,6 +582,7 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
             validated=True,
             license_accepted=True,
             base_compatible=None,
+            weights_usable=True,
             roles=frozenset(),
             new_run_id=RUN_NEW,
         ),
@@ -2901,8 +2934,18 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "weights-usable-non-bool-accepted",
-        "if self.weights_usable is not None and type(self.weights_usable) is not bool:",
-        "if False:",
+        '            if type(self.weights_usable) is not bool:\n                raise ContinuationFactsError("weights_usable_invalid")\n        elif self.weights_usable is not None:',
+        '            if False:\n                raise ContinuationFactsError("weights_usable_invalid")\n        elif self.weights_usable is not None:',
+    ),
+    (
+        "weights-usable-wrong-origin-accepted",
+        '        elif self.weights_usable is not None:\n            raise ContinuationFactsError("weights_usable_invalid")',
+        '        elif False:\n            raise ContinuationFactsError("weights_usable_invalid")',
+    ),
+    (
+        "weights-usable-factory-origin-skipped",
+        "if self.origin is ORIGIN_IMPORTED_WEIGHTS or self.origin is ORIGIN_FACTORY_TRAINED:\n            if type(self.weights_usable)",
+        "if self.origin is ORIGIN_IMPORTED_WEIGHTS:\n            if type(self.weights_usable)",
     ),
     (
         "run-id-collision-allowed",

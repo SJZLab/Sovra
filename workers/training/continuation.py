@@ -199,14 +199,14 @@ class ModelActionFacts:
     validated: bool
     license_accepted: bool | None
     base_compatible: bool | None
+    # a bool exactly for imported_weights / factory_trained (False = the weights artifact is
+    # archived, not ready or its digest drifted: every use action is denied), None otherwise
+    weights_usable: bool | None
     roles: frozenset[str]
     new_run_id: str
     model_ref: str | None = None
     checkpoint: CheckpointFact | None = None
     prerequisites: Mapping[str, object] = field(default_factory=dict)
-    # None = not assessed / not applicable; False = the weights artifact is archived, not ready or
-    # its digest drifted from the version's recorded one (every use action is denied)
-    weights_usable: bool | None = None
 
     def __post_init__(self) -> None:
         _exact_str(self.model_version_id, "model_version_id", limit=_ID_MAX)
@@ -225,7 +225,10 @@ class ModelActionFacts:
                 raise ContinuationFactsError("base_compatible_invalid")
         elif self.base_compatible is not None:
             raise ContinuationFactsError("base_compatible_invalid")
-        if self.weights_usable is not None and type(self.weights_usable) is not bool:
+        if self.origin is ORIGIN_IMPORTED_WEIGHTS or self.origin is ORIGIN_FACTORY_TRAINED:
+            if type(self.weights_usable) is not bool:
+                raise ContinuationFactsError("weights_usable_invalid")
+        elif self.weights_usable is not None:
             raise ContinuationFactsError("weights_usable_invalid")
         if type(self.roles) is not frozenset:
             raise ContinuationFactsError("roles_invalid")
