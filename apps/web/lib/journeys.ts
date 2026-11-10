@@ -135,4 +135,13 @@ export const JOURNEYS: Journey[] = [
       { name: "suiteId", label: "Suite ID" },
     ],
   },
+  {
+    slug: "github-branch",
+    title: "GitHub repository and branch",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "targetApplicationConnectionId", label: "Target application connection ID" },
+    ],
+  },
 ];
