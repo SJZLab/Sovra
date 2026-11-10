@@ -770,6 +770,8 @@ def _jsonb_as_json(element: Any, compiler: Any, **kw: Any) -> str:
 
 from workers.training.continuation import (  # noqa: E402
     ContinuationFactsError as ContinuationFactsErrorType,
+)
+from workers.training.continuation import (  # noqa: E402
     evaluate_model_actions as real_evaluate_model_actions,
 )
 
