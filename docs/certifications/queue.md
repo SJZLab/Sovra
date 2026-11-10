@@ -25286,3 +25286,38 @@ different session.
 - **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
 - **Returned:** FTF-H010-P4 r1 -> r2 (0p): archived or digest-drifted weights artifact must stop continue_tuning (derive via the lineage manifest, fail closed, add rows to the decision table and integration suite), pin the advisory lock with a deterministic two-session interleaving test, pin the revocation all-NULL-or-all-set CHECK by name; PR #998 merge 43512af4; P5 and P6 remain.
 - **Certified:** FTF-UX01-F1 (#994 merge 21e0b3a8 + #1008 merge bb940d33), round 2; FTF-UX01 and FTF-UX05 requalified.
+
+## 2026-11-10T11:38Z — PROVISIONAL: FTF-1301-F1 round 2 merged (#1005)
+- **Submitted:** round 2 on QUEUE.md item 0d (Control-plane return on #996, `dab64d2`). Four
+  findings closed, each with its own fault → RED table (full detail in the submission doc):
+  (1) MISSING-BROWSER-TEST — `ux05_entry.tsx` now reuses one `Root` per page and supports
+  held/individually-released fetch responses, so a new real-Chromium test reproduces the
+  out-of-order project-switch race, RED on `dab64d2^1` (pre-round-1), GREEN from round 1 onward;
+  (2) STALE-WHILE-LOADING (severity 3) — a `seenIdentity` render-time reset (same pattern as the
+  certified `capability_compatibility_ui.tsx`/FTF-0309) clears `search`/`error`/`notice` and sets
+  `loading` synchronously on any identity change, so no committed frame shows the old project's
+  rate under the new project's own loading indicator; new tests in both jsdom and Chromium;
+  (3) UNPINNED-STALE-ERROR (F3/F4/F5) — three `stale()` guards round 1 already had but no test
+  exercised, each now independently fault-injected; (4) EVIDENCE — the round-1 "in jsdom" wording
+  is superseded by the new Chromium coverage. P8 advisory (severity 2) also fixed in both
+  `handleCreate`/`handleVerify` (a write's own error no longer surfaces once the user has switched
+  project/organization), including a second commit closing a Create-side gap the pre-review's own
+  probe found. Independent pre-review (same reviewer who certified round 1, fresh continuation):
+  ran the full fault matrix across pre-round-1/round-1-only/this-round code in both jsdom and
+  Chromium, its own adversarial probe, full regression, and returned **`FTF-1301-F1-r2 CERTIFY`**
+  (evidence only, never a self-certification — Law 4). Regression: full web suite (31 files, 3119
+  jsdom tests) and the real-Chromium UX05 harness (253 tests) all pass; `tsc --build`/eslint/
+  prettier clean; no new runtime dependency, migration, route, or datastore surface.
+- **CI history note (for the record):** this PR's `ci-verdict` was red 2026-10-23T22:49Z–
+  2026-11-10T09:48Z solely from a systemic GitHub Actions runner-provisioning outage affecting
+  every open PR in the repo, not this item's own code (full evidence and resolution:
+  `BLOCKER.md`'s `RESOLVED 2026-11-10T09:50Z` entry, `docs/progress/2026-10-27T1252Z-relay.md`).
+  Once Actions recovered, a fresh-base merge and re-run went green on the real head.
+- Merged fresh `main` repeatedly to stay on a tested base as other PRs landed concurrently (most
+  recently #998 FTF-H010-P4); final real CI on the merged head: `ci-verdict` green, 93/93 check
+  runs passing (including the `ftf0904-fault-matrix` shards and every `*-integration` job).
+  Merged as `5e0d91b4`. Not self-certified (Law 4) — `certification_state` stays PROVISIONAL,
+  awaiting Control-plane L2 review. Full submission:
+  `docs/certifications/submissions/2026-10-23T1742Z-FTF-1301-F1-r2.md`. Shift logs:
+  `docs/progress/2026-10-27T1252Z-relay.md` (outage discovery) and this session's own PR-activity
+  follow-up (no separate dated shift-log file — recorded in `PROGRESS.md` directly).
