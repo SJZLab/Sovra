@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from inspect_ai.dataset import Sample
@@ -45,6 +45,7 @@ __all__ = [
     "CODE_SUITE_NOT_LOCKED",
     "CODE_UNSUPPORTED_PURPOSE",
     "BridgeCase",
+    "LOCKED_LOADER_PROVENANCE",
     "CaseAdapterError",
     "SuiteCaseSet",
     "freeze_declared_inputs",
@@ -90,6 +91,13 @@ class BridgeCase:
     declared_inputs: tuple[tuple[str, object], ...]
 
 
+# Set only by `load_locked_development_suite`, after it has refused every draft, final and
+# unknown-purpose suite. The runtime bridge refuses a case set without it, so rows that
+# were not read through the locked-suite loader (or a hand-built set relabelled
+# "development") cannot be run.
+LOCKED_LOADER_PROVENANCE: object = object()
+
+
 @dataclass(frozen=True)
 class SuiteCaseSet:
     suite_id: str
@@ -99,6 +107,7 @@ class SuiteCaseSet:
     grading_logic_version: int
     cases: tuple[BridgeCase, ...]
     samples: tuple[Sample, ...]
+    provenance: object = field(default=None, repr=False, compare=False)
 
 
 def _freeze(value: object, depth: int = 0) -> object:
@@ -243,11 +252,14 @@ def load_locked_development_suite(
     else:
         raise CaseAdapterError(CODE_INVALID_CASE)
 
-    return samples_from_cases(
-        suite_id=str(suite.id),
-        project_id=str(suite.project_id),
-        agent_manifest_id=str(suite.agent_manifest_id),
-        purpose=suite.purpose,
-        grading_logic_version=suite.grading_logic_version,
-        records=records,
+    return replace(
+        samples_from_cases(
+            suite_id=str(suite.id),
+            project_id=str(suite.project_id),
+            agent_manifest_id=str(suite.agent_manifest_id),
+            purpose=suite.purpose,
+            grading_logic_version=suite.grading_logic_version,
+            records=records,
+        ),
+        provenance=LOCKED_LOADER_PROVENANCE,
     )

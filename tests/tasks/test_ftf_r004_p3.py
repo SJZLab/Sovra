@@ -141,7 +141,7 @@ PROJECT_ID = str(uuid.uuid4())
 MANIFEST_ID = str(uuid.uuid4())
 
 
-def _case_set(records: list[Any] | None = None, *, purpose: str = "development"):
+def _raw_case_set(records: list[Any] | None = None, *, purpose: str = "development"):
     return samples_from_cases(
         suite_id=SUITE_ID,
         project_id=PROJECT_ID,
@@ -149,6 +149,17 @@ def _case_set(records: list[Any] | None = None, *, purpose: str = "development")
         purpose=purpose,
         grading_logic_version=1,
         records=_records() if records is None else records,
+    )
+
+
+def _case_set(records: list[Any] | None = None, *, purpose: str = "development"):
+    """What `load_locked_development_suite` returns: the mapped rows carrying its provenance."""
+    import dataclasses
+
+    from workers.evaluation.adapters.inspect_adapter.case_adapter import LOCKED_LOADER_PROVENANCE
+
+    return dataclasses.replace(
+        _raw_case_set(records, purpose=purpose), provenance=LOCKED_LOADER_PROVENANCE
     )
 
 
@@ -2502,6 +2513,282 @@ _MUTATIONS: list[tuple[str, str, str, str, tuple[str, ...]]] = [
         ("obs_bad",),
     ),
 ]
+
+
+# --------------------------------------------------------------------------- round 2 (pre-review findings)
+
+
+def _env_restore(names: tuple[str, ...]) -> dict[str, str | None]:
+    return {k: os.environ.get(k) for k in names}
+
+
+def _env_put_back(saved: dict[str, str | None]) -> None:
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+def test_telemetry_is_refused_however_it_is_configured() -> None:
+    import tempfile
+
+    names = ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS", "INSPECT_API_KEY_OVERRIDE")
+    saved = _env_restore(names)
+    previous_cwd = os.getcwd()
+    try:
+        os.environ["INSPECT_API_KEY_OVERRIDE"] = "some_module"
+        code = _code(_run)
+        check(
+            "FTF-R004-P3-NEG3",
+            f"INSPECT_API_KEY_OVERRIDE set -> telemetry_configured (got {code})",
+            code == "telemetry_configured",
+        )
+        del os.environ["INSPECT_API_KEY_OVERRIDE"]
+
+        # a `.env` in the working directory is never loaded: the run starts in a private workspace
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, ".env").write_text("INSPECT_TELEMETRY=some_module\n")
+            os.chdir(tmp)
+            try:
+                result = _run()
+            finally:
+                os.chdir(previous_cwd)
+        check(
+            "FTF-R004-P3-NEG3",
+            "a .env file naming a telemetry hook is not loaded: the run passes and the env stays clean",
+            len(result.cases) == 2 and os.environ.get("INSPECT_TELEMETRY") is None,
+        )
+        check(
+            "FTF-R004-P3-NEG3",
+            "the working directory is restored after a run",
+            os.getcwd() == previous_cwd,
+        )
+
+        # telemetry that appears after the run started (a .env loaded by Inspect itself) is seen
+        # before the next case is invoked
+        def turn_on(_r: Any) -> None:
+            os.environ["INSPECT_TELEMETRY"] = "some_module"
+
+        spy = _Spy(build_isolated_tool_backend_adapter(), on_invoke=turn_on)
+        code = _code(_run, spy)
+        check(
+            "FTF-R004-P3-NEG3",
+            f"telemetry configured mid-run -> telemetry_configured before the next case (got {code})",
+            code == "telemetry_configured" and len(spy.invokes) == 1,
+        )
+    finally:
+        os.chdir(previous_cwd)
+        _env_put_back(saved)
+
+    from inspect_ai.hooks import Hooks, _legacy, hooks
+
+    @hooks(name="sovra_test_probe_hook", description="registered hook probe")
+    class _Probe(Hooks):
+        pass
+
+    try:
+        code = _code(_run)
+    finally:
+        from inspect_ai._util.registry import _registry
+
+        for key in [k for k in _registry if "sovra_test_probe_hook" in k]:
+            del _registry[key]
+    check(
+        "FTF-R004-P3-NEG3",
+        f"a registered Inspect hook (an installed package's entry point) -> telemetry_configured (got {code})",
+        code == "telemetry_configured",
+    )
+    check(
+        "FTF-R004-P3-NEG3",
+        "the clean run works again after the hook is gone",
+        len(_run().cases) == 2,
+    )
+
+    for attr in ("_send_telemetry", "_override_api_key"):
+        old = getattr(_legacy, attr)
+        setattr(_legacy, attr, lambda *a, **k: None)
+        try:
+            code = _code(_run)
+        finally:
+            setattr(_legacy, attr, old)
+        check(
+            "FTF-R004-P3-NEG3",
+            f"legacy hook {attr} set -> telemetry_configured (got {code})",
+            code == "telemetry_configured",
+        )
+
+
+def test_datagram_sends_are_outbound_calls() -> None:
+    import socket as sk
+
+    originals = {n: getattr(sk.socket, n) for n in ("sendto", "sendmsg", "send", "sendall")}
+    one = _case_set(_records()[:1])
+    for label, send in (
+        ("sendto", lambda s: s.sendto(b"x", ("127.0.0.1", 9))),
+        ("sendmsg", lambda s: s.sendmsg([b"x"], [], 0, ("127.0.0.1", 9))),
+        ("send", lambda s: s.send(b"x")),
+        ("sendall", lambda s: s.sendall(b"x")),
+    ):
+
+        def fire(_r: Any, send: Any = send) -> None:
+            s = sk.socket(sk.AF_INET, sk.SOCK_DGRAM)
+            try:
+                send(s)
+            except BridgeError:
+                raise
+            except OSError:
+                pass
+            finally:
+                s.close()
+
+        spy = _Spy(build_isolated_tool_backend_adapter(), on_invoke=fire)
+        code = _code(_run, spy, one)
+        check(
+            "FTF-R004-P3-AC8",
+            f"a datagram {label} to an IP is an outbound call (got {code})",
+            code == "outbound_call_blocked",
+        )
+
+    def swallow_fire(_r: Any) -> None:
+        s = sk.socket(sk.AF_INET, sk.SOCK_DGRAM)
+        try:
+            s.sendto(b"x", ("127.0.0.1", 9))
+        except BaseException:  # noqa: BLE001
+            pass
+        finally:
+            s.close()
+
+    check(
+        "FTF-R004-P3-AC8",
+        "a swallowed datagram send is still counted",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=swallow_fire), one)
+        == "outbound_call_blocked",
+    )
+
+    # real default code, attack input absent: a local (AF_UNIX) pair still works during a run
+    seen: list[bytes] = []
+
+    def local(_r: Any) -> None:
+        a, b = sk.socketpair()
+        try:
+            a.send(b"ok")
+            seen.append(b.recv(2))
+        finally:
+            a.close()
+            b.close()
+
+    res = _run(_Spy(build_isolated_tool_backend_adapter(), on_invoke=local), one)
+    check(
+        "FTF-R004-P3-AC8",
+        "a local AF_UNIX send during the run is untouched",
+        seen == [b"ok"] and res.network_attempts == 0,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "socket send functions are restored after the run",
+        all(
+            getattr(sk.socket, n) is originals[n] for n in ("sendto", "sendmsg", "send", "sendall")
+        ),
+    )
+
+
+def test_bridge_refuses_rows_that_did_not_come_from_the_locked_loader() -> None:
+    import dataclasses
+
+    spy = _Spy(build_isolated_tool_backend_adapter())
+    code = _code(_run, spy, _raw_case_set())
+    check(
+        "FTF-R004-P3-AC3",
+        f"a development-labelled set that skipped the locked-suite loader is refused (got {code})",
+        code == "bridge_invalid_request" and spy.invokes == [],
+    )
+    relabelled = dataclasses.replace(_raw_case_set(purpose="development"), provenance=object())
+    spy2 = _Spy(build_isolated_tool_backend_adapter())
+    check(
+        "FTF-R004-P3-AC3",
+        "a forged provenance value is refused, and nothing is invoked",
+        _code(_run, spy2, relabelled) == "bridge_invalid_request" and spy2.invokes == [],
+    )
+    for blank in ("", "   "):
+        spy3 = _Spy(build_isolated_tool_backend_adapter())
+        check(
+            "FTF-R004-P3-AC3",
+            f"a blank tenant_namespace {blank!r} is refused before any call",
+            _code(_run, spy3, tenant_namespace=blank) == "bridge_invalid_request"
+            and spy3.invokes == [],
+        )
+
+
+def test_deadline_must_be_finite_and_an_overrun_never_scores_correct() -> None:
+    import time as t
+
+    one = _case_set(_records()[:1])
+    for bad in (float("nan"), float("inf"), float("-inf"), 0, -1.0, True, "5", None):
+        spy = _Spy(build_isolated_tool_backend_adapter())
+        code = _code(_run, spy, one, deadline_seconds=bad)
+        check(
+            "FTF-R004-P3-AC4",
+            f"deadline_seconds={bad!r} is refused before any call (got {code})",
+            code == "bridge_invalid_request" and spy.invokes == [],
+        )
+    ok = _run(_Spy(build_isolated_tool_backend_adapter()), one, deadline_seconds=30)
+    check(
+        "FTF-R004-P3-AC4",
+        "an integer deadline is accepted and an in-time case stays completed",
+        ok.cases[0].status == "completed" and ok.cases[0].deadline_exceeded is False,
+    )
+    slow = _Spy(build_isolated_tool_backend_adapter(), on_invoke=lambda r: t.sleep(0.4))
+    res = _run(slow, one, deadline_seconds=0.1)
+    from inspect_ai.log import read_eval_log
+
+    log = read_eval_log(res.log_path)
+    scores = [v.value for sample in (log.samples or ()) for v in (sample.scores or {}).values()]
+    check(
+        "FTF-R004-P3-AC4",
+        "a case that overruns its deadline is recorded deadline_exceeded and scored INCORRECT",
+        res.cases[0].deadline_exceeded is True
+        and res.cases[0].status == "deadline_exceeded"
+        and scores == ["I"],
+    )
+
+
+def test_a_model_routing_adapter_that_cannot_receive_the_hook_is_refused() -> None:
+    class _Routing(_Spy):
+        pass
+
+    spy = _Routing(build_isolated_tool_backend_adapter())
+    code = _code(_run, spy, model_binding=ModelBinding("gpt-4o", "openai"))
+    check(
+        "FTF-R004-P3-AC2",
+        f"a model-naming binding with an adapter lacking bind_bridge_hook is refused (got {code})",
+        code == "bridge_hook_unbindable" and spy.invokes == [],
+    )
+
+    class _RoutingBound(_Routing, _BindingSpy):
+        pass
+
+    bound = _RoutingBound(build_isolated_tool_backend_adapter())
+    res = _run(bound, model_binding=ModelBinding("gpt-4o", "openai", (("temperature", "0"),)))
+    check(
+        "FTF-R004-P3-AC2",
+        "the same adapter with bind_bridge_hook runs and receives the hook",
+        bound.bound is not None and len(res.cases) == 2,
+    )
+    for model_id, provider in (("gpt-4o", "n/a"), ("n/a", "openai")):
+        spy_p = _Spy(build_isolated_tool_backend_adapter())
+        which = "model" if provider == "n/a" else "provider"
+        check(
+            "FTF-R004-P3-AC2",
+            f"naming only the {which} is still a model binding",
+            _code(_run, spy_p, model_binding=ModelBinding(model_id, provider))
+            == "bridge_hook_unbindable",
+        )
+    check(
+        "FTF-R004-P3-AC2",
+        "the model-less binding runs on an adapter with no hook (the native reference run)",
+        len(_run(_Spy(build_isolated_tool_backend_adapter())).cases) == 2,
+    )
 
 
 def main() -> None:

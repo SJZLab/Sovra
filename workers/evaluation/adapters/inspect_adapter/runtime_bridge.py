@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import socket
 import tempfile
@@ -78,7 +79,11 @@ from app.target_connectors.production_faithful_target_agent_harness_contract imp
     validate_model_binding_override,
     validate_runtime_entry_kind,
 )
-from workers.evaluation.adapters.inspect_adapter.case_adapter import BridgeCase, SuiteCaseSet
+from workers.evaluation.adapters.inspect_adapter.case_adapter import (
+    LOCKED_LOADER_PROVENANCE,
+    BridgeCase,
+    SuiteCaseSet,
+)
 from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (
     DeclaredGenerationChange,
     GenerationParityResult,
@@ -107,6 +112,7 @@ __all__ = [
 
 NATIVE_SOLVER_NAME = "native_runtime_adapter"
 _MODEL_LESS = "none/none"
+_MODEL_LESS_BINDING = "n/a"  # a ModelBinding naming no model: the native, model-less reference run
 _SCORER_NAME = "adapter_reported_status"
 
 CODE_INTEGRATION_REQUIRED = "integration_required"
@@ -121,8 +127,10 @@ CODE_PARITY_BLOCKED = "generation_config_parity_blocked"
 CODE_RUN_FAILED = "inspect_run_failed"
 CODE_INVALID_REQUEST = "bridge_invalid_request"
 CODE_ADAPTER_MISMATCH = "adapter_case_mismatch"
+CODE_HOOK_UNBINDABLE = "bridge_hook_unbindable"
+STATUS_DEADLINE_EXCEEDED = "deadline_exceeded"
 
-_TELEMETRY_ENV = ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS")
+_TELEMETRY_ENV = ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS", "INSPECT_API_KEY_OVERRIDE")
 
 # Inspect's `GenerateConfig` field -> the OpenAI request key the same setting arrives under.
 _CONFIG_TO_REQUEST_KEY = {
@@ -282,11 +290,26 @@ class _NetworkGuard:
 
         return connect
 
+    def _guarded_send(self, original: Callable[..., Any]) -> Callable[..., Any]:
+        # A datagram socket sends without ever connecting (statsd-style telemetry, a raw DNS
+        # query by IP). Stream sockets are already refused at `connect`, so a send on a
+        # connection opened before the run (e.g. the caller's own database handle) is untouched.
+        def send(sock: socket.socket, *args: object, **kwargs: object) -> Any:
+            if sock.family != getattr(socket, "AF_UNIX", None) and sock.type == (socket.SOCK_DGRAM):
+                return self._blocked()
+            return original(sock, *args, **kwargs)
+
+        return send
+
     def __enter__(self) -> _NetworkGuard:
         for name in ("connect", "connect_ex"):
             original = getattr(socket.socket, name)
             self._saved.append((socket.socket, name, original))
             setattr(socket.socket, name, self._guarded_connect(original))
+        for name in ("sendto", "sendmsg", "send", "sendall"):
+            original = getattr(socket.socket, name)
+            self._saved.append((socket.socket, name, original))
+            setattr(socket.socket, name, self._guarded_send(original))
         for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
             self._saved.append((socket, name, getattr(socket, name)))
             setattr(socket, name, self._blocked)
@@ -445,10 +468,12 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
     elapsed = time.monotonic() - started
     if invoked.case_id != case.case_key or collected.case_id != case.case_key:
         raise BridgeError(CODE_ADAPTER_MISMATCH)
+    overran = elapsed > state.deadline_seconds
     return CaseRunRecord(
         case_key=case.case_key,
         case_id=case.case_id,
-        status=invoked.status,
+        # an overrun never scores as correct, whatever the adapter reported
+        status=STATUS_DEADLINE_EXCEEDED if overran else invoked.status,
         error_classification=invoked.error_classification.value,
         trace_ref=invoked.trace_ref,
         runtime_fingerprint=invoked.runtime_fingerprint,
@@ -456,7 +481,7 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
         business_outcome_sha256=_outcome_digest(collected),
         side_effect_count=len(invoked.side_effects),
         collected_matches_invoke=invoked == collected,
-        deadline_exceeded=elapsed > state.deadline_seconds,
+        deadline_exceeded=overran,
         adapter_exception_type=None,
     )
 
@@ -468,6 +493,7 @@ def _build_solver(state: _RunState) -> Any:
             del generate  # a native adapter owns its orchestration; Inspect never generates
             case = state.cases[str(task_state.sample_id)]
             try:
+                _refuse_remote_and_telemetry()
                 state.check_identity()
                 record = _run_case(state, case)
             except BridgeError as exc:
@@ -497,9 +523,31 @@ def _adapter_status_scorer() -> Any:
 
 
 def _refuse_remote_and_telemetry() -> None:
+    """Refuses telemetry however it was configured. Called before the run (ambient env) and
+    again inside the run, after Inspect has loaded any `.env` and its hooks: a `.env` file,
+    an installed package's registered hook and the legacy telemetry/API-key hooks are only
+    visible then."""
     for name in _TELEMETRY_ENV:
         if os.environ.get(name):
             raise BridgeError(CODE_TELEMETRY, name)
+    from inspect_ai.hooks import _legacy
+    from inspect_ai.hooks._hooks import get_all_hooks
+
+    if get_all_hooks():
+        raise BridgeError(CODE_TELEMETRY, "registered hook")
+    if _legacy._send_telemetry is not None or _legacy._override_api_key is not None:
+        raise BridgeError(CODE_TELEMETRY, "legacy hook")
+
+
+@contextmanager
+def _chdir(path: Path) -> Iterator[None]:
+    """Runs from the private workspace so Inspect's `.env` discovery (cwd upward) finds none."""
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 @contextmanager
@@ -550,6 +598,19 @@ def run_suite_through_runtime(
         raise BridgeError(CODE_INVALID_REQUEST, "run_id/tenant_namespace")
     if case_set.purpose != "development":
         raise BridgeError(CODE_INVALID_REQUEST, "purpose")
+    if case_set.provenance is not LOCKED_LOADER_PROVENANCE:
+        # rows not read through `load_locked_development_suite` (which refuses draft, final
+        # and unknown-purpose suites before reading a case) are never run
+        raise BridgeError(CODE_INVALID_REQUEST, "provenance")
+    if not tenant_namespace.strip():
+        raise BridgeError(CODE_INVALID_REQUEST, "tenant_namespace")
+    if (
+        isinstance(deadline_seconds, bool)
+        or not isinstance(deadline_seconds, int | float)
+        or not math.isfinite(deadline_seconds)
+        or deadline_seconds <= 0
+    ):
+        raise BridgeError(CODE_INVALID_REQUEST, "deadline_seconds")
 
     try:
         kind = validate_runtime_entry_kind(entry_kind)
@@ -574,6 +635,13 @@ def run_suite_through_runtime(
     bind = getattr(adapter, "bind_bridge_hook", None)
     if callable(bind):
         bind(hook)
+    elif (model_binding.model_id, model_binding.provider) != (
+        _MODEL_LESS_BINDING,
+        _MODEL_LESS_BINDING,
+    ):
+        # a binding that names a model or route needs an adapter that can receive P1/P2;
+        # without `bind_bridge_hook` its model traffic would run unscreened
+        raise BridgeError(CODE_HOOK_UNBINDABLE)
 
     cases = {case.case_key: case for case in case_set.cases}
     state = _RunState(
@@ -593,7 +661,7 @@ def run_suite_through_runtime(
         scorer=_adapter_status_scorer(),
         name=f"sovra-{case_set.suite_id}",
     )
-    with _private_workspace(workspace_parent) as log_dir, _NetworkGuard() as guard:
+    with _private_workspace(workspace_parent) as log_dir, _NetworkGuard() as guard, _chdir(log_dir):
         logs = inspect_eval(
             task,
             model=_MODEL_LESS,
