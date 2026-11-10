@@ -1714,6 +1714,80 @@ def store_suite(crud: Any) -> None:
             "restored -> accepted",
             crud.build_action_facts(e.session, e.ctx, w).license_accepted is True,
         )
+
+        # r2 finding 1: a weights / factory version whose artifact is archived, registered or has
+        # a drifted digest fails closed (ContinuationFactsError) while the license stays accepted
+        def facts_raise(row: Any) -> bool:
+            try:
+                crud.build_action_facts(e.session, e.ctx, row)
+            except ContinuationFactsErrorType as exc:
+                return str(exc) == "weights_artifact_unusable"
+            return False
+
+        fac_art = e.artifact(char="4")
+        fac_row = e.version("factory", artifact=fac_art)
+        for who, row, art in (("weights", w, w_art), ("factory_trained", fac_row, fac_art)):
+            digest = art.weights_digest
+            for label, field, bad in (
+                ("archived", "status", "archived"),
+                ("registered", "status", "registered"),
+                ("drifted digest", "weights_digest", "sha256:" + "e" * 64),
+            ):
+                good = getattr(art, field)
+                setattr(art, field, bad)
+                e.session.flush()
+                check("F1", f"{who}: artifact {label} -> facts fail closed", facts_raise(row))
+                setattr(art, field, good)
+                e.session.flush()
+            check(
+                "F1",
+                f"{who}: restored artifact -> facts built, license accepted",
+                crud.build_action_facts(e.session, e.ctx, row).license_accepted is True,
+            )
+        # the helper itself compares exactly (no strip / case-folding), on plain value objects
+        from types import SimpleNamespace as NS
+
+        d = "sha256:" + "c" * 64
+        for label, art_status, art_digest, ver_digest, want in (
+            ("exact", "ready", d, d, True),
+            ("padded status", "ready ", d, d, False),
+            ("upper-case status", "READY", d, d, False),
+            ("padded artifact digest", "ready", d + " ", d, False),
+            ("upper-case artifact digest", "ready", d.upper(), d, False),
+            ("upper-case version digest", "ready", d, d.upper(), False),
+            ("padded version digest", "ready", d, " " + d, False),
+        ):
+            check(
+                "F1",
+                f"_weights_artifact_usable exact comparison: {label} -> {want}",
+                crud._weights_artifact_usable(
+                    NS(weights_digest=ver_digest), NS(status=art_status, weights_digest=art_digest)
+                )
+                is want,
+            )
+        check("F1", "no artifact -> never usable", crud._weights_artifact_usable(w, None) is False)
+        # a revoked license on an archived artifact keeps the license denial, not the facts error
+        w_art.status = "archived"
+        w_art.license_accepted_by = None
+        e.session.flush()
+        check(
+            "F1",
+            "archived + revoked license -> license not accepted (no facts error)",
+            crud.build_action_facts(e.session, e.ctx, w).license_accepted is False,
+        )
+        w_art.status = "ready"
+        w_art.license_accepted_by = "seed"
+        e.session.flush()
+        # an adapter whose OWN artifact is archived is an adapter-base matter, never the weights error
+        ad_base = e.version("weights", artifact=e.artifact(char="3"))
+        ad_row = e.version(
+            "adapter", artifact=e.artifact(char="2", status="archived"), parent=ad_base
+        )
+        check(
+            "F1",
+            "adapter with an archived own artifact: base_compatible False, no weights error",
+            crud.build_action_facts(e.session, e.ctx, ad_row).base_compatible is False,
+        )
         e.session.delete(w_art)
         e.session.flush()
         check(

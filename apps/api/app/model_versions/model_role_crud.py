@@ -343,7 +343,7 @@ def build_action_facts(
     license_accepted = None if is_endpoint else _license_accepted(artifact)
     if (
         license_accepted
-        and origin in (ORIGIN_IMPORTED_WEIGHTS, ORIGIN_FACTORY_TRAINED)
+        and (origin is ORIGIN_IMPORTED_WEIGHTS or origin is ORIGIN_FACTORY_TRAINED)
         and not _weights_artifact_usable(version, artifact)
     ):
         # an archived / registered / digest-drifted weights artifact must not keep granting use
