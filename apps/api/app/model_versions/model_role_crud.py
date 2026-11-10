@@ -287,6 +287,17 @@ def _license_accepted(artifact: TrainableArtifact | None) -> bool:
     return artifact is not None and evaluate_license_gate(artifact).accepted
 
 
+def _weights_artifact_usable(version: ModelVersion, artifact: TrainableArtifact | None) -> bool:
+    """A weight-backed version is usable only while its own artifact (already fetched by the
+    version's recorded id inside its organization) is still `ready` (not `registered`/`archived`)
+    and still carries the digest the version captured at creation. Anything else is unusable."""
+    return (
+        artifact is not None
+        and artifact.status == "ready"
+        and artifact.weights_digest == version.weights_digest
+    )
+
+
 def _base_compatible(
     session: Session,
     context: TenantContext,
@@ -330,6 +341,14 @@ def build_action_facts(
         None if is_endpoint else _artifact_of(session, context, version.trainable_artifact_id)
     )
     license_accepted = None if is_endpoint else _license_accepted(artifact)
+    if (
+        license_accepted
+        and origin in (ORIGIN_IMPORTED_WEIGHTS, ORIGIN_FACTORY_TRAINED)
+        and not _weights_artifact_usable(version, artifact)
+    ):
+        # an archived / registered / digest-drifted weights artifact must not keep granting use
+        # actions (the same artifact as an adapter base gives adapter_base_incompatible)
+        raise ContinuationFactsError("weights_artifact_unusable")
     base_compatible = (
         _base_compatible(session, context, version, artifact)
         if origin is ORIGIN_IMPORTED_ADAPTER

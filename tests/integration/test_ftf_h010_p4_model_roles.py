@@ -1256,6 +1256,141 @@ def main() -> None:
                     _constraint_name(exc) == "tr_model_role_assignments_update_guard_frozen",
                 )
 
+        # ------------------------------------------------------------ L: advisory lock (deterministic)
+        # FTF-H010-P4 r2 finding 2: the per-version advisory lock in the insert trigger is the only
+        # thing that serializes a judge insert against an UNCOMMITTED candidate insert on the same
+        # version (the trigger's EXISTS cannot see an uncommitted row). Session 1 inserts and holds
+        # its transaction open; session 2 inserts the opposite role. With the lock session 2 is
+        # observed WAITING on a lock in pg_stat_activity and, after session 1 commits, is refused
+        # BY NAME; without the lock it never waits, both commit and both roles end up active.
+        def interleave(first_role: str, second_role: str, tag: str) -> None:
+            proj = new_project()
+            ver = make_version(
+                proj, kind="weights", validated=True, artifact_id=weights_art_id, digest_char="c"
+            )
+            outcome: dict[str, Any] = {}
+            s1 = Session(app_engine)
+            try:
+                _set_tenant(s1, org1_id)
+                s1.execute(
+                    text(
+                        "INSERT INTO model_role_assignments (organization_id, project_id, "
+                        "model_version_id, role, assigned_by, request_id, idempotency_key, "
+                        "request_sha256) VALUES (:o, :p, :v, :r, 'raw', 'raw', :k, :h)"
+                    ),
+                    {
+                        "o": str(org1_id),
+                        "p": str(proj),
+                        "v": str(ver),
+                        "r": first_role,
+                        "k": f"lock-1-{tag}",
+                        "h": "a" * 64,
+                    },
+                )
+
+                def second() -> None:
+                    with Session(app_engine) as s2:
+                        _set_tenant(s2, org1_id)
+                        try:
+                            s2.execute(
+                                text(
+                                    "INSERT INTO model_role_assignments (organization_id, "
+                                    "project_id, model_version_id, role, assigned_by, request_id, "
+                                    "idempotency_key, request_sha256) VALUES (:o, :p, :v, :r, "
+                                    "'raw', 'raw', :k, :h)"
+                                ),
+                                {
+                                    "o": str(org1_id),
+                                    "p": str(proj),
+                                    "v": str(ver),
+                                    "r": second_role,
+                                    "k": f"lock-2-{tag}",
+                                    "h": "b" * 64,
+                                },
+                            )
+                            s2.commit()
+                            outcome["error"] = None
+                        except DBAPIError as exc:
+                            outcome["error"] = _constraint_name(exc)
+                            s2.rollback()
+                        finally:
+                            outcome["done"] = True
+
+                worker = threading.Thread(target=second)
+                worker.start()
+                waited = False
+                deadline = time.monotonic() + 8.0
+                while time.monotonic() < deadline and not outcome.get("done"):
+                    if owner_count(
+                        "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                        "AND wait_event_type = 'Lock' AND query LIKE 'INSERT INTO model_role_assignments%'"
+                    ) or owner_count(
+                        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+                    ):
+                        waited = True
+                        break
+                    time.sleep(0.05)
+                check(
+                    "L",
+                    f"{tag}: the second insert WAITS on the first session's advisory lock (finished early: {outcome.get('done')})",
+                    waited and not outcome.get("done"),
+                )
+                s1.commit()
+                worker.join(timeout=20)
+            finally:
+                s1.close()
+            check(
+                "L",
+                f"{tag}: after the first commit the second insert is refused BY NAME (got {outcome.get('error')!r})",
+                outcome.get("error") == "tr_model_role_assignments_self_judging",
+            )
+            check(
+                "L",
+                f"{tag}: exactly one of judge/candidate is active on the version",
+                owner_count(
+                    "SELECT count(*) FROM model_role_assignments WHERE model_version_id = :v "
+                    "AND role IN ('judge', 'candidate') AND revoked_at IS NULL",
+                    v=str(ver),
+                )
+                == 1,
+            )
+
+        interleave("judge", "candidate", "judge-then-candidate")
+        interleave("candidate", "judge", "candidate-then-judge")
+
+        # ------------------------------------------------------------ C2: revocation columns all-or-none
+        # FTF-H010-P4 r2 finding 3: each leg of ck_model_role_assignments_revocation_columns
+        # is pinned alone (the other two columns kept consistent), so removing any one leg is RED.
+        v_rev = make_version(
+            p1_id, kind="weights", validated=True, artifact_id=weights_art_id, digest_char="c"
+        )
+        now_ts = datetime.now(UTC)
+        for label, extra, key in (
+            (
+                "revoked_at + revoked_by set, reason NULL",
+                {"revoked_at": now_ts, "revoked_by": "x"},
+                "c2-1",
+            ),
+            (
+                "revoked_at + reason set, revoked_by NULL",
+                {"revoked_at": now_ts, "revoke_reason_code": "r"},
+                "c2-2",
+            ),
+            (
+                "revoked_by + reason set, revoked_at NULL",
+                {"revoked_by": "x", "revoke_reason_code": "r"},
+                "c2-3",
+            ),
+            ("reason only", {"revoke_reason_code": "r"}, "c2-4"),
+            ("revoked_by only", {"revoked_by": "x"}, "c2-5"),
+        ):
+            ok, name, state = raw_insert(org1_id, v_rev, "teacher", key, triggers_off=True, **extra)
+            check(
+                "C2",
+                f"{label} refused BY NAME ck_model_role_assignments_revocation_columns (got {name!r}/{state})",
+                not ok and name == "ck_model_role_assignments_revocation_columns",
+            )
+
         # ------------------------------------------------------------ C: CHECK truth tables
         v_chk = make_version(
             p1_id, kind="weights", validated=True, artifact_id=weights_art_id, digest_char="c"
@@ -1674,6 +1809,40 @@ def main() -> None:
             "restoring the license restores the actions",
             actions(org1_id, p1_id, rev_art)["actions"]["continue_tuning"]["allowed"],
         )
+        # FTF-H010-P4 r2 finding 1: a weights version whose artifact is no longer the ready,
+        # digest-matching one it recorded must not keep granting use actions (the license stays
+        # ACCEPTED here, so only the artifact-state check can refuse). The same row as an adapter
+        # base already gives adapter_base_incompatible. Fail closed: 409 model_facts_invalid.
+        for label, sql in (
+            ("archived", "UPDATE trainable_artifacts SET status = 'archived' WHERE id = :id"),
+            ("registered", "UPDATE trainable_artifacts SET status = 'registered' WHERE id = :id"),
+            (
+                "digest drift",
+                "UPDATE trainable_artifacts SET weights_digest = 'sha256:' || repeat('e', 64) WHERE id = :id",
+            ),
+        ):
+            with Session(owner_engine) as s:
+                s.execute(text(sql), {"id": str(weights_art_id)})
+                s.commit()
+            r = _request(base, "GET", actions_path(org1_id, p1_id, rev_art), principal="viewer1")
+            check(
+                "A1",
+                f"weights artifact {label} (license accepted): actions fail closed 409 model_facts_invalid (got {r.status}/{r.json() if r.status != 200 else ''})",
+                r.status == 409 and r.json().get("detail") == "model_facts_invalid",
+            )
+            with Session(owner_engine) as s:
+                s.execute(
+                    text(
+                        "UPDATE trainable_artifacts SET status = 'ready', weights_digest = :d WHERE id = :id"
+                    ),
+                    {"id": str(weights_art_id), "d": "sha256:" + "c" * 64},
+                )
+                s.commit()
+            check(
+                "A1",
+                f"restoring the artifact ({label}) restores the actions",
+                actions(org1_id, p1_id, rev_art)["actions"]["continue_tuning"]["allowed"],
+            )
         # adapter base failures
         for label, sql in (
             (
