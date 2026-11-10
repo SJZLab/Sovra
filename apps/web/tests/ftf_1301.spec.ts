@@ -734,3 +734,379 @@ test("FTF-1301-F1 round 2: a Verify that finishes after a project switch refresh
   });
   await waitFor(() => expect(screen.getByText("Project B cheapest (post-verify)")).toBeTruthy());
 });
+
+test("FTF-1301-F1 round 2 (STALE-WHILE-LOADING): switching project clears the previous project's rate instead of showing it under the new project's loading indicator", async () => {
+  const PROJECT_B = "77777777-7777-7777-7777-777777777777";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  await act(async () => {
+    pending[0]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({ id: "a-cheapest", label: "Project A cheapest" }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Project A cheapest")).toBeTruthy());
+
+  // Switch to project B; B's own request is still in flight.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+
+  // Project A's rate must not still be on screen while project B's own search is loading --
+  // this must be true the instant the switch commits, before B's own reply arrives (Law 17: a
+  // loading state is not "the previous answer, still valid").
+  expect(screen.queryByText("Project A cheapest")).toBeNull();
+  expect(screen.getByTestId("cost-profile-loading")).toBeTruthy();
+});
+
+test("FTF-1301-F1 round 2: a stale reply arriving while the fresh request is still pending never ends the loading state or renders", async () => {
+  const PROJECT_B = "88888888-8888-8888-8888-888888888888";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+
+  // The STALE (project A) request resolves first, while project B's own request is still pending.
+  await act(async () => {
+    pending[0]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({ id: "a-cheapest", label: "Project A cheapest" }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.getByTestId("cost-profile-loading")).toBeTruthy();
+  expect(screen.queryByText("Project A cheapest")).toBeNull();
+});
+
+test("FTF-1301-F1 round 2 (F3 unpinned): a stale error reply from the previous project never surfaces after the new project's fresh success", async () => {
+  const PROJECT_B = "99999999-9999-9999-9999-999999999999";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+
+  // The new project's (fresh) reply arrives first -- a clean success.
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  // The old project's (stale) reply arrives LAST, and it is a server error.
+  await act(async () => {
+    pending[0]?.({ ok: false, status: 500, json: async () => ({ detail: "boom" }) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy();
+});
+
+test("FTF-1301-F1 round 2 (F4 unpinned): a stale rejected fetch from the previous project never surfaces after the new project's fresh success", async () => {
+  const PROJECT_B = "10101010-1010-1010-1010-101010101010";
+  const pending: Array<{ resolve: (value: unknown) => void; reject: (error: unknown) => void }> =
+    [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+
+  await act(async () => {
+    pending[1]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  await act(async () => {
+    pending[0]!.reject(new TypeError("Failed to fetch"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy();
+});
+
+test("FTF-1301-F1 round 2 (F5 unpinned): a stale malformed 200 from the previous project never surfaces after the new project's fresh success", async () => {
+  const PROJECT_B = "20202020-2020-2020-2020-202020202020";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1));
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2));
+
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  // The old project's (stale) reply arrives LAST -- a 200 with an unexpected shape.
+  await act(async () => {
+    pending[0]?.({ ok: true, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy();
+});
+
+test("FTF-1301-F1 round 2 (P8): a Verify error from the project open when it was clicked never surfaces after switching project", async () => {
+  const PROJECT_B = "30303030-3030-3030-3030-303030303030";
+  const calls: Array<{ url: string; resolve: (value: unknown) => void }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          calls.push({ url, resolve });
+        }),
+    ),
+  );
+
+  const unverified = searchResult({
+    id: "r-unverified",
+    verified_at: null,
+    disqualified_reason: "unverified",
+  });
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(1));
+  await act(async () => {
+    calls[0]!.resolve({
+      ok: true,
+      json: async () => ({ results: [unverified], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("cost-profile-verify-r-unverified")).toBeTruthy());
+
+  fireEvent.click(screen.getByTestId("cost-profile-verify-r-unverified"));
+  await waitFor(() => expect(calls.length).toBe(2)); // verify POST, in flight, still project A's click
+
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(3)); // search(project B)
+  await act(async () => {
+    calls[2]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  // The Verify POST (clicked on project A) now resolves with a 409, well after the switch to B.
+  await act(async () => {
+    calls[1]!.resolve({
+      ok: false,
+      status: 409,
+      json: async () => ({ detail: "already_verified" }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("FTF-1301-F1 round 2 (P8, Create): a Create error from the project open when it was clicked never surfaces after switching project", async () => {
+  const PROJECT_B = "40404040-4040-4040-4040-404040404040";
+  const calls: Array<{ url: string; resolve: (value: unknown) => void }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          calls.push({ url, resolve });
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(1)); // initial search(project A)
+  await act(async () => {
+    calls[0]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), {
+    target: { value: "On-prem A100 node" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "2.5000000000" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+    target: { value: "internal TCO worksheet v3" },
+  });
+  fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+  await waitFor(() => expect(calls.length).toBe(2)); // create POST, in flight, still project A's click
+
+  // Switch to project B while that create write is still in flight.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(3)); // search(project B), triggered by the switch
+  await act(async () => {
+    calls[2]!.resolve({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("no-certified-cheapest-rate")).toBeTruthy());
+
+  // The Create POST (submitted on project A) now resolves with a 409, well after the switch to B.
+  await act(async () => {
+    calls[1]!.resolve({ ok: false, status: 409, json: async () => ({ detail: "conflict" }) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+});
