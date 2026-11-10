@@ -2255,7 +2255,7 @@ FTF-0308:
     03-interface.yaml and is not consumed here. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0000Z-FTF-0308.md. Not self-certified (Law 4).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: ModelToArtifactMappingUI
   proving_test: apps/web/tests/ftf_0308.spec.ts
 FTF-0309:
   certification_state: CERTIFIED
@@ -3183,7 +3183,7 @@ FTF-0408:
     (get_reviews/get_comments both empty). Result: CERTIFIED. No blocking defect found. Merged PR
     #293 (merge commit 37fe4f5ca16b85af1e6be76db5f007362e21d3e7).'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: RequirementsPanel
   proving_test: apps/web/tests/ftf_0408.spec.ts
 FTF-04A01:
   certification_state: CERTIFIED
@@ -3468,7 +3468,7 @@ FTF-04A03:
     (this entry's own `certification_state` stayed accurate at `PROVISIONAL` until this
     independent review, just now, made it true).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: GitHubAccessibleRepositorySelector
   proving_test: tests/tasks/test_ftf_04a03_connector.py, tests/tasks/test_ftf_04a03_routes.py,
     tests/integration/test_ftf_04a03_github_repository_listing.py, apps/web/tests/ftf_04a03.spec.ts
 FTF-04A04:
@@ -3587,7 +3587,7 @@ FTF-04A04:
     No open review threads/comments on PR #353 (already merged). No
     blocking defect found.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: GitHubBranchRefSelector
   proving_test: >-
     tests/tasks/test_ftf_04a04_connector.py,
     tests/tasks/test_ftf_04a04_routes.py,
@@ -5833,7 +5833,7 @@ FTF-04A21:
     gate only mutates Python files, so it has no target here; the fault -> RED table in the
     submission file is the substitute evidence. Not self-certified (Law 4).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: ManifestReviewEditUI
   proving_test: apps/web/tests/ftf_04a21.spec.ts
 FTF-04A22:
   certification_state: CERTIFIED
@@ -5882,7 +5882,7 @@ FTF-04A22:
     exists yet to mount this component (FTF-H029), same class as FTF-0408/FTF-04A21's own
     disclosed scope boundary.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: MandateEditorAndConflictResolutionUI
   proving_test: apps/web/tests/ftf_04a22.spec.ts
 FTF-04A23:
   certification_state: NONE
@@ -6453,7 +6453,7 @@ FTF-0500A:
     QUEUE.md/PROGRESS.md updated. scripts/status.py: 90/300 -> 91/300 certified; product-true
     unchanged 22/22. No open owner ask.'
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: DatasetSourceSelectorPurposeAuthorizationUi
   proving_test: apps/web/tests/ftf_0500a.spec.ts
 FTF-0500B:
   certification_state: CERTIFIED
@@ -8803,7 +8803,7 @@ FTF-0516:
     build_dataset_quality_router on PostgreSQL 16 as sovra_app. Fault table:
     docs/certifications/submissions/2026-10-13T1420Z-FTF-0516-r5.md.
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: DatasetIssueResolutionUI
   proving_test: apps/web/tests/ftf_0516.spec.ts
 FTF-0517:
   certification_state: CERTIFIED
@@ -9090,7 +9090,7 @@ FTF-0602:
     mocked fetch (30 tests); proving_symbol stays blank. Fault -> RED table:
     docs/certifications/submissions/2026-10-08T0030Z-FTF-0602.md. Not self-certified (Law 4).
   proof_state: L2-CERTIFIED
-  proving_symbol: ''
+  proving_symbol: EvaluationCaseEditorImport
   proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
   certification_state: NONE
