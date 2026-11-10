@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { chromium, type Browser, type Page } from "@playwright/test";
+import { browserLaunchOptions } from "./support/browser_launch";
 import { build } from "vite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
@@ -739,7 +740,7 @@ beforeAll(async () => {
   );
   bundle = outputs.find((o) => o.type === "chunk")?.code ?? "";
   expect(bundle.length, "the in-memory bundle must be built").toBeGreaterThan(1000);
-  browser = await chromium.launch();
+  browser = await chromium.launch(browserLaunchOptions());
 }, 120_000);
 
 afterAll(async () => {
