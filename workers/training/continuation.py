@@ -79,6 +79,7 @@ ACTIONS = (
 CODE_IMPORT_NOT_VALIDATED = "import_not_validated"
 CODE_LICENSE_NOT_ACCEPTED = "license_not_accepted"
 CODE_ADAPTER_BASE_INCOMPATIBLE = "adapter_base_incompatible"
+CODE_WEIGHTS_ARTIFACT_UNUSABLE = "weights_artifact_unusable"
 CODE_ENDPOINT_NOT_TRAINABLE = "endpoint_not_trainable"
 CODE_NO_TRUSTED_CHECKPOINT = "no_trusted_checkpoint"
 CODE_PREREQUISITE_NOT_AVAILABLE = "prerequisite_not_available"
@@ -203,6 +204,9 @@ class ModelActionFacts:
     model_ref: str | None = None
     checkpoint: CheckpointFact | None = None
     prerequisites: Mapping[str, object] = field(default_factory=dict)
+    # None = not assessed / not applicable; False = the weights artifact is archived, not ready or
+    # its digest drifted from the version's recorded one (every use action is denied)
+    weights_usable: bool | None = None
 
     def __post_init__(self) -> None:
         _exact_str(self.model_version_id, "model_version_id", limit=_ID_MAX)
@@ -221,6 +225,8 @@ class ModelActionFacts:
                 raise ContinuationFactsError("base_compatible_invalid")
         elif self.base_compatible is not None:
             raise ContinuationFactsError("base_compatible_invalid")
+        if self.weights_usable is not None and type(self.weights_usable) is not bool:
+            raise ContinuationFactsError("weights_usable_invalid")
         if type(self.roles) is not frozenset:
             raise ContinuationFactsError("roles_invalid")
         for role in self.roles:
@@ -329,6 +335,8 @@ _RULES = MappingProxyType(
 def _use_gate(action: str, facts: ModelActionFacts) -> ActionDecision | None:
     if facts.license_accepted is False:
         return _deny(action, CODE_LICENSE_NOT_ACCEPTED)
+    if facts.weights_usable is False:
+        return _deny(action, CODE_WEIGHTS_ARTIFACT_UNUSABLE)
     if facts.base_compatible is False:
         return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)
     return None

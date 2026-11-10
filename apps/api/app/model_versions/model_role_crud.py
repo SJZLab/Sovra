@@ -341,14 +341,11 @@ def build_action_facts(
         None if is_endpoint else _artifact_of(session, context, version.trainable_artifact_id)
     )
     license_accepted = None if is_endpoint else _license_accepted(artifact)
-    if (
-        license_accepted
-        and (origin is ORIGIN_IMPORTED_WEIGHTS or origin is ORIGIN_FACTORY_TRAINED)
-        and not _weights_artifact_usable(version, artifact)
-    ):
-        # an archived / registered / digest-drifted weights artifact must not keep granting use
-        # actions (the same artifact as an adapter base gives adapter_base_incompatible)
-        raise ContinuationFactsError("weights_artifact_unusable")
+    weights_usable = (
+        _weights_artifact_usable(version, artifact)
+        if origin is ORIGIN_IMPORTED_WEIGHTS or origin is ORIGIN_FACTORY_TRAINED
+        else None
+    )
     base_compatible = (
         _base_compatible(session, context, version, artifact)
         if origin is ORIGIN_IMPORTED_ADAPTER
@@ -363,4 +360,5 @@ def build_action_facts(
         roles=_active_roles(session, context, version),
         new_run_id=str(uuid.uuid4()),
         model_ref=version.external_provider_model_ref if is_endpoint else None,
+        weights_usable=weights_usable,
     )

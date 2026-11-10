@@ -470,6 +470,7 @@ components:
         - import_not_validated
         - license_not_accepted
         - adapter_base_incompatible
+        - weights_artifact_unusable
         - endpoint_not_trainable
         - no_trusted_checkpoint
         - prerequisite_not_available

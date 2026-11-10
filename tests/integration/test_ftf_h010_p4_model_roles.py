@@ -1812,7 +1812,7 @@ def main() -> None:
         # FTF-H010-P4 r2 finding 1: a weights version whose artifact is no longer the ready,
         # digest-matching one it recorded must not keep granting use actions (the license stays
         # ACCEPTED here, so only the artifact-state check can refuse). The same row as an adapter
-        # base already gives adapter_base_incompatible. Fail closed: 409 model_facts_invalid.
+        # base already gives adapter_base_incompatible. Per-action denial with a precise code.
         for label, sql in (
             ("archived", "UPDATE trainable_artifacts SET status = 'archived' WHERE id = :id"),
             ("registered", "UPDATE trainable_artifacts SET status = 'registered' WHERE id = :id"),
@@ -1824,11 +1824,23 @@ def main() -> None:
             with Session(owner_engine) as s:
                 s.execute(text(sql), {"id": str(weights_art_id)})
                 s.commit()
-            r = _request(base, "GET", actions_path(org1_id, p1_id, rev_art), principal="viewer1")
+            doc = actions(org1_id, p1_id, rev_art)
             check(
                 "A1",
-                f"weights artifact {label} (license accepted): actions fail closed 409 model_facts_invalid (got {r.status}/{r.json() if r.status != 200 else ''})",
-                r.status == 409 and r.json().get("detail") == "model_facts_invalid",
+                f"weights artifact {label} (license accepted): every use action weights_artifact_unusable ({codes(doc)})",
+                all(
+                    doc["actions"][a]["code"] == "weights_artifact_unusable"
+                    and not doc["actions"][a]["allowed"]
+                    for a in (
+                        "evaluate",
+                        "compare",
+                        "continue_tuning",
+                        "exact_resume",
+                        "request_qualification",
+                        "retain_incumbent",
+                        "deploy_route",
+                    )
+                ),
             )
             with Session(owner_engine) as s:
                 s.execute(
