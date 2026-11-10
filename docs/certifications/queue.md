@@ -25284,3 +25284,5 @@ different session.
 - **Returned:** FTF-R006-P1b r2 -> r3 (0c): revoke-first or row lock (R11b/R11c), pin F14/F16, real-Argilla CI that exercises the store, OpenSearch + Redis 7.2 per the licence rulings, gate step, [GOVERNANCE] title.
 - **Returned:** FTF-UX06 r2 -> r3 (0f): wrap at the root, 403 save announced with focus, Arabic codes/catalogue/bdi, pin F1/F12/F13/F18/F23/N24, access recovery, useId, evidence.
 - **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
+- **Returned:** FTF-H010-P4 r1 -> r2 (0p): archived or digest-drifted weights artifact must stop continue_tuning (derive via the lineage manifest, fail closed, add rows to the decision table and integration suite), pin the advisory lock with a deterministic two-session interleaving test, pin the revocation all-NULL-or-all-set CHECK by name; PR #998 merge 43512af4; P5 and P6 remain.
+- **Certified:** FTF-UX01-F1 (#994 merge 21e0b3a8 + #1008 merge bb940d33), round 2; FTF-UX01 and FTF-UX05 requalified.
