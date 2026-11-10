@@ -2,7 +2,7 @@
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
 Updated: 2026-11-10T14:50Z. Source: `python3 scripts/status.py` on main.
-- **Status: 158/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+- **Status: 158/304 certified · 58 product-true** (9 web items named their page-wired component as `proving_symbol` on 2026-11-10; PROVISIONAL until an independent L2 review confirms them) (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
