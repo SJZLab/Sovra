@@ -1647,6 +1647,7 @@ describe("[UX05-BROWSER] FTF-1301-F1 round 2: out-of-order project-switch race (
     stubFetch: (routes: Route[]) => void;
     mount: (kind: string, props: unknown) => void;
     release: (index: number, status: number, body: unknown) => void;
+    releaseReject: (index: number) => void;
   };
 
   test("the previous project's reply, arriving after the new project's, never overwrites the panel (MISSING-BROWSER-TEST)", async () => {
@@ -1786,6 +1787,224 @@ describe("[UX05-BROWSER] FTF-1301-F1 round 2: out-of-order project-switch race (
       expect(await page.getByTestId("cost-profile-loading").count()).toBe(1);
       expect(uncaught).toEqual([]);
       expect(await unhandled(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  // ---- FTF-1301-F1 round 3: the reset notice, the organization key and F3/F4/F5 in Chromium ----
+  const ORG_B = "55555555-5555-5555-5555-555555555555";
+  const searchPath = (org: string, project: string) =>
+    `/api/v1/organizations/${org}/projects/${project}/costs/cost-per-success/search`;
+  const props = (org: string, project: string) => ({
+    apiBaseUrl: API,
+    organizationId: org,
+    projectId: project,
+    locale: "en",
+  });
+  const noRate = { results: [], current_cheapest_certified: null };
+
+  async function startHeldRace(page: Page): Promise<void> {
+    // Project A and project B searches are both held; B is released first by each test.
+    await page.evaluate(
+      ({ routes, kind, p }) => {
+        const ux = (window as unknown as { UX05: Ux05 }).UX05;
+        ux.stubFetch(routes as never);
+        ux.mount(kind, p);
+      },
+      {
+        routes: [
+          { method: "GET", path: searchPath(ORG, PROJECT), hold: true },
+          { method: "GET", path: searchPath(ORG, PROJECT_B), hold: true },
+        ],
+        kind: "cost",
+        p: props(ORG, PROJECT),
+      },
+    );
+    await page.waitForFunction(
+      () => (window as unknown as { __requests: string[] }).__requests.length >= 1,
+    );
+    await page.evaluate(
+      ({ kind, p }) => (window as unknown as { UX05: Ux05 }).UX05.mount(kind, p),
+      { kind: "cost", p: props(ORG, PROJECT_B) },
+    );
+    await page.waitForFunction(
+      () => (window as unknown as { __requests: string[] }).__requests.length >= 2,
+    );
+    await page.evaluate(
+      (body) => (window as unknown as { UX05: Ux05 }).UX05.release(1, 200, body),
+      noRate,
+    );
+    await page.getByTestId("no-certified-cheapest-rate").waitFor({ state: "visible" });
+  }
+
+  test("a stale 500 from the previous project never surfaces after the new project's success (F3)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await startHeldRace(page);
+      await page.evaluate(() =>
+        (window as unknown as { UX05: Ux05 }).UX05.release(0, 500, { detail: "boom" }),
+      );
+      await page.waitForTimeout(200);
+      expect(await page.getByRole("alert").count()).toBe(0);
+      expect(await page.getByTestId("no-certified-cheapest-rate").count()).toBe(1);
+      expect(uncaught).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a stale network error from the previous project never surfaces after the new project's success (F4)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await startHeldRace(page);
+      await page.evaluate(() => (window as unknown as { UX05: Ux05 }).UX05.releaseReject(0));
+      await page.waitForTimeout(200);
+      expect(await page.getByRole("alert").count()).toBe(0);
+      expect(await page.getByTestId("no-certified-cheapest-rate").count()).toBe(1);
+      expect(uncaught).toEqual([]);
+      expect(await unhandled(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a stale reply arriving while the fresh request is still pending neither renders nor ends the loading state (F5)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await page.evaluate(
+        ({ routes, kind, p }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.stubFetch(routes as never);
+          ux.mount(kind, p);
+        },
+        {
+          routes: [
+            { method: "GET", path: searchPath(ORG, PROJECT), hold: true },
+            { method: "GET", path: searchPath(ORG, PROJECT_B), hold: true },
+          ],
+          kind: "cost",
+          p: props(ORG, PROJECT),
+        },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 1,
+      );
+      await page.evaluate(
+        ({ kind, p }) => (window as unknown as { UX05: Ux05 }).UX05.mount(kind, p),
+        { kind: "cost", p: props(ORG, PROJECT_B) },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 2,
+      );
+      // Project A's stale reply lands while project B's request is STILL pending.
+      await page.evaluate(
+        (body) => (window as unknown as { UX05: Ux05 }).UX05.release(0, 200, body),
+        { results: [], current_cheapest_certified: rate({ id: "a", label: "Project A stale" }) },
+      );
+      await page.waitForTimeout(200);
+      expect(await page.getByText("Project A stale").count()).toBe(0);
+      expect(await page.getByTestId("cost-profile-loading").count()).toBe(1);
+      await page.evaluate(
+        (body) => (window as unknown as { UX05: Ux05 }).UX05.release(1, 200, body),
+        { results: [], current_cheapest_certified: rate({ id: "b", label: "Project B fresh" }) },
+      );
+      await page.getByText("Project B fresh").waitFor({ state: "visible" });
+      expect(await page.getByTestId("cost-profile-loading").count()).toBe(0);
+      expect(uncaught).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("'Rate recorded.' for project A is gone after switching to project B (UNPINNED-RESET-NOTICE)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await page.evaluate(
+        ({ routes, kind, p }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.stubFetch(routes as never);
+          ux.mount(kind, p);
+        },
+        {
+          routes: [
+            { method: "GET", path: searchPath(ORG, PROJECT), body: noRate },
+            { method: "GET", path: searchPath(ORG, PROJECT_B), body: noRate },
+            { method: "POST", path: COST_BASE, body: rate({ id: "new", label: "Node" }) },
+          ],
+          kind: "cost",
+          p: props(ORG, PROJECT),
+        },
+      );
+      await page.getByTestId("no-certified-cheapest-rate").waitFor({ state: "visible" });
+      await page.getByTestId("cost-profile-label-input").fill("Node");
+      await page.getByTestId("cost-profile-rate-amount-input").fill("0.5");
+      await page.getByTestId("cost-profile-source-input").fill("https://example.com");
+      await page.getByTestId("cost-profile-submit-button").click();
+      await page.getByTestId("cost-profile-created-notice").waitFor({ state: "visible" });
+      expect(await page.getByTestId("cost-profile-created-notice").innerText()).toBe(
+        "Rate recorded.",
+      );
+
+      await page.evaluate(
+        ({ kind, p }) => (window as unknown as { UX05: Ux05 }).UX05.mount(kind, p),
+        { kind: "cost", p: props(ORG, PROJECT_B) },
+      );
+      await page.waitForFunction(
+        (suffix) =>
+          (window as unknown as { __requests: string[] }).__requests.some((r) => r.endsWith(suffix)),
+        `/projects/${PROJECT_B}/costs/cost-per-success/search`,
+      );
+      await page.getByTestId("no-certified-cheapest-rate").waitFor({ state: "visible" });
+      expect(await page.getByTestId("cost-profile-created-notice").count()).toBe(0);
+      expect(uncaught).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("same project id, new organization: the old organization's rate is cleared while the new search is in flight (UNPINNED-RESET-ORGANIZATION)", async () => {
+    const { page, uncaught } = await openCostPanel();
+    try {
+      await page.evaluate(
+        ({ routes, kind, p }) => {
+          const ux = (window as unknown as { UX05: Ux05 }).UX05;
+          ux.stubFetch(routes as never);
+          ux.mount(kind, p);
+        },
+        {
+          routes: [
+            {
+              method: "GET",
+              path: searchPath(ORG, PROJECT),
+              body: {
+                results: [],
+                current_cheapest_certified: rate({ id: "o1", label: "Org one rate" }),
+              },
+            },
+            { method: "GET", path: searchPath(ORG_B, PROJECT), hold: true },
+          ],
+          kind: "cost",
+          p: props(ORG, PROJECT),
+        },
+      );
+      await page.getByText("Org one rate").waitFor({ state: "visible" });
+      await page.evaluate(
+        ({ kind, p }) => (window as unknown as { UX05: Ux05 }).UX05.mount(kind, p),
+        { kind: "cost", p: props(ORG_B, PROJECT) },
+      );
+      await page.waitForFunction(
+        () => (window as unknown as { __requests: string[] }).__requests.length >= 2,
+      );
+      // The new organization's search is still held: organization one's rate must already be gone.
+      expect(await page.getByText("Org one rate").count()).toBe(0);
+      expect(await page.getByTestId("cost-profile-loading").count()).toBe(1);
+      await page.evaluate(
+        (body) => (window as unknown as { UX05: Ux05 }).UX05.release(0, 200, body),
+        { results: [], current_cheapest_certified: rate({ id: "o2", label: "Org two rate" }) },
+      );
+      await page.getByText("Org two rate").waitFor({ state: "visible" });
+      expect(uncaught).toEqual([]);
     } finally {
       await page.close();
     }

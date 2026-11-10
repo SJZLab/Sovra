@@ -17,11 +17,10 @@
  * yet" notice rather than silently picking an unqualified one when it is
  * `null`.
  *
- * Scope disclosed, not hidden (see docs/certifications/queue.md): this
- * repository has no Next.js app shell yet -- the same precedent
- * `project_schema_api_ui.tsx` (FTF-0401) already established. This is a
- * real, DOM-level tested component (Vitest + React Testing Library +
- * jsdom with a mocked `fetch`), not a full browser E2E.
+ * Mounted by `pages/cost-profile.tsx`. Tested at the DOM level (Vitest + React
+ * Testing Library + jsdom with a mocked `fetch`, `ftf_1301.spec.ts`) and in
+ * real Chromium against the same bundle (`ftf_ux05_browser.spec.ts`); the
+ * live-API journey shell is a separate task (FTF-H029).
  *
  * FTF-UX05 (2026-10-22): audit finding X2 (severity 2) -- the create-form
  * error rendered as a bare `<p>` with no `role="alert"`; it now carries
