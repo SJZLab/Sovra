@@ -94,10 +94,12 @@ import struct
 import tempfile
 import zipfile
 import zlib
+from array import array
+from bisect import bisect_right
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import IO, Final
+from typing import IO, Any, Final
 from xml.parsers import expat
 
 from workers.data.canonical_conversation_normalizer import ToolArgumentValidator
@@ -214,6 +216,10 @@ _SHARED_INDEX: Final = re.compile(r"[0-9]{1,9}")
 _XML_ESCAPE: Final = re.compile(r"_x([0-9A-Fa-f]{4})_")
 _SURROGATE: Final = re.compile("[\ud800-\udfff]")
 _SHA256_PATTERN: Final = re.compile(r"[0-9a-f]{64}")
+# What expat raises for a malformed document: `ExpatError`, but also `LookupError` for an
+# encoding it cannot map (`encoding="UTF-_xDE00_8"` in the declaration) and `ValueError`
+# (including `UnicodeError`) for bytes its declared codec rejects. All are "not a workbook".
+_PARSE_ERRORS: Final = (expat.ExpatError, LookupError, ValueError)
 
 
 _XLSX_LIMIT_DEFAULTS: Final = {
@@ -351,20 +357,87 @@ class _Scanner:
         self.events += 1
 
 
+_SST_CHUNK_BYTES: Final = 1024 * 1024
+_SST_OFFSET_LIMIT: Final = 2**32 - 1
+
+
+class _SharedStrings:
+    """The shared strings of one workbook, stored compactly: their UTF-8 bytes
+    back to back in 1 MiB chunks plus one 4-byte end offset per string.
+
+    A `list[bytes]` cost a 33-byte object plus an 8-byte slot per string, so a
+    256 MiB part of short strings (`<si><t>ab</t></si>`, 18 bytes each) peaked at
+    ~3x the part, over the job memory quota. Here the cost is the payload plus 4
+    bytes per string, whatever the string count. A string never straddles a chunk
+    (a chunk is closed before one that would overflow it, so a string over the
+    chunk size owns one), which also means no buffer is ever grown by realloc:
+    the transient is one chunk, not a second copy of the part."""
+
+    __slots__ = ("_building", "_chunk_starts", "_chunks", "_ends", "_flushed")
+
+    def __init__(self) -> None:
+        self._building = bytearray()
+        self._chunks: list[bytes] = []
+        self._chunk_starts: list[int] = []
+        self._ends = array("I")
+        self._flushed = 0  # payload bytes already in `_chunks`
+
+    def __len__(self) -> int:
+        return len(self._ends)
+
+    def append(self, payload: bytes) -> None:
+        end = self._flushed + len(self._building) + len(payload)
+        if end > _SST_OFFSET_LIMIT:
+            raise XlsxAborted("limit_exceeded")
+        if len(payload) >= _SST_CHUNK_BYTES:
+            # A chunk of its own, kept as the object it already is: no second copy.
+            self._flush()
+            self._chunk_starts.append(self._flushed)
+            self._chunks.append(payload)
+            self._flushed += len(payload)
+        else:
+            if len(self._building) + len(payload) > _SST_CHUNK_BYTES:
+                self._flush()
+            self._building += payload
+        self._ends.append(end)
+
+    def _flush(self) -> None:
+        if self._building:
+            self._chunk_starts.append(self._flushed)
+            self._chunks.append(bytes(self._building))
+            self._flushed += len(self._building)
+            self._building = bytearray()
+
+    def size(self, index: int) -> int:
+        """The byte length of string `index`, without copying it."""
+        return self._ends[index] - (self._ends[index - 1] if index else 0)
+
+    def get(self, index: int) -> bytes:
+        """A copy of string `index`'s UTF-8 bytes."""
+        start = self._ends[index - 1] if index else 0
+        end = self._ends[index]
+        if start >= self._flushed:
+            offset = start - self._flushed
+            return bytes(self._building[offset : offset + end - start])
+        chunk = bisect_right(self._chunk_starts, start) - 1
+        offset = start - self._chunk_starts[chunk]
+        return self._chunks[chunk][offset : offset + end - start]
+
+
 class _SharedStringsScanner(_Scanner):
-    """Collects the `sst` part's strings as UTF-8 bytes, not `str`: every string
-    stays in the package for the life of the import (it is looked up by index,
-    possibly many times, until the sheet is done), so its storage width matters.
-    A single non-Latin-1 character (common in a multilingual workbook) widens a
-    whole Python `str` to 2 or 4 bytes per character for every character in it,
-    not only the wide one; at the cap this cost ~3.4x the declared memory
-    quota. `bytes` has no such per-object width and tracks the byte cap exactly.
-    Decoded back to `str` once, only for a string actually referenced by a cell
-    (`_SheetScanner._finish_cell`)."""
+    """Collects the `sst` part's strings as UTF-8 bytes in a `_SharedStrings`, not
+    `str` and not one `bytes` object each: every string stays in the package for
+    the life of the import (it is looked up by index, possibly many times, until
+    the sheet is done), so its storage cost matters. A single non-Latin-1
+    character (common in a multilingual workbook) widens a whole Python `str` to
+    2 or 4 bytes per character for every character in it, and a `bytes` object
+    per string costs ~41 bytes of overhead each (a 256 MiB part of short strings
+    peaked at ~3x the part). The compact store tracks the byte cap exactly. A
+    string is decoded to `str` only when a row is mapped (`_map_row`)."""
 
     def __init__(self, max_string: int) -> None:
         super().__init__()
-        self.strings: list[bytes] = []
+        self.strings = _SharedStrings()
         self._max_string = max_string
         self._runs: list[str] = []
         self._piece: list[str] = []
@@ -412,9 +485,11 @@ class _SharedStringsScanner(_Scanner):
 
 
 class _Kind(enum.Enum):
-    """What a cell holds: its stored text, a formula (result never used) or an error."""
+    """What a cell holds: its stored text, a reference to a shared string (the index is
+    held, never a decoded copy), a formula (result never used) or an error."""
 
     VALUE = enum.auto()
+    SHARED = enum.auto()  # a shared-string reference: the payload is the index, not text
     FORMULA = enum.auto()
     ERROR = enum.auto()
 
@@ -443,15 +518,18 @@ _CELL_TYPES: Final = {
 @dataclass
 class _RawRow:
     number: int
-    cells: dict[int, tuple[_Kind, str]]
+    cells: dict[int, tuple[_Kind, str | int]]
     nonblank: bool
+    is_header: bool = False
 
 
 class _SheetScanner(_Scanner):
     """Turns the SpreadsheetML of one worksheet into `_RawRow`s as expat feeds it.
 
     `wanted` is the set of columns whose cells are kept (None: all); a cell outside
-    it is still validated and counted, only its text is not stored.
+    it is still validated and counted, only its text is not stored. It is set by
+    `resolve_header` the moment the header row ends, so no later row -- whichever
+    64 KiB block of the part it falls in -- is ever kept in full.
 
     `header_row` is the caller's own skip count (the number of non-blank rows
     before the header). Until that many non-blank rows have actually completed,
@@ -470,11 +548,17 @@ class _SheetScanner(_Scanner):
     never fire for an ordinary mapped data row)."""
 
     def __init__(
-        self, shared: list[bytes], max_cells: int, max_cell_chars: int, header_row: int
+        self,
+        shared: _SharedStrings,
+        max_cells: int,
+        max_cell_chars: int,
+        header_row: int,
+        resolve_header: Callable[[_RawRow], frozenset[int]],
     ) -> None:
         super().__init__()
         self.rows: deque[_RawRow] = deque()
         self.wanted: frozenset[int] | None = None
+        self._resolve_header = resolve_header
         self.row_number = 0
         self._shared = shared
         self._max_cells = max_cells
@@ -488,7 +572,7 @@ class _SheetScanner(_Scanner):
         self._cells = 0
         self._last_row = 0
         self._last_col = -1
-        self._row_cells: dict[int, tuple[_Kind, str]] = {}
+        self._row_cells: dict[int, tuple[_Kind, str | int]] = {}
         self._row_bytes = 0
         self._nonblank = False
         self._col = 0
@@ -611,15 +695,22 @@ class _SheetScanner(_Scanner):
         elif _ends(path, "worksheet", "sheetData", "row", "c"):
             self._finish_cell()
         elif _ends(path, "worksheet", "sheetData", "row"):
-            self.rows.append(_RawRow(self.row_number, self._row_cells, self._nonblank))
+            raw = _RawRow(self.row_number, self._row_cells, self._nonblank)
+            self.rows.append(raw)
             if self._nonblank:
+                if self.wanted is None and self._keep_full_row:
+                    # The first non-blank row at or past `header_row` is the header: the
+                    # mapping's columns are known from here on, for every later row.
+                    raw.is_header = True
+                    self.wanted = self._resolve_header(raw)
                 self._non_blank_seen += 1
             self._row_cells = {}
         path.pop()
 
     def _finish_cell(self) -> None:
         keep = self._keep_full_row and (self.wanted is None or self._col in self.wanted)
-        kind, text = _Kind.VALUE, ""
+        kind: _Kind = _Kind.VALUE
+        text: str | int = ""
         if self._has_f or self._type is _Type.FORMULA_RESULT:
             kind = _Kind.FORMULA
             self._nonblank = True
@@ -630,20 +721,22 @@ class _SheetScanner(_Scanner):
             if not self._has_v or not _SHARED_INDEX.fullmatch(self._v_text):
                 raise self._fatal("xlsx_malformed")
             index = int(self._v_text)
-            if index >= len(self._shared):
-                raise self._fatal("xlsx_malformed")
-            raw = self._shared[index]
-            if raw:
+            try:
+                size = self._shared.size(index)
+            except IndexError:
+                # explicit, not left to the parser-error catch (IndexError is a LookupError)
+                raise self._fatal("xlsx_malformed") from None
+            if size:
                 self._nonblank = True
-            # Decoded only for a cell actually kept: a shared string referenced
-            # by many unmapped cells (an attacker's cheapest amplification --
-            # one large string, thousands of references) is looked up but
-            # never decoded for a discarded reference, and `raw`'s own byte
-            # length -- no decode needed -- is what counts against
-            # `MAX_HEADER_ROW_BYTES` below.
+            # A kept cell holds the INDEX, never a decoded copy: a shared string
+            # referenced by many cells (an attacker's cheapest amplification --
+            # one large string, thousands of references) costs one int per
+            # reference, however many rows are queued, and is decoded once per
+            # row when that row is mapped (`_map_row`). Its byte length -- no
+            # decode needed -- is what counts against `MAX_HEADER_ROW_BYTES`.
             if keep:
-                self._bound_row_bytes(len(raw))
-                text = raw.decode("utf-8", "surrogatepass")
+                self._bound_row_bytes(size)
+                kind, text = _Kind.SHARED, index
         elif self._type is _Type.INLINE:
             joined = "".join(self._inline)
             if joined:
@@ -676,6 +769,12 @@ class _SheetScanner(_Scanner):
         self._row_bytes += size
         if self._row_bytes > MAX_HEADER_ROW_BYTES:
             raise self._fatal("field_too_large")
+
+
+def _shared_text(shared: _SharedStrings, index: str | int) -> str:
+    """The text of shared string `index` (a lone surrogate from a `_xD800_` escape is kept,
+    for the caller to refuse)."""
+    return shared.get(int(index)).decode("utf-8", "surrogatepass")
 
 
 def _row_number(digits: str) -> int:
@@ -721,7 +820,7 @@ class _Package:
     archive: zipfile.ZipFile
     sheet: zipfile.ZipInfo
     sheet_index: int
-    shared: list[bytes]
+    shared: _SharedStrings
     budget: PartBudget
 
 
@@ -739,7 +838,7 @@ def _parse_small(
         parser.EndElementHandler = end
     try:
         parser.Parse(data, True)
-    except expat.ExpatError:
+    except _PARSE_ERRORS:
         raise OoxmlRefused(
             "unsafe_archive" if mentions_declaration(data) else "xlsx_malformed"
         ) from None
@@ -910,7 +1009,7 @@ def open_package(
     if sheet_part not in parts:
         raise OoxmlRefused("xlsx_malformed")
 
-    shared: list[bytes] = []
+    shared = _SharedStrings()
     for item in by_id.values():
         if item.get("Type") == _REL_SHARED_STRINGS and "Target" in item:
             part = _resolve_target(item["Target"]).casefold()
@@ -930,7 +1029,7 @@ def _load_shared_strings(
     tick: Callable[[], None],
     cap: int,
     max_string_chars: int,
-) -> list[bytes]:
+) -> _SharedStrings:
     scanner = _SharedStringsScanner(max_string_chars)
     parser = new_xml_parser()
     parser.StartElementHandler = scanner.start
@@ -947,7 +1046,7 @@ def _load_shared_strings(
             parser.Parse(block, False)
             silent = _check_progress(silent, before, scanner.events, len(block))
         parser.Parse(b"", True)
-    except expat.ExpatError:
+    except _PARSE_ERRORS:
         raise OoxmlRefused("xlsx_malformed") from None
     return scanner.strings
 
@@ -1037,7 +1136,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
                 while scanner.rows:
                     yield scanner.rows.popleft()
             parser.Parse(b"", True)
-        except expat.ExpatError:
+        except _PARSE_ERRORS:
             raise XlsxAborted("xlsx_malformed", scanner.row_number or None) from None
         while scanner.rows:
             yield scanner.rows.popleft()
@@ -1091,16 +1190,39 @@ class XlsxEventStream(Iterator[ImportEvent]):
             raise XlsxAborted(exc.code) from None
 
     def _sheet_events(self, package: _Package) -> Iterator[ImportEvent]:
-        options = self._options
+        # The scanner calls `resolve` the moment the header row ends -- while expat is still
+        # inside the same 64 KiB block -- so the columns the mapping wants are known for every
+        # later row and a row's outcome never depends on its byte position. A fatal header
+        # problem is held and raised when the event loop reaches the header row itself, so the
+        # events before it (blank rows) are still reported, as before.
+        resolved: dict[str, Any] = {}
+
+        def resolve(raw: _RawRow) -> frozenset[int]:
+            try:
+                headers_ = self._header_cells(raw, package.shared)
+            except XlsxAborted as exc:
+                resolved["error"] = exc
+                return frozenset()
+            # Kept before the mapping is resolved, so a held `mapping_column_missing` still
+            # reports the digest of the headers that were read (as the CSV importer does).
+            resolved["headers"] = headers_
+            try:
+                positions_ = self._positions(headers_, raw.number)
+            except XlsxAborted as exc:
+                resolved["error"] = exc
+                return frozenset()
+            resolved["positions"] = positions_
+            return frozenset(position for _name, position in positions_)
+
         scanner = _SheetScanner(
             package.shared,
             self._limits.max_xlsx_cells,
             self._limits.max_record_bytes,
-            options.header_row,
+            self._options.header_row,
+            resolve,
         )
         headers: list[str] | None = None
         positions: list[tuple[str, int]] = []
-        non_blank = 0
         record_index = 0
         last_row = 1
         for raw in self._rows(package, scanner):
@@ -1110,28 +1232,36 @@ class XlsxEventStream(Iterator[ImportEvent]):
                 yield BlankLine()
                 continue
             if headers is None:
-                non_blank += 1
-                if non_blank - 1 < options.header_row:
+                if not raw.is_header:
                     continue
-                headers = self._header_cells(raw)
+                if "error" in resolved:
+                    if "headers" in resolved:
+                        self.source_schema_sha256 = _schema_sha256(
+                            package.sheet_index, resolved["headers"]
+                        )
+                    raise resolved["error"]
+                headers, positions = resolved["headers"], resolved["positions"]
                 self.source_schema_sha256 = _schema_sha256(package.sheet_index, headers)
-                positions = self._positions(headers, raw.number)
-                scanner.wanted = frozenset(position for _name, position in positions)
                 continue
             locator = f"row:{raw.number}"
             index, record_index = record_index, record_index + 1
-            yield self._map_row(raw, len(headers), headers, positions, locator, index)
+            yield self._map_row(
+                raw, package.shared, len(headers), headers, positions, locator, index
+            )
         if headers is None:
             raise XlsxAborted("mapping_column_missing", last_row)
 
     @staticmethod
-    def _header_cells(raw: _RawRow) -> list[str]:
+    def _header_cells(raw: _RawRow, shared: _SharedStrings) -> list[str]:
         width = max(raw.cells) + 1
         headers = [""] * width
         for column, (kind, text) in raw.cells.items():
-            if kind is not _Kind.VALUE:
+            if kind is _Kind.SHARED:
+                headers[column] = _shared_text(shared, text)
+            elif kind is _Kind.VALUE:
+                headers[column] = str(text)
+            else:
                 raise XlsxAborted("xlsx_malformed", raw.number)
-            headers[column] = text
         named = [header for header in headers if header]
         if len(set(named)) != len(named):
             raise XlsxAborted("duplicate_header", raw.number)
@@ -1140,6 +1270,7 @@ class XlsxEventStream(Iterator[ImportEvent]):
     def _map_row(
         self,
         raw: _RawRow,
+        shared: _SharedStrings,
         width: int,
         headers: list[str],
         positions: list[tuple[str, int]],
@@ -1149,11 +1280,13 @@ class XlsxEventStream(Iterator[ImportEvent]):
         row = [""] * width
         total = 0
         for name, position in positions:
-            kind, text = raw.cells.get(position, (_Kind.VALUE, ""))
+            kind, value = raw.cells.get(position, (_Kind.VALUE, ""))
             if kind is _Kind.FORMULA:
                 return RowRejection(locator, "formula_cell", name)
             if kind is _Kind.ERROR:
                 return RowRejection(locator, "cell_error_value", name)
+            # Decoded here, one row at a time, from the index the scanner kept.
+            text = _shared_text(shared, value) if kind is _Kind.SHARED else str(value)
             if "\x00" in text:
                 return RowRejection(locator, "nul_character", name)
             if _SURROGATE.search(text):

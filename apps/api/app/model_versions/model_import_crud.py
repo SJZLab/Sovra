@@ -51,6 +51,7 @@ from app.artifacts.artifact_crud import ArtifactNotFoundError, get_artifact
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
+from app.litellm.connection_crud import ConnectionNotFoundError, get_connection
 from app.model_versions.model_import_schema import (
     ORIGIN_EXTERNAL_ENDPOINT,
     ORIGIN_IMPORTED_ADAPTER,
@@ -71,6 +72,7 @@ from app.model_versions.model_version_crud import (
 
 __all__ = [
     "ArtifactNotFoundError",
+    "ConnectionNotFoundError",
     "ModelImportJobNotFoundError",
     "ModelVersionNotFoundError",
     "ProjectNotFoundError",
@@ -104,10 +106,11 @@ def create_model_import_job(
     trainable_artifact_id: uuid.UUID | None,
     external_provider_model_ref: str | None,
     actor: ActorInfo,
+    litellm_connection_id: uuid.UUID | None = None,
 ) -> ModelImportJob:
     """Raises `ProjectNotFoundError`, `ModelVersionNotFoundError`,
-    `ArtifactNotFoundError` or `ModelImportValidationError`; on any raise
-    nothing was written."""
+    `ArtifactNotFoundError`, `ConnectionNotFoundError` or `ModelImportValidationError`; on
+    any raise nothing was written."""
     _authorize_project_or_raise(session, context, project_id)
 
     # `ModelImportJob.__init__` already re-validates `requested_origin`
@@ -124,6 +127,15 @@ def create_model_import_job(
     # dispatch holding some other, differently-cased or whitespace-padded
     # object that `is` would wrongly refuse.
     requested_origin = validate_origin(requested_origin)
+
+    # FTF-H010-P2: the gateway connection an endpoint import is validated through. Required for
+    # `external_endpoint`, refused for every other origin (defense in depth: the route and the
+    # `ck_model_import_jobs_connection_matches_origin` CHECK say the same).
+    if (requested_origin is ORIGIN_EXTERNAL_ENDPOINT) != (litellm_connection_id is not None):
+        raise ModelImportValidationError(
+            "litellm_connection_id is required for external_endpoint and refused for every "
+            "other origin"
+        )
 
     if requested_origin is ORIGIN_EXTERNAL_ENDPOINT:
         if trainable_artifact_id is not None:
@@ -160,6 +172,10 @@ def create_model_import_job(
     if trainable_artifact_id is not None:
         get_artifact(session, context, trainable_artifact_id)  # ArtifactNotFoundError if foreign
 
+    if litellm_connection_id is not None:
+        # A foreign or missing connection is the identical ConnectionNotFoundError.
+        get_connection(session, context, litellm_connection_id)
+
     now = datetime.now(UTC)
     job = ModelImportJob(
         id=uuid.uuid4(),
@@ -169,6 +185,7 @@ def create_model_import_job(
         parent_model_version_id=parent_model_version_id,
         trainable_artifact_id=trainable_artifact_id,
         external_provider_model_ref=external_provider_model_ref,
+        litellm_connection_id=litellm_connection_id,
         state="queued",
         failure_code=None,
         created_by=actor.actor_id,
@@ -194,6 +211,9 @@ def create_model_import_job(
             ),
             "trainable_artifact_id": (
                 None if trainable_artifact_id is None else str(trainable_artifact_id)
+            ),
+            "litellm_connection_id": (
+                None if litellm_connection_id is None else str(litellm_connection_id)
             ),
         },
     )

@@ -54,6 +54,7 @@ from app.auth.tenant_isolation_query_guards import TenantContextError
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for
 from app.model_versions.model_import_crud import (
     ActorInfo,
+    ConnectionNotFoundError,
     ModelImportJobNotFoundError,
     ModelVersionNotFoundError,
     ProjectNotFoundError,
@@ -78,6 +79,7 @@ _POST_BODY_KEYS = frozenset(
         "parent_model_version_id",
         "trainable_artifact_id",
         "external_provider_model_ref",
+        "litellm_connection_id",
     }
 )
 
@@ -95,6 +97,12 @@ def _serialize(job: ModelImportJob) -> dict[str, object]:
             None if job.trainable_artifact_id is None else str(job.trainable_artifact_id)
         ),
         "external_provider_model_ref": job.external_provider_model_ref,
+        "litellm_connection_id": (
+            None if job.litellm_connection_id is None else str(job.litellm_connection_id)
+        ),
+        "result_model_version_id": (
+            None if job.result_model_version_id is None else str(job.result_model_version_id)
+        ),
         "state": job.state,
         "failure_code": job.failure_code,
         "created_by": job.created_by,
@@ -139,7 +147,24 @@ async def _read_post_body(request: Request) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail="external_provider_model_ref must be a string or null"
         )
+    # FTF-H010-P2: `litellm_connection_id` is required for external_endpoint and refused (a
+    # non-null value) for the other origins; every wrong shape is the one stable code.
+    connection = payload.get("litellm_connection_id")
+    if connection is not None and not isinstance(connection, str):
+        raise HTTPException(status_code=400, detail="invalid_body")
+    if (payload["requested_origin"] == "external_endpoint") != (connection is not None):
+        raise HTTPException(status_code=400, detail="invalid_body")
     return payload
+
+
+def _parse_connection_id(payload: dict[str, Any]) -> uuid.UUID | None:
+    raw = payload.get("litellm_connection_id")
+    if raw is None:
+        return None
+    try:
+        return uuid.UUID(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid_body") from exc
 
 
 def _parse_uuid_field(payload: dict[str, Any], key: str) -> uuid.UUID | None:
@@ -183,6 +208,7 @@ def build_model_import_router(
         payload = await _read_post_body(request)
         parent_model_version_id = _parse_uuid_field(payload, "parent_model_version_id")
         trainable_artifact_id = _parse_uuid_field(payload, "trainable_artifact_id")
+        litellm_connection_id = _parse_connection_id(payload)
         external_provider_model_ref = payload.get("external_provider_model_ref")
         tenant_context = TenantContext.from_authorized_context(ctx)
         actor = ActorInfo(
@@ -199,12 +225,14 @@ def build_model_import_router(
                     trainable_artifact_id=trainable_artifact_id,
                     external_provider_model_ref=external_provider_model_ref,
                     actor=actor,
+                    litellm_connection_id=litellm_connection_id,
                 )
                 body = _serialize(job)
         except (
             ProjectNotFoundError,
             ModelVersionNotFoundError,
             ArtifactNotFoundError,
+            ConnectionNotFoundError,
             TenantContextError,
         ) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc

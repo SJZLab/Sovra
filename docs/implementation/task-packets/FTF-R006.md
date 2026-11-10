@@ -1,0 +1,647 @@
+# Release 1 task: FTF-R006 — Integrate internal Argilla review, reviewer identity and immutable export
+
+Source Markdown SHA-256: `5d3c183ff11b85718d5a3bbb08188868c455464202bb4898f6ddde66013eb664`. Initial contract only; live tracker and merged evidence govern readiness.
+
+Do not run the whole program from this packet. Inspect relevant current repository code and contracts; claim only dependency-ready, lock-safe work.
+
+## Exact resolved task contract
+
+```json
+
+{
+  "required": true,
+  "status": "NOT_STARTED",
+  "evidence": [],
+  "ready": false,
+  "security": "Factory tenant/purpose and trust-boundary enforcement; no vendor admin or production release credentials in browsers/implementation agents; no raw/sealed data in general telemetry; no gate weakening.",
+  "observability": "Actual request/job/component identity, approved profile/version digests, sync state, measured timing/cost, exact test counts and independently reviewed evidence; no invented success.",
+  "resource_gate": "Real selected internal components, model/runtime and offline resources as required; missing evidence blocks and cannot be skipped.",
+  "database_changes": "Reuse existing tenant schema and single-writer migration policy; new integration records only under the frozen component contract.",
+  "shared_contracts_read": [
+    "packages/component-contracts/architecture.schema.json",
+    "spec/deployment-profiles.yaml"
+  ],
+  "shared_lock_required": [],
+  "id": "FTF-R006",
+  "title": "Integrate internal Argilla review, reviewer identity and immutable export",
+  "kind": "reuse_architecture",
+  "dependencies": [
+    "FTF-R002",
+    "FTF-0500",
+    "FTF-0506",
+    "FTF-0516"
+  ],
+  "sections": "8–10,67,72,78,80",
+  "requirements": [
+    "CAP-07",
+    "CAP-08",
+    "CAP-19",
+    "CAP-21"
+  ],
+  "qualification_scenarios": [
+    "Q08",
+    "Q35",
+    "Q36",
+    "Q38"
+  ],
+  "files": [
+    "packages/integrations/argilla/client.py",
+    "packages/integrations/argilla/review_mapping.py",
+    "packages/integrations/argilla/export.py",
+    "tests/integration/test_argilla_review_export.py"
+  ],
+  "api_contract": "Factory review queue/responses/exports backed by actual Argilla SDK/API; no native dashboard dependency.",
+  "acceptance": [
+    "Real authorized annotations with reviewer provenance/concurrency control, scoped records and canonical approved export.",
+    "Export validates current grants/hash/schema/groups and creates immutable new dataset version; lifecycle owner and export test recorded."
+  ],
+  "negative_acceptance": [
+    "No all-users-as-admin audit, no final-suite data in ordinary queues/search, no source permission expanded to training, no old split mutation or duplicate export."
+  ],
+  "verification_commands": [
+    "python scripts/validate_spec.py --strict",
+    "python scripts/verify_task.py --task FTF-R006 --stage task"
+  ],
+  "contract_owner": "FTF-R001"
+}
+
+```
+
+## Dependency titles (initial handoff; not proof of completion)
+
+- FTF-R002: Implement authenticated internal component bindings and reconciled adapter foundation
+
+- FTF-0500: DatasetSourceConnection schema/API/RBAC
+
+- FTF-0506: Canonical conversation normalizer
+
+- FTF-0516: Dataset issue resolution UI
+
+## 75.1 Common execution contract
+
+Section85 contains the canonical machine-readable task records and shared defaults inside this file. The embedded Section86 helper resolves them into `spec/tasks.json` under the protected specification owner; no companion file is required. It contains **300 required feature/hardening/architecture work items**, not 300 claims of completed code. All begin NOT_STARTED, ready=false and with no evidence. Interface examples in this plan are not production stubs.
+
+For each card: (1) load the listed binding sections and frozen schemas; (2) inspect its dependency commits and actual affected repository files; (3) refine any oversized item into bounded child IDs whose union covers every parent acceptance criterion; (4) record exact files, error codes, tests and required external inputs; (5) claim permitted write sets before coding; (6) implement with no production fallback fake; (7) run the verification map; (8) obtain independent review and merged-revision evidence. A bare task title is not READY.
+
+`files` below are initial owner paths in this new repository, not a claim that those files already exist. Reuse an existing compatible module instead of creating a duplicate. Any path refinement must be recorded before READY and preserve API/security scope; shared module changes require ownership transfer/serialization. Do not scatter domain logic into one file per ticket simply because a ticket exists.
+
+The phase OpenAPI/JSON Schema files are **shared read contracts**. A designated phase interface owner creates/updates them under the contract lock and runs schema/client generation before sibling fan-out. A feature that needs a not-yet-frozen interface is BLOCKED_DEPENDENCY, not permission to invent one. Database work uses a single Alembic migration chain and tenant constraints. Generated clients and lockfiles are updated once by the interface/dependency owner, not concurrently by individual sub-agents.
+
+Before executing the per-task verifier for the first time, implement/bootstrap its actual commands in FTF-H001. Until then FTF-0001/0002/0003 use their direct pinned package-manager/lint/test commands with captured raw output. Thereafter the verifier resolves `spec/verification-map.json` to real commands, expected test IDs/counts, timeouts, resource profile and artifact outputs; it must reject empty mappings, unknown stages and zero collected tests. `--stage task` does not falsely require every not-yet-built product feature to work, but must include all affected implemented dependencies and task-specific real integrations. Full release uses the entire scenario inventory with no missing optionalization.
+
+Every card inherits these requirements:
+- **Input/API:** typed versioned request/response, tenant/project membership, bounded collections, stable error code, request ID and request-fingerprint idempotency for effects. UI consumes generated contracts and real backend state.
+- **Error/security:** deny malformed/unapproved/cross-tenant/expired/stale input, retry only bounded transient errors; never convert broad exception to success. Tenant/purpose/privacy/least-privilege checks precede each effect.
+- **Observability:** actual state/timing/counts/usage/cleanup, content-free errors, no secrets/raw prompts in task reports. No guessed performance or cost values.
+- **Tests:** domain unit positives/boundaries; negative invariants; contract tests; real applicable DB/storage/LiteLLM/GPU/provider/runtime integration; actual browser path where UI changes; affected security/performance/upgrade tests. Test doubles are allowed only for isolated unit/fault tests and never substitute for required real qualification.
+- **Acceptance:** every criterion has actual command, exit code, expected/observed test counts, result artifact hash, environment, merged commit and reviewer. Required missing/skipped/xfail/unrun evidence is BLOCKED/FAIL, not DONE.
+- **Parallel safety:** default 4 / max 6 only independent ready tasks; actual write-set/contract/migration/security/resource locks; separate GPU budget. Integrate each safe wave and rerun affected tests; author cannot independently certify own final evidence.
+
+# 0. Non-Negotiable Product Contract
+
+This repository is complete only when all of the following are true in a real environment:
+
+1. **No production mock path exists.**
+2. **No production placeholder path exists.**
+3. **No required test is skipped.**
+4. **No required test is xfailed.**
+5. **No fake training job exists.**
+6. **No fake evaluation exists.**
+7. **No fake deployment exists.**
+8. **Every shipped provider/compute adapter has a real integration test.**
+9. **Every UI action used in the happy path invokes real backend behavior.**
+10. **The product can discover the models that the configured LiteLLM credential is allowed to access.**
+11. **The product does not assume every LiteLLM model is fine-tunable.**
+12. **Model capability, availability, and project role are separate dimensions:**
+    - capability: `trainable_open_weight`, `managed_fine_tunable`, `inference_only`, `unknown`;
+    - availability: `authorized_and_healthy`, `stale`, `revoked`, `unavailable`;
+    - explicitly assigned role: `current_production`, `baseline`, `candidate`, `teacher`, `judge`.
+    An endpoint can be inference-only and still be the production baseline. A teacher role does not determine trainability.
+13. **Training, validation, development evaluation, and final qualification datasets are separate, versioned, purpose-restricted and independently hashed.**
+14. **The held-out evaluation set is never used in training, hyperparameter selection, synthetic-data generation, or early stopping.**
+15. **A model cannot be promoted because training completed. Promotion requires passing all configured evaluation gates.**
+16. **A model cannot be promoted if a critical regression exists.**
+17. **ZERO_EGRESS means no unapproved transfer outside an explicitly recorded trust boundary, with tested enforcement. It is not a mathematical guarantee against all leakage, cloud administrators, or compromised infrastructure.**
+18. **Training and deployment lineage is reproducible from recorded versions, hashes, code commit, container digest, base-model digest/revision, dataset hashes, training configuration, and random seeds.**
+19. **Cost is measured as cost per successful agent task, not just tokens or GPU hours.**
+20. **Reference qualification must produce at least one real fine-tuned artifact, evaluate and serve it through LiteLLM. A tuned model must independently pass before being called production-qualified; an existing/base model may remain the cheaper operational winner.**
+21. **First compare existing and untuned models on development data; train the smallest economically viable candidate when justified. Never tune solely to produce a badge, or discard a valid existing model because it is not newly trained.**
+22. **The repository cannot be declared production-ready with unresolved critical/high defects, disabled tests, hidden manual steps, or undocumented external dependencies.**
+23. **Agentic projects require a Target Application connection before production qualification. Dataset-only mode is allowed only for generic model-tuning projects that do not claim agent/product production qualification.**
+24. **The Factory must support real read-only connection to a target GitHub repository and a real local-filesystem repository. A connector that is shipped must have a real integration test; no fake repository connector is permitted.**
+25. **The Factory must create an immutable Agent Manifest from target-product evidence and user-approved mandate. The manifest is the canonical contract used by training and evaluation.**
+26. **Automatic discovery never equals automatic selection. The Factory may detect agents, prompts, tools, schemas, tests, current model aliases, routes, and trace hooks, but the user must explicitly confirm which discovered agent/product is in scope.**
+27. **Datasets are never silently harvested from the repository, production logs, databases, object storage, or connected services. Every dataset source and allowed purpose must be explicitly connected and approved.**
+28. **Production evaluation must execute against a production-faithful target-agent harness built from the approved Agent Manifest; evaluating isolated chat responses alone is insufficient for an agentic project.**
+29. **A source-code change that materially changes the approved Agent Manifest invalidates affected baseline/evaluation evidence until the project is re-synced, reviewed, and re-qualified.**
+30. **The Factory must preserve evidence provenance: every auto-detected manifest field must link back to repository commit, file path, symbol/config source, or explicitly entered user value.**
+31. **Reuse Axolotl, Inspect AI, MLflow, vLLM, Temporal, the existing LiteLLM gateway and Argilla through one Factory UI and internal APIs/worker jobs. Seven logical components do not imply seven servers or seven user-operated dashboards.**
+32. **The existing coding host implements the Factory under the embedded R1 controls; an authentic installed SDLC skill is preserved unchanged. OpenHands is optional and cannot authorize its own merge/release.**
+33. **Air-gap qualification covers the complete offline lifecycle and supporting dependencies, not only the GPU worker. Connected capabilities are separately tested and denied inside the disconnected profile; no required full-product scope is silently dropped.**
+
+---
+
+# 8. Dataset Import Pipeline
+
+Supported source types at v1:
+- JSONL,
+- JSON,
+- CSV,
+- XLSX,
+- exported chat transcripts,
+- canonical agent trace format,
+- API upload.
+
+Every importer must produce the same canonical representation.
+
+## 8.1 Import steps
+
+1. After explicit source/purpose grant, import through the selected connector; for uploads use short-lived, size/type/key-scoped multipart object-storage authorization. Section 67 defines real DB/REST/S3 mapping, limits and snapshots.
+2. Calculate SHA-256 server-side after upload.
+3. Detect file type by content, not only extension.
+4. Reject unsupported/ambiguous files.
+5. Parse in isolated worker.
+6. Normalize records.
+7. Validate schema.
+8. Validate tool calls.
+9. Tokenize using the selected base model tokenizer when available.
+10. Detect exact duplicate records.
+11. Detect normalized duplicates.
+12. Detect near duplicates.
+13. Detect train/test leakage candidates.
+14. Run PII/secrets policy.
+15. Calculate quality metrics.
+16. Produce an immutable import report.
+17. UI requires user resolution of blocking issues.
+18. Only clean/accepted records enter split generation.
+
+## 8.2 Blocking dataset errors
+
+Train button stays disabled when any of these are unresolved:
+- parsing failures,
+- invalid canonical schema,
+- invalid critical tool arguments,
+- missing assistant outcome,
+- records exceeding model maximum sequence limit with no configured truncation policy,
+- duplicate contamination across split boundaries,
+- secrets detected under zero-egress policy when storage boundary is invalid,
+- held-out set size below required minimum,
+- test set used by another training experiment in violation of isolation policy.
+
+---
+
+# 9. Dataset Split and Final-Test Access Policy
+
+Maintain four distinct roles: `train`, `validation`, `development_eval`, `final_qualification` (legacy `heldout_test` maps only to the final role). Adversarial cases also declare development or final purpose. No final cases are accessible to trainers, candidate-search workers, teachers, coding agents, or ordinary preview UI.
+
+For a new unsplit source, propose 70/10/10/10 allocation, subject to group isolation and qualification sample-size gates. Ratios are recommendations, not evidence that any resulting split is large enough. Keep entire conversations, customer cases, documents, synthetic seed/template families and time-dependent leakage groups in one split. For temporal tasks use a prospective time cutoff as well as grouping. Resolve near-duplicate groups before splitting; split first, then augment train only. Never split token-packed batches across purposes.
+
+User approves immutable split manifest with source versions, group IDs, strategy, seed, normalization/tokenizer versions, counts and each artifact hash. Preassigned evaluation-only data cannot be reclassified into training by an import heuristic. New revisions inherit lineage and leakage checks against prior qualification sources.
+
+Minimum production training count of 200 is a default readiness screen, not a quality guarantee. Fewer requires more data and a new independently approved project data policy; it does not exempt final-test or safety gates. Final sample adequacy is calculated from Section 69, not `where possible` or a budget-capped count.
+
+Candidate search and early stopping never see final qualification outcomes. Freeze one selected candidate and its comparators before final evaluation. A real candidate failure consumes that final suite for the campaign: remediation uses development data and requires a new independently collected final suite. A verified infrastructure failure may resume only missing cases under the exact frozen identity, with completed results retained. No cherry-picking retries or `best of N` scoring.
+
+---
+
+# 10. Data Leakage Detection
+
+Required methods:
+
+1. Exact raw SHA-256.
+2. Canonical normalized hash.
+3. Text normalization match:
+   - lowercase,
+   - whitespace normalization,
+   - punctuation normalization,
+   - remove generated IDs/timestamps using schema-aware rules.
+4. Character n-gram similarity.
+5. Token Jaccard similarity.
+6. Embedding similarity using a local/private embedding model in zero-egress mode.
+7. Agent-trace structural similarity:
+   - same user goal,
+   - same tool sequence,
+   - same output template.
+
+Default blocking threshold:
+- exact match: always block across train vs held-out.
+- normalized match: always block.
+- semantic similarity >= configured threshold: flag for review; default 0.95.
+- same source group: always keep in one split.
+
+Leakage report must identify both record IDs and the reason.
+
+---
+
+# 67. Real Dataset Connection, Mapping, Authorization and Lifecycle
+
+## 67.1 Source connectors actually shipped
+
+| Connector | Required configuration through UI | Real implementation behavior |
+|---|---|---|
+| Upload | File, dataset purpose, mapping | Multipart resumable upload; content/size/hash verification; JSONL/JSON/CSV/XLSX parsing |
+| S3-compatible | Approved endpoint/region/bucket/prefix/role, object versions | Paginated bounded list, exact version manifest, ETag not treated as universal SHA-256 |
+| PostgreSQL | Read-only connection, allowlisted schema/table/view and columns, filter UI, stable key | Generated parameterized SELECT, repeatable snapshot/export strategy, statement timeout and backpressure; no user SQL or writes |
+| REST JSON/JSONL | Approved endpoint, secret-ref auth, records/cursor paths, allowed parameters | Bounded pagination/cursors, 429 backoff, version/ETag or content snapshot, cancellation; no arbitrary scripting |
+| Agent traces / production conversations | One of the above transports + declared trace schema and access grant | Explicit export of approved fields/time range; no implicit log harvesting or live customer actions |
+
+Source counts are estimates until import completes. Changes during pagination cannot silently mix versions: use source-supported snapshot or materialize an immutable content-hashed extract with disclosed capture time; if consistency cannot be guaranteed, show `SNAPSHOT_UNSTABLE` and block production data use.
+
+## 67.2 Field mapping is a real wizard
+
+After explicit source approval, preview at most 20 records inside the authorized private boundary. Sensitive values are masked unless the user has preview permission; final evaluation sources are hidden from trainer/coding identities. Select sheet/header/encoding/delimiter as applicable, and map:
+- message array or prompt/completion columns;
+- role/content, tool-call IDs/names/arguments/results;
+- system/developer context versus supervised assistant target;
+- source record/group/conversation ID and event timestamp;
+- language, task category, consent/purpose and quality labels;
+- expected outcomes and deterministic graders for evaluation-only datasets.
+
+Require user confirmation; heuristics suggest, never silently finalize. Preview normalized records and rejected rows with machine-readable reasons. Store versioned `MappingSpec`, source schema digest and transform version. Reimport uses the exact mapping only while source schema is compatible; incompatible drift requires new approval. Field truncation, generated missing tool results or invented “approved” labels are forbidden.
+
+Supported transforms are a finite typed allowlist (field selection/rename, explicit string normalization, date parse, JSON parse, enum map, join/group by stable ID). No eval, executable formula, dynamic Python or JavaScript. Multiple rows forming a conversation require deterministic ordering and group identity; incomplete groups are quarantined.
+
+## 67.3 File and parser safety
+
+Bound upload and decompressed sizes, file counts, record bytes and nesting. Default source object limit 10GiB via multipart; canonical single-record max 2MiB; preview max20; parse timeout and memory quota per job. Larger allowed limits require capability/load evidence, not disabling protection. Quarantine malformed archives, zip bombs, path traversal, entity expansion and oversized nested JSON. XLSX support is values-only: no macro execution/external link retrieval; reject or surface formulas instead of trusting stale cached values. Spreadsheet/CSV exports neutralize formula execution without mutating canonical training content. [S14]
+
+Never mount upload paths as executable packages or open arbitrary HTML in the browser. Parser libraries are pinned and run without network in a resource-limited worker. Large-data processing streams and uses indexed/external-memory grouping; semantic duplicate detection uses bounded candidate retrieval, not all-pairs quadratic similarity.
+
+## 67.4 Purpose, provenance and poisoning
+
+`DataUseGrant` records approver, subject/source, allowed purposes, processing boundary, retention, expiry and underlying rights evidence. Every derived split/augmentation/embedding inherits restrictions and source lineage. Revoke/expire grant -> deny new jobs using any descendant; evaluate active/deployed descendants for quarantine under the approved incident policy.
+
+Record source authenticity, approved labels, review samples and training/test contamination. Duplicate checks are not a poison detector. Include conflicting instruction, malicious tool arguments, poisoned output labels and rare trigger samples in tests; suspicious data is quarantined for reviewer resolution. Token or string PII detectors have measured recall on seeded representative examples and visible limitations; “scanner found zero” is not proof that personal data is absent.
+
+Fine-tuning rights, redistribution, synthetic teacher use and provider terms must be approved independently. Never infer rights from public download availability or LiteLLM access. Training/checkpoint/model artifacts inherit sensitive classification. A user cannot export a sensitive adapter merely because it is smaller than the base model.
+
+## 67.5 Retention, deletion and model exposure
+
+Retention applies to raw uploads, normalized/derived splits, embeddings, previews, reports, checkpoints, models, logs, histories, replicas and backups. Store legal holds/approved retention as explicit owner-controlled policy. Default unfinalized multipart uploads expire after24h; rejected import quarantine after7d; sensitive raw sources keep the user-approved period. Never invent compliance approval.
+
+Deletion is a workflow: authorize -> identify descendants -> block new use -> revoke/quarantine affected deployment if policy requires -> delete live artifacts/caches -> retain minimal non-content audit tombstone -> apply to backup restore -> verify outcome. Backups may expire later under the declared policy; do not claim immediate erasure from retained backup media.
+
+Deleting data cannot prove it was unlearned by an already-trained model. Report affected model versions and retraining/revocation decision. Test memorization/extraction exposure with legally clean seeded sensitive-like values, restricted evaluation access and output/tool policies; do not call network controls a complete memorization defense.
+
+---
+
+# 72. Full UI Design System and Honest Interaction Contract
+
+All seven engines are coordinated through the Factory UI, not a menu of external dashboards. Data review, metrics, model registry and error/recovery screens use the same design system and authoritative API. See Section80 for exact normal-user completion evidence.
+
+## 72.1 Visual system
+
+Build a dense, neutral AI operations console, not hardcoded HTML proof. Use Next.js/TypeScript with shared accessible components (Radix primitives/shadcn-style patterns), server-state query layer, typed form/schema validation and generated API types; freeze actual compatible package versions before use. Use local assets/system fonts; no CDN dependencies in ZERO_EGRESS.
+
+Design tokens (versioned in `apps/web/styles/tokens.css`): spacing4/8/12/16/24/32px, body14px with line-height20px, table13px, label12px, page title24px; surfaces `#FFFFFF`, `#F8FAFC`, borders `#CBD5E1`, main text `#0F172A`, muted `#475569`, action `#1D4ED8`, success `#166534`, warning `#92400E`, danger `#B91C1C`. Dark mode has separately tested contrast tokens. Status always includes text/icon, not color alone. Persistent navigation, breadcrumbs, project/environment banner and clear review/approval state are required.
+
+WCAG2.2 AA is the accessibility target, checked against actual implemented screens rather than a marketing badge. Keyboard focus, labels/descriptions, error association, readable contrast, screen-reader status, dialogs/focus return, zoom/reflow and target size must work. Tables remain usable on mobile with responsive summary/details or labeled horizontal scrolling. [S16]
+
+## 72.2 Stateful setup, not one long mock form
+
+Server saves drafts after explicit form actions; non-sensitive local editing may buffer but secrets/datasets never go to localStorage. Wizard stores actual selected IDs, policy versions and progress. Direct step navigation is read-only/blocked until prerequisites are satisfied. File upload exposes a real picker, resumable progress, mapping and validation. S3/DB/API connector forms expose the required verified configuration; there is no generic “Connected” button that toggles a label without a request.
+
+Every mandatory action has a typed API response or observable job state. Test network failure,401/403,409 stale-version conflict, quota, malformed data, cancellation, job failure and incomplete setup. Default overview is empty, not a fabricated passing model. A privacy verification badge links to dated evidence for the active configuration and becomes stale on drift.
+
+Show `Draft`, `Not connected`, `Validation required`, `Blocked — reason`, `Queued`, `Running`, `Failed`, `Cancelled`, `Qualified for [scope]`, and `Production` distinctly. User-supplied examples in documentation are visibly examples; sample model names, percentages and costs never seed production state.
+
+## 72.3 Mandate and compatibility screens
+
+Mandate editor separates desired responsibilities, forbidden effects, required outputs, language/context, quality, SLO and cost gates. Tool authorization preview shows real permission/backend enforcement status. Evidence drawer shows source commit/path/lines and observed runtime configuration without exposing unrelated secrets.
+
+Model import screen explicitly asks existing endpoint vs full weights vs adapter and role; it shows lineage unknowns and why continue tuning is disabled. Model selection distinguishes discovered, authorized, compatible, policy-allowed and currently healthy. A visible model is not preselected as production.
+
+Data screens include connector setup, metadata preview, mapping, allowed purpose, rights/retention, transformations, quality issues, source drift, group split and sealed-final access restrictions. Evaluation-only path never demands training data. Expired grants immediately disable new use without hiding historical audit.
+
+## 72.4 Evaluation, release and operations screens
+
+Development comparison is labeled not final qualification. Candidate freeze has a reviewable full tuple. Final results show denominators, interval/sample adequacy and `INSUFFICIENT_EVIDENCE`; no PASS from a zero-case test. Results link to artifact/runtime version and audited evidence; hidden final content stays hidden from training roles.
+
+Production approval is separate from training start and deploy-to-staging. Show rollout plan, residual budget exposure, incumbent, whole-session routing, minimum observation/sample conditions, effective authority and expiry. A rollback button requests a real authorized controller operation and displays pending/failed/verified state.
+
+Cost screen splits coding, train/eval, serving/idle, storage/platform and settled/pending charges. Operations screens show actual connections/workers, drift, telemetry health, backups/restores, release evidence and actionable blocks. All routes in Section44 have a requirement and real test.
+
+## 72.5 UI acceptance
+
+Playwright runs the new-model, existing-endpoint evaluate-only, adapter-continuation, failed-final, budget-blocked, target-drift and canary/rollback journeys against real backend/dependencies. Unit interaction tests may isolate components; release E2E does not intercept API calls with fake success. Test desktop1280px, tablet768px and mobile390px, keyboard only, zoom200%, at least one real screen reader and persistent draft recovery. Automated accessibility scans plus manual evidence required; no zero-violation scan alone counts as complete conformance.
+
+---
+
+# 77. Binding Reuse-First Architecture and Component Ownership
+
+## 77.1 Decision and scope
+
+**The seven selected software components are Axolotl, Inspect AI, MLflow, vLLM, Temporal, the organization's existing LiteLLM gateway, and Argilla. They are seven logical components, not a requirement for seven servers, seven dashboards, or seven newly installed services. One Factory UI coordinates them through authenticated internal APIs and controlled worker jobs.**
+
+This is the implementation architecture, not an optional catalog of alternatives. Reuse these engines behind versioned Factory adapters rather than building competing training, generic evaluation, tracking, serving or workflow engines. Existing low-level PyTorch/Transformers/PEFT/TRL/Accelerate requirements apply underneath the selected Axolotl compatibility profile; they are not seven additional user-facing tools. Axolotl and Inspect are worker-executed software, not assumed always-on HTTP services. [S17, S19]
+
+The Factory still owns the target-application connectors, approved mandate, dataset grants, immutable splits, sealed qualification, cost accounting, approval policy, target adoption and one coherent UI. Component reuse does not delegate these decisions to vendor dashboards, mutable tags, user-supplied Python, model judgments or agent self-reports.
+
+These sections amend the implementation approach, not the original quality thresholds. All retained feature IDs and hardening contracts remain binding. A reused engine must satisfy their acceptance criteria through the actual adapter. Where an upstream capability is insufficient, implement the smallest tested adapter or reviewed extension; do not silently replace it with canned responses or reimplement the entire engine. An unresolved incompatibility is BLOCKED_DEFECT or BLOCKED_EXTERNAL, not a completed feature.
+
+## 77.2 Logical architecture
+
+```mermaid
+flowchart TD
+  U[Authorized user in approved boundary] --> UI[Unified Factory UI]
+  UI --> API[Factory API / identity / project policy]
+  API --> DB[Factory PostgreSQL: authorization and evidence]
+  API --> OB[Transactional outbox]
+  OB --> T[Self-hosted Temporal]
+  T --> DW[Data and review worker]
+  DW --> A[Internal Argilla API]
+  DW --> S[Private immutable artifact storage]
+  T --> TW[Training worker running Axolotl]
+  S --> TW
+  TW --> S
+  T --> EW[Evaluation worker running Inspect AI]
+  EW --> RT[Actual target application in isolated environment]
+  RT --> L[Existing internal LiteLLM gateway]
+  L --> V[Private vLLM / approved internal model endpoints]
+  RT --> TB[Real isolated tool backends]
+  T --> MW[Tracking and registry adapter]
+  MW --> M[Self-hosted MLflow]
+  M --> S
+  T --> DC[Factory deployment controller]
+  DC --> V
+  DC --> L
+  API --> AP[Evidence-bound approval service]
+  AP --> DC
+```
+
+The diagram is a logical data/control flow, not a firewall policy or physical deployment count. Explicit grants are required for every edge; long-running work starts from a durable workflow, not the browser. Existing endpoint-only models may remain served by their current internal runtime; importing them never requires copying unavailable weights into vLLM.
+
+OpenHands is deliberately absent from this runtime diagram. Section 81 defines a separate optional implementation environment. The completed Factory must start, operate, train, evaluate, recover and serve when OpenHands is not installed or is shut down.
+
+## 77.3 Components and exact responsibility
+
+| Component | Reuse | Execution/interface | Factory remains responsible for |
+|---|---|---|---|
+| Axolotl | Supported model training, preprocessing and adapter/checkpoint facilities | Pinned executable/library inside a GPU worker; typed job specification -> local configuration -> supervised process | Authorized data, approved method, token-mask validation, exact recovery qualification, budgets, integrity, lifecycle |
+| Inspect AI | Evaluation tasks, scoring, agent integration and evaluation logs | Pinned package in evaluation worker; Agent Bridge or approved actual-runtime adapter | Runtime parity, sealed-test permissions, deterministic business outcomes, complete accounting, statistics and production gates |
+| MLflow | Experiment tracking and model-registry records | Internal server via pinned SDK/REST surface | Policy, immutable evidence, purpose isolation, authoritative release approvals and reconciliation |
+| vLLM | Open-weight inference | Private model-serving process/API behind approved LiteLLM routes | Artifact/template/parser identity, authentication, tenancy, capacity and release-controlled rollout |
+| Temporal | Durable workflows and activity execution | Self-hosted internal service and authenticated worker task queues | Workflow definitions, outbox/idempotency/fencing, quotas, compensation and actual resource cleanup |
+| Existing LiteLLM | Organizational inference access and routing | Existing internal proxy; separate least-privilege inference and management bindings | Current access checks, complete upstream privacy validation, route identity, candidate aliases and actual product adoption |
+| Argilla | Review records, annotations and curation | Internal server via SDK/API; Factory renders the normal reviewer experience | Data grants, reviewer identity, immutable export, split authorization and final-test isolation |
+
+Upstream interfaces are verified against pinned releases, not assumed from similar names. Documentation confirms the CLI, agent bridge, self-hosting and deployment building blocks, not compliance with this Factory specification. [S17, S19, S20, S21, S24, S25]
+
+## 77.4 Sources of truth; no competing authority
+
+| State | Authority | Projection / integration rule |
+|---|---|---|
+| Mandate, source grants, role assignments, promotion policy | Factory PostgreSQL and signed policy snapshots | Vendor systems receive the minimum scoped references; cannot expand a grant |
+| Paid job intent, admission and resource reservations | Factory ledger plus transactional outbox | Temporal resumes execution; it does not independently authorize new spending |
+| Durable workflow progress | Temporal execution history | Factory exposes a reconciled read model, never invented progress |
+| Training/evaluation metrics and model catalog metadata | Measured producer results with MLflow records | Store external run/version IDs and immutable evidence hashes; user-editable tags are not acceptance evidence |
+| Dataset/model/checkpoint/evaluation bytes | Private, integrity-checked artifact storage | MLflow references or stores via that controlled boundary; never download untrusted artifacts solely because a registry entry points to them |
+| In-progress annotation | Argilla records/responses and Factory reviewer/audit mapping | Approval creates a canonical immutable dataset version; later annotations create a new version |
+| Final qualification results and access | Restricted Factory qualification enclave and signed evidence | No default publication of sealed answers/traces to ordinary MLflow, Argilla or implementation-agent accounts |
+| Production permission and actual route | Factory approval envelope plus observed target/LiteLLM/vLLM compatibility tuple | A manual registry tag or model alias edit cannot authorize release; drift invalidates the affected approval |
+
+Factory ModelVersion is the governance envelope around the external MLflow model/version identity, artifact digest and lineage. Do not build a second generic experiment tracker or editable shadow model registry. A mapped MLflow ID is not permission to serve. Approved artifacts are content-verified and route identity is independently observed.
+
+## 77.5 Integration records and stable contracts
+
+Add these versioned entities under the existing tenant/RLS/audit contract:
+
+- `ComponentBinding`: component key, organization/security-zone scope, optional project scope, deployment mode (`internal_service`, `worker_package`, `existing_gateway`), approved endpoint or worker profile, secret reference, network-policy identity, health result/timestamp and compatibility-lock reference. Worker packages have no invented API URL.
+- `ComponentVersionLock`: component/package/image versions and digests; dependencies, configuration digest, supported API/protocol versions, source/license evidence, telemetry configuration, mirrored artifacts and qualification status. Exact versions are installation inputs resolved by the qualification task, not `latest` tags or fictional example hashes.
+- `ExternalRunBinding`: tenant/project, Factory run ID, component key, external run/version/record IDs, generation/fencing token, reconciliation state and last observed integrity hash. Unique on component scope + Factory logical run + generation.
+- `ComponentSyncOutbox`: idempotent command identity, minimal payload reference, policy snapshot, expected version, attempt limit, next retry and resolution evidence. Store no credentials or raw sealed data in workflow history.
+- `DeploymentProfile`: boundary, mode, component placements, dependency inventory, approved ingress/egress, required scenario variants, actual storage/identity/CI bindings, compute pools and owner approval.
+- `ImplementationExecutorDecision`: selected build executor, embedded-control profile/section digest and optional existing-skill reference/hash, model route, isolation profile, evaluation receipts and adoption/rejection decision. This is build metadata, not a product runtime dependency. The file-only profile is R1_EMBEDDED; an external skill reference is nullable and cannot block that profile.
+
+Repository owner paths: `packages/component-contracts/`, `packages/integrations/{mlflow,argilla,litellm}/`, `services/training-worker/trainers/axolotl/`, `services/evaluation-worker/adapters/inspect/`, `spec/component-lock.schema.json`, `spec/deployment-profiles.yaml`, `infra/internal/` and `infra/airgap/`. The existing contract owner registers these paths before fan-out. Generated clients have a single writer. Runtime locks contain real values; incomplete onboarding cannot be treated as a working integration.
+
+## 77.6 Internal API and worker rules
+
+The browser calls Factory routes only for ordinary work. Factory authentication, authorization, CSRF protection, request validation, rate limits and audit apply before a downstream call or worker job. No browser-held LiteLLM management, MLflow administrator or Argilla service credentials. Native dashboards are optional, audited operator surfaces, not steps in the normal journey or substitutes for the Factory UI.
+
+Factory additions under `/api/v1`:
+
+| Route family | Contract |
+|---|---|
+| `/organizations/{id}/component-bindings` | Admin-only create/read/versioned update; opaque credentials; no arbitrary outbound proxy |
+| `/component-bindings/{id}/validate` | Real identity/version/connectivity test, scoped synthetic probe when allowed, known error outcomes |
+| `/projects/{id}/reviews` and `/reviews/{id}/responses` | Authorized review queue and optimistic-concurrency annotation, maintaining real reviewer provenance |
+| `/reviews/{id}/exports` | Approved immutable export into canonical datasets with grant/split checks |
+| `/training/runs/{id}/engine` | Read-only engine/config/checkpoint identity; user cannot inject commands or arbitrary plugin code |
+| `/evaluations/{id}/engine-evidence` | Authorized result/log view; enforce final-test visibility independently of vendor access |
+| `/model-versions/{id}/registry-binding` | Read-only authoritative mapping to external registry; no tag-to-approval mutation |
+| `/projects/{id}/component-status` | Real health, sync lag, identity and blocked reason; no fabricated success |
+
+Mutating requests use the existing idempotency and outbox contract. Enforce tenant and object ownership at every adapter, not just the top-level route. Validate TLS with approved CA roots; use mTLS or service identity where supported and enforce network/authenticated-proxy controls otherwise. A vendor lacking native OIDC or multi-tenant controls cannot be exposed directly and declared secure. Separate vendor databases/roles and scopes; do not write vendor tables directly.
+
+# 78. Concrete Adapter Implementation Contracts
+
+## 78.1 Axolotl training adapter
+
+Implement `AxolotlTrainingAdapter` in the existing worker, not another training platform:
+
+1. Consume a signed Factory TrainingJobSpec with tenant, purpose grants, model digest, training/validation artifacts, method, approved rule version, resource lease, spend reservation and compatibility tuple.
+2. Convert canonical conversations through the same pinned model-specific renderer used for token-mask and serving-parity checks. Preserve tool IDs/schemas and assistant-only supervision. The actual tensors supplied to the trainer, not a separate demonstration, must pass the loss-mask and packing tests.
+3. Resolve only mirrored/local model, tokenizer, dataset and plugin paths. Reject URL configuration files, unapproved remote code, automatic hub pushes, unapproved external tracking callbacks, cloud launch flags, shell injection and new packages at job runtime.
+4. Generate a deterministic local Axolotl config and validate it against the pinned installed release. Persist the resolved config hash, dependency tuple, dataset identities and effective hyperparameters. The UI never asks the user to write YAML.
+5. Invoke the approved CLI/library using an argument array, controlled environment and isolated working directory. The documented CLI includes preprocessing, training and checkpoint-resume operations; these are integration points, not proof that every model/checkpoint is compatible. [S17]
+6. Execute actual preflight forward/backward, LoRA/QLoRA steps, checkpoint publication, final artifact load and subsequent serving parity. Qualified model families only; unsupported combinations block rather than silently changing algorithm, model or privacy policy.
+7. Attach a version-pinned metrics/checkpoint adapter and supervise the full process group. Detect NaN/Inf, hung worker, failed child, disk-full and stale generation. Record honest measured progress; cancellation and termination require observation, not successful signal delivery alone.
+8. Validate complete checkpoint state under Sections 17/68/70. An adapter export is continued tuning, not exact resume. On recovery replay neither a paid launch nor a partial checkpoint as success.
+9. Explicitly set `AXOLOTL_DO_NOT_TRACK=1` and `DO_NOT_TRACK=1`, remove external reporting callbacks, and test startup, training, exception and teardown paths with network denial. Axolotl documents opt-out telemetry enabled by default. [S18]
+10. Export signed/hash-verified artifact and evidence references; synchronize MLflow through the controlled tracking adapter. An MLflow outage cannot fabricate completion or lose the local durable result.
+
+LoRA/QLoRA tasks FTF-0708/0709 now configure/integrate Axolotl, not independently authored optimizer loops. Retain real-gradient, artifact, recovery and downstream performance acceptance. A direct TRL trainer is not a silent fallback; a documented compatibility gap requires separately reviewed implementation and unchanged tests.
+
+## 78.2 Inspect AI evaluation adapter
+
+Implement `InspectEvaluationAdapter` as a bounded evaluation worker job. Inspect's Agent Bridge can integrate external agents; use it where the actual runtime is compatible, otherwise implement the approved HTTP/container runtime bridge without replacing the product agent. [S19]
+
+Map each locked EvaluationCase to stable case ID, category, severity, environment snapshot, runtime binding, permitted model route, time/step/token limits and scorer contract. Execute the real target entrypoint, its real orchestration/context/permission code, and real isolated dependencies. A reconstructed generic solver cannot qualify the target product.
+
+Inspect scorers supply measurements; the Factory applies its independent complete-case accounting, statistical gates, policy and approval. An Inspect summary percentage, LLM judge result or manually edited evaluation log cannot directly promote a model. Preserve independent business-state verification, including attempted forbidden calls even when tool authorization blocks them.
+
+The normal development worker may load training/validation/development-authorized data only. The sealed final worker uses a distinct service identity, task queue, temporary workspace, storage grants and log destination. Candidate/model/config freeze happens before access. No final contents are sent to coding agents, ordinary Argilla queues or shared MLflow traces. A failed/cancelled run still records every assigned case as passed/failed/error/cancelled/not-run; missing cases block approval.
+
+Pin Inspect version, actual bridge code, scorer code, rubric, judge route, target runtime, dependencies, case manifest and output-log schema. Store both restricted raw logs and redacted normal-UI summaries. Disable external evaluation/model destinations and content telemetry. Verify route fingerprints, streaming/tool formats, cost accounting, cancellation and restart.
+
+**Explicit Inspect bridge parity:** Inspect documents that generation settings such as temperature, token limits and reasoning parameters are not all forwarded by default; its bridge offers `forward_generation_config` for forwarding. The selected adapter must verify the pinned version and preserve the target's approved effective settings, or lock an explicit candidate-specific change. Compare captured effective parameters rather than assuming the bridge is transparent. [S19]
+
+**Provider-side execution is a separate boundary:** hosted web/code/MCP tools and remote-media resolution may occur outside the child sandbox. Deny unapproved capabilities/destinations in the bridge and upstream route; a container firewall alone is not proof. Keep pre-filter model/tool-attempt evidence so approval filtering cannot hide attempted forbidden actions. Add real positive/denial tests to FTF-R004/Q16/Q35. [S19]
+
+Required regression evidence: exact expected state for real tool transactions; failed tool recovery; timeouts; injection into user/tool/result text; malformed outputs; incomplete cases; final-answer access denial; engine-log tampering; incompatible bridge; private judge routing. Replacing Factory evaluator boilerplate must not weaken any Q16–Q18 assertion.
+
+## 78.3 MLflow tracking and registry adapter
+
+Deploy the self-hosted tracking/registry service with a production database and private artifact store, not a user-local SQLite/file store for the production profile. MLflow exposes tracking and registry infrastructure; the pinned server and client must be qualified together. [S20]
+
+Create a deterministic mapping from Factory logical run/model version to MLflow external IDs; reconcile ambiguous create requests before retrying. Store immutable reference fields for manifest/data/config/artifact hashes. Never rely solely on mutable tags for identity, permissions, approval or final result truth.
+
+Use write-through/outbox synchronization. Worker results first commit to durable restricted storage and Factory evidence; MLflow writes are retried idempotently. On outage show `TRACKING_SYNC_PENDING`, preserve measured results and block newly required qualification until reconciliation. Serving the last approved model must not depend on querying MLflow for each request.
+
+Isolate organizations through tested service scopes/instances or an authenticated policy-enforcing facade; a common admin API key is not end-user authorization. Grant the browser no vendor write credentials. Normal users cannot alter aliases or tags through native endpoints to bypass Factory approval. Default autologging must not copy raw prompts, datasets, environment variables, secrets or sealed answers.
+
+A registry entry resolves only approved internal artifact locations. Block untrusted model deserialization/remote URI resolution. Deletion/retention follows Factory lineage and tombstones. Protect evidence snapshots against mutable registry edits; detect and audit drift. Backup the MLflow database/configuration and artifact mappings, and prove restored records resolve the same verified artifact.
+
+## 78.4 Argilla review and curation adapter
+
+Deploy Argilla internally and call its version-pinned SDK/API from Factory data/review workers. Build the normal review controls using the Factory design system; do not redirect users to another login or use an iframe as the primary implementation. Argilla's documented deployment includes a server, database and search engine: these dependencies must appear in the actual deployment inventory rather than a fictitious seven-container budget. [S21]
+
+Map organization/project to isolated vendor workspace/dataset scope; maintain record identity, source group, content hash, reviewer identity, annotation schema and optimistic-concurrency version. Prove that the chosen API supports the response ownership/impersonation method used; otherwise preserve real reviewer identity in the Factory audit and expose only a proven least-privilege mapping. Do not record every human response as an indistinguishable admin action.
+
+Only authorized source/development data enters normal annotation queues. Source access is not training permission. An approved export revalidates schemas, data-use grants, content hashes, poison/PII checks and group-aware isolation before creating a new canonical immutable dataset. Editing an Argilla row cannot mutate an existing split or trained-model lineage. Replayed webhooks/exports must be idempotent; signatures or an authenticated reconciled polling design are required.
+
+Sealed final questions/answers are excluded from ordinary review and search indexes. Final-suite authoring, when review tooling is needed, requires an independently permissioned enclave and is not accessible to implementers or teachers. Search snippets, embeddings, suggestions, logs, cached queries and exports inherit the same restrictions.
+
+The maintainers state that new features are no longer planned while bug fixes/patches continue. This is a material lifecycle risk, not an automatic reason to invent a new engine. Before release record a support owner, pinned version, vulnerability/remediation policy and tested canonical export/restore. Keep the adapter replaceable; if it cannot meet required isolation/maintenance gates, block and request an explicit architecture decision rather than silently swap products. [S22]
+
+## 78.5 Temporal, vLLM and existing LiteLLM integration
+
+**Temporal:** deploy self-hosted. Workflows pass IDs and protected references, not raw training records or model outputs. Use versioned task queues, scoped worker identities, bounded heartbeats/timeouts/retries, outbox/fencing and compensation. Separate reconciliation from retrying an ambiguous paid command. Temporal is the workflow engine; no OpenHands scheduler or bespoke queue replaces it. A Kubernetes admission controller may allocate capacity later through the existing ComputeProvider contract, not become a second owner of job intent. [S24]
+
+**vLLM:** run only qualified model/template/parser/adapter tuples on private inference workers; register stable per-candidate routes in existing LiteLLM. Dynamic admin interfaces remain private to the serving controller. Set `VLLM_NO_USAGE_STATS=1` and `DO_NOT_TRACK=1`; test rather than assume all outbound behavior is covered by those switches. Final evaluation and live canaries use identity-pinned routes. Existing endpoint-only imports remain eligible without an artificial vLLM conversion. [S23]
+
+**LiteLLM:** reuse the organization's deployment and administrator-approved configuration; do not automatically install, overwrite or replace it. Factory onboarding discovers its actual versions, accessible aliases, authentication, management capabilities and all permitted upstreams. No training API is invented for LiteLLM. Separate inference keys from registration management identity; all fallback/caching/logging/callback routes must meet the active profile. If management write access is unavailable, block automated registration and show the exact administrative prerequisite; do not falsely mark the target adopted. [S25]
+
+# 80. Unified UI, Recovery and Component Lifecycle Acceptance
+
+## 80.1 One complete user journey
+
+The normal user remains in the Factory UI for: project/mandate definition; target repository/runtime connection; existing model import; LiteLLM selection; source connection and field mapping; review/annotation; immutable export and split; training estimates/launch/progress/cancel/recovery; baseline/development/final evaluation; experiment comparison; registry browsing; explicit approval; canary/rollback; target adoption; drift, cost and audit inspection.
+
+User-visible component names may appear in provenance or diagnostics, but component dashboards are not required workflow steps. The user does not write Axolotl YAML, Inspect Python, MLflow registry scripts, Argilla SDK code or Kubernetes job manifests for a supported normal flow. Integration of a new unsupported target runtime/model still requires an explicit supported adapter and validation; do not disguise that engineering prerequisite as automatic discovery.
+
+The Factory's design tokens, accessibility, validation, responsive layout and saved-state rules apply to all surfaces, including data review. Views display actual backend status, source of measurements and whether evidence is incomplete/stale/restricted. No invented default records, percentages, deployments or claim that a button completed a job before an observed result.
+
+## 80.2 User action to internal effect
+
+| UI action | Backend/worker effect | Completion evidence |
+|---|---|---|
+| Connect source | Source-specific validator + purpose grant + controlled preview | Real connectivity/count limitations and explicit mapping/consent |
+| Review records | Factory review API -> Argilla adapter | Persisted real reviewer response/version; concurrent-edit conflict tested |
+| Approve dataset | Controlled Argilla export -> canonical normalizer/validators -> immutable artifacts | Exact export/content/group hashes and valid grants; no old split mutation |
+| Start training | Authorized outbox -> Temporal -> compute lease -> Axolotl worker | Actual preflight/metrics/complete artifact; no fake job queue state |
+| Evaluate existing or new model | Temporal -> Inspect worker -> actual runtime/tools/models | Complete cases and signed measured evidence with correct visibility |
+| View experiment/model | Factory read model -> reconciled MLflow metadata | External IDs and hashes agree; sync delay is visible |
+| Approve/deploy | Factory gates -> private serving -> LiteLLM -> actual target adoption | Fresh compatibility tuple, routed real call, session-safe rollout |
+| Roll back | Same controller restores verified prior route | Real target outcome/identity and audit; no success from a tag update |
+
+## 80.3 Failure and degraded-mode rules
+
+- Argilla unavailable: pause review writes/exports and expose the affected state. Already locked authorized datasets remain usable; never substitute empty or fabricated annotations.
+- MLflow unavailable: durable engine outputs/evidence remain internal; retry synchronization with idempotency. Do not fabricate a registry ID, lose lineage or revoke an existing healthy production route merely because the tracking UI is down. New releases requiring complete registry evidence remain blocked.
+- Temporal/API outage: durable intent and worker fencing prevent duplicate jobs. Do not implement a browser fallback that directly launches training.
+- Axolotl/Inspect crash: partial outputs remain partial; reconcile case/job completion, checkpoint and cost. No success from process exit alone or a missing error string.
+- LiteLLM/model-serving outage or identity drift: fail/rollback according to qualified policy. No automatic external fallback in internal-only or air-gapped mode.
+- Browser refresh: use persisted run/draft IDs, recover real state and avoid repeating paid writes.
+
+Test each failure against the integrated internal system. Recovery must preserve tenant, grant, manifest, artifact, candidate, version and billable-resource identity across components.
+
+## 80.4 OSS lifecycle and supporting storage
+
+Every selected component and transitive dependency requires approved license/source notices, pinned versions/digests, vulnerability checks, upgrade/rollback tests, provenance and an identified maintainer/operator. Public repository availability or an upstream label is not evidence of required SLOs or perpetual support. Required features cannot depend on a paid SaaS service or enterprise-only feature without an explicit approved change.
+
+For new installations, the old blanket MinIO default is removed: the official MinIO repository is archived. Retain compatibility with organization-provided S3 endpoints that pass policy and tests; do not silently migrate existing organizational data. Qualify the organization's maintained S3 service or the selected SeaweedFS-based offline fixture against the actual multipart, checksum, versioning, immutable-publication, identity, retention/deletion, encryption, backup and restore contract. Unsupported S3 features are blockers, not silently ignored flags. [S31, S32]
+
+Argilla remains selected subject to its explicit lifecycle gate in Section78.4. Include its actual database, search indexes and any release-specific background service in inventory and recovery. Canonical datasets and annotations must export independently of vendor availability. Search indexes may be rebuilt only from complete authorized canonical source; sealed data must never be restored into a normal index.
+
+## 80.5 Expanded disaster recovery and upgrade proof
+
+Extend existing RPO/RTO and upgrade tests to Factory PostgreSQL, Temporal persistence/task routing, MLflow database/artifact mappings, Argilla records/annotation identities and search rebuild, component bindings, encrypted secrets/references, storage, model artifacts and LiteLLM routes. Restore into a clean isolated environment; compare hashes and grants; invoke the restored target through its expected alias.
+
+Test N-1 to N for each changed component tuple with in-flight training/evaluation and queued sync commands. Fenced old workers cannot publish new results after migration. Cache/search/MLflow projections are repaired from authoritative data without duplicate paid work or promotion. A restored pre-deletion backup honors tombstones and source revocations.
+
+# 84. Embedded Release 1 Coding-Agent Execution Constitution
+
+**Control ID: `R1-EXEC-1.0`. This section is a complete, mandatory implementation operating contract supplied inside this file. It is not a copy, modification or certification of any separately maintained Agentic SDLC skill.** The Factory implementation can start with this file alone in an approved coding host. No prior chat, archive, separate task ledger, external skill bundle, OpenHands, Superpowers or Spec Kit installation is required. Real credentials, infrastructure, data permissions and independent release authority remain explicit environment inputs.
+
+## 84.1 Mission and authority
+
+Implement the complete Release 1 product specified here; do not return only another plan, scaffold, disconnected dashboard or set of simulations. Preserve every required task, capability and qualification assertion. Use existing approved components through their supported interfaces instead of rebuilding their engines. Maintain one unified Factory UI and reuse the organization's existing LiteLLM without overwriting it.
+
+The release scope, security boundaries, sealed evaluation rules, quality thresholds and acceptance criteria are protected requirements. A producer cannot weaken them to make tests pass, meet a speculative budget, avoid an unavailable resource, or finish a task. Log a specification conflict or new defect and continue independent unblocked work. Changes to protected requirements need independent owner review and a new recorded revision; they never rewrite historical evidence.
+
+The source snapshot of this file is `spec/RELEASE_1.md`. It is the single supplied specification. Derived JSON/YAML/Markdown files are implementation outputs generated from or checked against it, not new inputs the user must provide. Reference documentation explains upstream interfaces; it is not a substitute source of product scope. Do not require previous v1/v2 documents or the earlier UI previews.
+
+## 84.2 First execution, in exact order
+
+1. Read the front matter, Sections 0, 4–5, 57A, 64, 73, 75.1, 77–82 and this section. Inspect the actual repository root, current branch and installed tooling; never assume code or infrastructure exists merely because this plan names it.
+2. Extract the executable helper from the `R1:HELPER` block in Section 86 into `tools/r1_handoff.py`. This helper uses Python's standard library only and does not download, install, call models, run product tests, or modify an external account.
+3. Run `python tools/r1_handoff.py validate --plan FINE_TUNING_FACTORY_RELEASE_1.md --self-test`. A document validation pass proves document structure only.
+4. Run `python tools/r1_handoff.py bootstrap --plan FINE_TUNING_FACTORY_RELEASE_1.md --repo .`. It produces the initial task ledger, architecture/scenario inventories, specification snapshot and empty tracker. It refuses to overwrite different existing files. Preserve a nonempty existing tracker and reconcile under review rather than resetting progress.
+5. Run `python tools/r1_handoff.py packet FTF-0001 --plan FINE_TUNING_FACTORY_RELEASE_1.md`. Read the resulting bounded task packet, then inspect the actual relevant code and contracts. The initial DAG frontier is FTF-0001; its descendants become eligible only after their dependencies have merged evidence.
+6. Create the initial repository scaffold and real checks under FTF-0001/0002/0003; implement the protected specification/task/release verifiers under FTF-H001. Before those scripts exist, use actual direct installation/build/lint/test commands and capture their outputs. Never create a verifier that unconditionally returns success merely to resolve this bootstrap dependency.
+7. Under FTF-H002, inspect available environment bindings and report real external prerequisites. Under FTF-R001, freeze the component/interface ownership before engine-specific fan-out. Missing secrets or GPUs do not block pure local contract work, but they do block any integration claim requiring them.
+8. Continue by dependency-ready, disjoint work waves. Mark each task IN_PROGRESS before production-code changes. Do not work strictly by numeric phase order when the explicit DAG permits safe parallel work.
+
+The user supplies only this file. The coding agent creates all repository control files and scripts. An organization administrator may still need to approve real access, credentials, spending and deployment; those are not documentation gaps or permission to invent secrets.
+
+## 84.3 Bounded task packet and readiness
+
+For every task, resolve the structured record in Section 85 with its common defaults. Load its acceptance/negative cases, binding sections, prerequisites, initial owner paths, shared locks and verification commands. The helper generates task-specific context so a low-cost model does not repeatedly receive the entire file.
+
+A task is READY only when all prerequisite commits are merged and relevant checks pass; the affected API/schema is known; exact write paths and locks are declared; applicable positive/negative tests and expected counts are mapped; and required external resources are available for the slice being claimed. Task titles alone are not an implementation recipe. Initial path suggestions may be refined to reuse coherent existing modules under recorded ownership; do not create a meaningless module per ticket.
+
+Split an oversized parent into bounded children without deleting any parent criterion. A child owns a single coherent behavior and its tests. Parent completion requires all children plus merged integration evidence. Task packets are an input-size optimization, not permission to omit a security rule or acceptance criterion. If a packet exceeds the configured limit, split/refine context explicitly; never truncate silently.
+
+Every working instruction must identify task ID, source-spec digest, dependency commits, write set, user-visible behavior, API/data effects, failure cases, tests and evidence destination. Never feed credentials, sealed final answers or private production records into coding-model context.
+
+## 84.4 Implementation and testing loop
+
+Use this loop for each bounded change: inspect existing behavior -> express the required positive/negative behavior as tests -> demonstrate an appropriate failing assertion where feasible -> implement the smallest coherent change -> run formatting, lint and type checks -> run task tests and affected real integrations -> inspect actual UI where applicable -> request independent review -> fix valid findings -> rerun -> merge under protected checks.
+
+For security, authorization, data-purpose, budget, training-mask, evaluation, promotion and recovery logic, require executable negative tests. Intentional faults used to prove a gate must actually fail that gate. A linter failure or missing dependency does not prove the intended business assertion was tested. Do not delete or weaken the failing assertion to obtain a green run.
+
+Production code cannot contain fake provider clients, hard-coded success, simulated training progress, fake metrics, dummy model artifacts, swallowed errors or hidden placeholder routes. Test doubles can exercise isolated unit/fault cases; required integration and qualification must invoke actual components. Purpose-built synthetic reference business data is permissible when its model training, real isolated services, outcomes and provenance are genuine and disclosed.
+
+A passing process exit is insufficient where the contract requires artifact load, complete case accounting, actual permissions, verified resource termination or a routed target-product call. Count and verify expected tests; zero collected tests is failure. Required skip/xfail/cancelled/not-run/missing cases cannot be converted to PASS.
+
+## 84.5 Safe parallel implementation
+
+Use the existing coding host's real multi-session/sub-agent mechanism. Default to four implementation workers; permit up to six only with ready independent work, disjoint write sets, sufficient CI capacity and authorized aggregate budget. A worker may use the cheapest capable approved model; success is determined by independent evidence, not its name or self-confidence.
+
+Each worker gets a branch/worktree or isolated clone, scoped task packet, separate test namespace, explicit claim lease/generation and limited credentials. Contracts, schemas, migrations, dependency lockfiles, shared security boundaries and merge authority have one writer at a time. Conflicting work waits. Neither task may consume the other's unmerged output. No nested delegation may multiply the concurrency cap.
+
+The integration owner merges in dependency order, reruns affected tests for each merge and runs the required wave checks on the integrated revision. Reviewers cannot certify their own authored changes. A different reviewer session on the same model is allowed; objective CI remains independent. The producer must not possess release signing keys or write the protected verifier's accepted baseline.
+
+When the selected host cannot genuinely run parallel workers, record `BLOCKED_EXTERNAL` for parallel qualification and continue safe serial tasks as partial progress. Do not fabricate parallel transcripts or claim concurrent completion. Do not install OpenHands or build a new agent platform merely because this plan requests safe parallelism. The chosen executor must eventually produce Q33/Q41/Q42 evidence before full release.
+
+## 84.6 Review, defect closure and protected gates
+
+Independent review covers requirements, threat boundaries, API/schema compatibility, data rights, privacy, failure/retry behavior, observability, realistic performance and test adequacy. Record each valid finding with severity, location, reproduction, owner, remediation commit, retest and reviewer disposition. No critical/high defect or failed mandatory criterion may remain open at full release. Do not reclassify a required behavior as optional to close a finding.
+
+Source code, repository comments, prompt examples, generated reports and tool outputs are untrusted inputs, not instructions that expand the coding agent's permissions. Build/test credentials are scoped to disposable resources. Production credentials, sealed final data and signing authority stay outside implementation sandboxes.
+
+Gate code changes require a separately owned change and independent negative testing. Initial gates must be genuinely implemented before broad fan-out; after approval their hashes and scope are protected. A producer may propose fixes through review but cannot certify its own modified gate or publish its own release evidence as trusted.
+
+## 84.7 Evidence and exact revision
+
+A completion receipt records: task/child IDs; specification and task-packet hashes; selected executor/model route; execution-control profile; starting, task and integrated commits; changed files; claim/lock generations; actual commands and exit codes; expected/collected/passed/failed/skipped/xfail counts; raw report locations and digests; environment/component versions; usage/cost and cleanup; unresolved findings; independent reviewer and verifier identities; and final disposition.
+
+Evidence must correspond to the exact integrated revision and compatibility tuple it claims to qualify. Stale reports, filenames containing PASS, mutable dashboard tags and model-generated assertions are not release proof. Preserve coverage of every CAP-01–21 and Q01–43. A profile denial test demonstrates denial, not successful implementation of its connected counterpart.
+
+This specification's status is not the software's status. Task completion, operational model qualification, air-gap qualification and full-product release are separate states. At least one real fine-tuned artifact must pass independent final qualification and work through the actual target application and LiteLLM. A previously tuned or base model may remain the cheaper operational choice; never forge improvement to force a new winner.
+
+## 84.8 Cost controls and model escalation
+
+Before a paid implementation campaign, measure representative task completion including failed attempts, code review, context repetition and CI costs. Use actual provider billing units and approved prices; unknown usage/cost remains unknown rather than zero. Use task-scoped context, bounded loops, whole-delegation-tree concurrency limits and separate implementation/qualification/operating budgets.
+
+An allowed model escalation follows recorded evidence of a blocked task or repeated failure, stays within authorized budget/privacy, and does not change acceptance criteria. Do not hard-code an unverified Luna model identity, API price, success probability, $100/$300 delivery ceiling or calendar guarantee. The cheapest model is an execution choice, not the product architecture or a promise of competence.
+
+## 84.9 Existing Agentic SDLC compatibility
+
+The user may already have an approved frozen Agentic SDLC skill (identified in prior project decisions as v20.1). Do not replace, alter, recreate or claim to have loaded that external skill without the actual artifact. This single-file release neither changes that skill's frozen status nor claims to reproduce its exact private content.
+
+The mandatory control profile for a file-only handoff is **R1_EMBEDDED**, whose rules are all in this section and the referenced sections inside this file. Record the actual section digest and this file's digest in the executor receipt. No separate skill file is needed to implement Release 1 under that profile.
+
+If the authentic existing skill is already installed, record **R1_EMBEDDED_PLUS_EXISTING_SKILL** with its real version/hash and apply its compatible additional controls unchanged. Missing optional skill evidence prevents only a claim of exact external-skill conformance; it does not block the R1_EMBEDDED path. A conflict with mandatory release/security rules is reported, not resolved by silently weakening either set. OpenHands/Superpowers/Spec Kit remain optional build-tool decisions, never mandatory deliverables or eighth runtime components.
+
+## 84.10 Durable progress and truthful closeout
+
+Maintain `docs/implementation/TRACKER.json`, `DECISIONS.md` and `DEFECTS.json` after each task/wave. Include exact next dependency-ready action, active branch/worktree and resource ownership, failed checks, external blockers, remaining spend and cleanup. Preserve user-owned files and data; never reset a tracker or rewrite an original target repository to hide incomplete work.
+
+At a session/context boundary, save commits and reproducible continuation instructions. Do not promise background progress or invent a running worker. Continue other available authorized work when one dependency is blocked. Full release is complete only after all required task evidence, all applicable scenario assertions, independent approval and a signed exact-revision release manifest pass.
+
+The final implementation report must identify the deployed endpoint/approved target binding, tested revision and artifacts, qualified topology/profiles, test and defect counts, measured cost/performance, at least one qualified tuned model, backup/rollback evidence and remaining operational ownership. Any unmet mandatory obligation is explicit; no “production-ready” label until it is resolved.
+
+---

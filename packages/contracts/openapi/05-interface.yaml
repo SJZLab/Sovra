@@ -28,6 +28,13 @@ info:
     `quality-report`, `issues`, `issues/{issue_id}`, `resolve-issue` and
     `issue-resolutions`. Responses carry digests, positions, indices and codes
     only, never record content or a detector message.
+
+    FTF-0519-P2 adds the immutable split manifest surface under
+    `.../projects/{project_id}/dataset-splits`: list, get, `approve` and `reject`.
+    There is no create route (a proposal comes from the data worker). Responses carry
+    counts, role hashes, sources, frozen grants, status and hashes and a finding-count
+    leakage summary; never an assignment, a record id, a group id, a finding, a review
+    text or a storage key.
 paths:
   /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-sources:
     parameters:
@@ -847,6 +854,210 @@ paths:
           $ref: '#/components/responses/RoleNotAuthorized'
         '404':
           description: '`not_found`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-splits:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        List the project's split manifests (FTF-0519-P2), ordered by id. Each item is the
+        manifest scalars, hashes and a finding-count leakage summary; never an assignment,
+        record id or group id.
+      operationId: listDatasetSplitManifests
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+        - name: after
+          in: query
+          required: false
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: A page of manifests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSplitManifestPage'
+        '400':
+          description: '`invalid_limit` or `invalid_after`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-splits/{manifest_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: >-
+        One manifest with its four role rows (record and group counts and role hashes
+        only), its sources with the frozen grants and quality report hashes, its status and
+        its hashes. Never an assignment, record id, group id or storage key.
+      operationId: getDatasetSplitManifest
+      responses:
+        '200':
+          description: The manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSplitManifestDetail'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/RoleNotAuthorized'
+        '404':
+          description: '`not_found`, identical for a missing and a foreign manifest.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-splits/{manifest_id}/approve:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Lock a proposed manifest (FTF-0519-P2). The reviewer is the authenticated principal.
+        Needs workspace_admin or organization_admin. The same request replays the stored
+        outcome (200, `replayed: true`) and writes nothing. The Idempotency-Key is stored with a
+        digest of the request (action, manifest, expected hash, reviews); the same key with
+        another digest is 409 `idempotency_key_reused`.
+      operationId: approveDatasetSplitManifest
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9._:-]{8,200}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetSplitManifestApproveRequest'
+      responses:
+        '200':
+          description: Locked, or an identical earlier request replayed (the body says which in `replayed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSplitManifestOutcome'
+        '400':
+          description: >-
+            `invalid_body`, `invalid_idempotency_key` or `invalid_review`.
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` (including ml_engineer).'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: >-
+            `manifest_changed`, `manifest_not_proposed`, `leakage_not_clear`,
+            `manifest_insufficient`, `manifest_tampered` or `idempotency_key_reused` (the
+            Idempotency-Key was already used by a request with another digest).
+        '413':
+          description: '`request_too_large`.'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/dataset-splits/{manifest_id}/reject:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: manifest_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: >-
+        Reject a proposed manifest (FTF-0519-P2); the next proposal is a new version. Needs
+        workspace_admin or organization_admin. The same request replays (200,
+        `replayed: true`) and writes nothing. The Idempotency-Key is stored with a digest of the
+        request; the same key with another digest is 409 `idempotency_key_reused`.
+      operationId: rejectDatasetSplitManifest
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9._:-]{8,200}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetSplitManifestRejectRequest'
+      responses:
+        '200':
+          description: Rejected, or an identical earlier request replayed (the body says which in `replayed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetSplitManifestOutcome'
+        '400':
+          description: '`invalid_body` or `invalid_idempotency_key`.'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          description: '`role_not_authorized` (including ml_engineer).'
+        '404':
+          description: '`not_found`.'
+        '409':
+          description: >-
+            `manifest_changed`, `manifest_not_proposed` or `idempotency_key_reused` (the
+            Idempotency-Key was already used by a request with another digest).
+        '413':
+          description: '`request_too_large`.'
 components:
   responses:
     NotAuthenticated:
@@ -1054,6 +1265,14 @@ components:
         declared_size_bytes: {type: integer, minimum: 1, maximum: 10737418240}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string, minLength: 1, maxLength: 255}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
+          default: utf-8
+          description: >-
+            FTF-0501-F2. The text encoding finalize decodes the whole object with,
+            strictly. Optional (default `utf-8`); not allowed with the spreadsheet type
+            unless `utf-8`.
       required:
         - dataset_source_connection_id
         - purpose
@@ -1075,6 +1294,9 @@ components:
         declared_size_bytes: {type: integer, minimum: 1}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
         rejection_reason: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
@@ -1088,6 +1310,7 @@ components:
         - declared_size_bytes
         - declared_sha256
         - declared_content_type
+        - declared_encoding
         - rejection_reason
         - created_at
         - expires_at
@@ -1117,6 +1340,9 @@ components:
         declared_size_bytes: {type: integer, minimum: 1}
         declared_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
         declared_content_type: {type: string}
+        declared_encoding:
+          type: string
+          enum: [utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256]
         rejection_reason: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
@@ -1132,6 +1358,7 @@ components:
         - declared_size_bytes
         - declared_sha256
         - declared_content_type
+        - declared_encoding
         - rejection_reason
         - created_at
         - expires_at
@@ -1336,4 +1563,172 @@ components:
           type: array
           items: {$ref: '#/components/schemas/DatasetIssueResolution'}
       required: [quality_report_id, resolution_version, replayed, items]
+      additionalProperties: false
+    DatasetSplitRole:
+      type: string
+      enum: [train, validation, development_eval, final_qualification]
+    DatasetSplitManifestStatus:
+      type: string
+      enum: [proposed, locked, rejected]
+    DatasetSplitLeakageSummary:
+      type: object
+      description: Counts and method names only; no finding, record id, score or review text.
+      properties:
+        status: {type: string}
+        finding_counts:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: {type: integer, minimum: 0}
+        methods_run: {type: array, items: {type: string}}
+        methods_not_run: {type: array, items: {type: string}}
+        review_count: {type: integer, minimum: 0}
+        leakage_report_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        reviewed_leakage_report_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+      required: [status, finding_counts, methods_run, methods_not_run, review_count, leakage_report_sha256, reviewed_leakage_report_sha256]
+      additionalProperties: false
+    DatasetSplitManifest:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        organization_id: {type: string, format: uuid}
+        project_id: {type: string, format: uuid}
+        name: {type: string}
+        version: {type: integer, minimum: 1}
+        parent_version:
+          oneOf:
+            - {type: integer, minimum: 1}
+            - {type: 'null'}
+        strategy: {type: string}
+        seed: {type: string}
+        ratios: {type: array, minItems: 4, maxItems: 4, items: {type: integer, minimum: 0}}
+        cutoff:
+          oneOf:
+            - {type: integer}
+            - {type: 'null'}
+        normalization_version: {type: string}
+        tokenizer_identity:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        split_manifest_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        proposal_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        leakage_report_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        leakage_status: {type: string}
+        reviewed_leakage_report_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+        migrated_from_legacy_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+        status: {$ref: '#/components/schemas/DatasetSplitManifestStatus'}
+        frozen_manifest_sha256:
+          oneOf:
+            - {$ref: '#/components/schemas/Sha256Hex'}
+            - {type: 'null'}
+        approved_by:
+          oneOf:
+            - {type: string}
+            - {type: 'null'}
+        locked_at:
+          oneOf:
+            - {type: string, format: date-time}
+            - {type: 'null'}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        leakage_summary: {$ref: '#/components/schemas/DatasetSplitLeakageSummary'}
+      required: [id, organization_id, project_id, name, version, parent_version, strategy, seed, ratios, cutoff, normalization_version, tokenizer_identity, split_manifest_sha256, proposal_sha256, leakage_report_sha256, leakage_status, reviewed_leakage_report_sha256, migrated_from_legacy_sha256, status, frozen_manifest_sha256, approved_by, locked_at, created_by, created_at, updated_at, leakage_summary]
+      additionalProperties: false
+    DatasetSplitManifestRoleRow:
+      type: object
+      properties:
+        role: {$ref: '#/components/schemas/DatasetSplitRole'}
+        purpose: {type: string}
+        record_count: {type: integer, minimum: 0}
+        group_count:
+          type: integer
+          minimum: 0
+          description: >-
+            Omitted on the `final_qualification` row for a caller that may not read held-out data
+            (ml_engineer), whose final row keeps only its record count and role hash.
+        role_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+      required: [role, purpose, record_count, role_sha256]
+      additionalProperties: false
+    DatasetSplitManifestSourceRow:
+      type: object
+      properties:
+        dataset_id: {type: string, format: uuid}
+        dataset_name: {type: string}
+        dataset_purpose: {type: string}
+        dataset_version: {type: integer, minimum: 1}
+        dataset_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        dataset_source_connection_id: {type: string, format: uuid}
+        allowed_purposes_snapshot: {type: array, items: {type: string}}
+        quality_report_id: {type: string, format: uuid}
+        quality_report_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        excluded_positions_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+      required: [dataset_id, dataset_name, dataset_purpose, dataset_version, dataset_sha256, dataset_source_connection_id, allowed_purposes_snapshot, quality_report_id, quality_report_sha256, excluded_positions_sha256]
+      additionalProperties: false
+    DatasetSplitManifestDetail:
+      allOf:
+        - $ref: '#/components/schemas/DatasetSplitManifest'
+        - type: object
+          properties:
+            roles:
+              type: array
+              items: {$ref: '#/components/schemas/DatasetSplitManifestRoleRow'}
+            sources:
+              type: array
+              description: >-
+                A caller that may not read held-out data (ml_engineer) gets no source whose
+                `dataset_purpose` is `held_out_evaluation`.
+              items: {$ref: '#/components/schemas/DatasetSplitManifestSourceRow'}
+          required: [roles, sources]
+    DatasetSplitManifestOutcome:
+      allOf:
+        - $ref: '#/components/schemas/DatasetSplitManifestDetail'
+        - type: object
+          properties:
+            replayed: {type: boolean}
+          required: [replayed]
+    DatasetSplitManifestPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DatasetSplitManifest'}
+        next_after:
+          oneOf:
+            - {type: string, format: uuid}
+            - {type: 'null'}
+      required: [items, next_after]
+      additionalProperties: false
+    DatasetSplitLeakageReviewInput:
+      type: object
+      properties:
+        finding_id: {type: string, minLength: 1, maxLength: 400}
+        rationale: {type: string, minLength: 1, maxLength: 2000}
+      required: [finding_id, rationale]
+      additionalProperties: false
+    DatasetSplitManifestApproveRequest:
+      type: object
+      properties:
+        expected_proposal_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+        leakage_reviews:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/DatasetSplitLeakageReviewInput'}
+      required: [expected_proposal_sha256, leakage_reviews]
+      additionalProperties: false
+    DatasetSplitManifestRejectRequest:
+      type: object
+      properties:
+        expected_proposal_sha256: {$ref: '#/components/schemas/Sha256Hex'}
+      required: [expected_proposal_sha256]
       additionalProperties: false

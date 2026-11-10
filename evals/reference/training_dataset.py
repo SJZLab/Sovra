@@ -77,8 +77,10 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -93,9 +95,13 @@ from evals.reference.tool_environment import (  # noqa: E402
 )
 
 __all__ = [
+    "ADJECTIVES",
+    "FINAL_ANSWERS",
     "GENERATOR_ID",
     "MIN_APPROVED_TRACES",
     "MIN_INDEPENDENT_GROUPS",
+    "NOUNS",
+    "USER_PHRASES",
     "HeldOutLeakageError",
     "ReservedFinalSuite",
     "ReviewDecision",
@@ -106,7 +112,11 @@ __all__ = [
     "TrainingDatasetError",
     "TrainingTrace",
     "build_training_dataset",
+    "execute_plan",
     "generate_training_traces",
+    "outcome_holds",
+    "plan_for",
+    "plan_from_steps",
     "verify_trace_provenance",
     "verify_trace_replay",
 ]
@@ -1066,3 +1076,23 @@ def build_training_dataset(
         meets_floor=meets,
         review_status=status,
     )
+
+
+# ---------------------------------------------------------------------------
+# Public read-only aliases (FTF-1704)
+# ---------------------------------------------------------------------------
+#
+# The validation/development generators (FTF-1704) execute their agent plans
+# through this module's own executor instead of copying it, and must prove
+# their phrase and entity vocabularies are disjoint from this module's. These
+# names alias the private executor and expose the phrase tables read-only; no
+# behaviour changes.
+
+plan_for = _plan_for
+execute_plan = _execute_plan
+plan_from_steps = _plan_from_steps
+outcome_holds = _outcome_holds
+USER_PHRASES: Mapping[str, tuple[str, ...]] = MappingProxyType(dict(_USER_PHRASES))
+FINAL_ANSWERS: Mapping[str, tuple[str, ...]] = MappingProxyType(dict(_FINAL))
+ADJECTIVES: tuple[str, ...] = _ADJECTIVES
+NOUNS: tuple[str, ...] = _NOUNS

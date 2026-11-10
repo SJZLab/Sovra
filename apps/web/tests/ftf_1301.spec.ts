@@ -15,7 +15,7 @@
 // for why, the same precedent `ftf_0401.spec.ts` already established).
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -252,4 +252,485 @@ test("clicking Verify POSTs the real verify endpoint, then refreshes", async () 
   const [url, init] = fetchMock.mock.calls[1]!;
   expect(url).toBe(costProfileVerifyUrl(API_BASE, ORG_ID, "r-unverified"));
   expect(init.method).toBe("POST");
+});
+
+// FTF-UX05 (2026-10-22): audit finding X2 (severity 2) -- the form error carried no
+// `role="alert"`; audit finding H5 (severity 1-2, recorded decision: NOT changed to a closed
+// list -- see the component's own docstring) -- a non-breaking currency datalist is added
+// instead; finding X4 (bilingual, partial).
+
+test("UX05: the create-form error carries role=alert, and typed-uppercase currency behaviour is unchanged", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [], current_cheapest_certified: null }),
+    })
+    .mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({ detail: "invalid" }) });
+
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), { target: { value: "x" } });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-currency-input"), { target: { value: "usd" } });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), { target: { value: "x" } });
+  fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
+
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  expect(screen.getByTestId("cost-profile-form-error").getAttribute("role")).toBe("alert");
+  // The free-text field is unchanged: typed lowercase is still uppercased client-side.
+  expect((screen.getByTestId("cost-profile-currency-input") as HTMLInputElement).value).toBe("USD");
+});
+
+test("UX05: the currency field offers a suggestion list without constraining typed input", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  const input = screen.getByTestId("cost-profile-currency-input") as HTMLInputElement;
+  expect(input.getAttribute("list")).toBe("cost-profile-currency-suggestions");
+  const datalist = screen.getByTestId("cost-profile-currency-suggestions");
+  expect(datalist.querySelectorAll("option").length).toBeGreaterThanOrEqual(5);
+  // Still free text: an uncommon code the datalist does not suggest is accepted as typed.
+  fireEvent.change(input, { target: { value: "xyz" } });
+  expect(input.value).toBe("XYZ");
+});
+
+test("UX05: locale='ar' sets lang/dir on the panel", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId("cost-profile-panel").getAttribute("dir")).toBe("rtl");
+  expect(screen.getByTestId("cost-profile-panel").getAttribute("lang")).toBe("ar");
+});
+
+// ---- round 2 (L2 return): pin the 2 previously-unpinned behaviors, full bilingual pass ----
+
+test("UX05 round 2: cost-profile-submit-button's aria-busy reflects saving while the create request is in flight", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  fireEvent.change(screen.getByTestId("cost-profile-label-input"), { target: { value: "x" } });
+  fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
+    target: { value: "1" },
+  });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), { target: { value: "x" } });
+
+  const submitButton = screen.getByTestId("cost-profile-submit-button") as HTMLButtonElement;
+  expect(submitButton.getAttribute("aria-busy")).toBe("false");
+  let resolveCreate: (value: unknown) => void = () => {};
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => (resolveCreate = resolve)));
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  fireEvent.click(submitButton);
+  await waitFor(() => expect(submitButton.getAttribute("aria-busy")).toBe("true"));
+  resolveCreate({ ok: true, json: async () => baseRecord() });
+  await waitFor(() => expect(submitButton.getAttribute("aria-busy")).toBe("false"));
+});
+
+test("UX05 round 2: cost-profile-loading carries role=status and aria-live=polite while the search is loading", async () => {
+  let resolveSearch: (value: unknown) => void = () => {};
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockImplementationOnce(() => new Promise((resolve) => (resolveSearch = resolve)));
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  const loadingParagraph = await screen.findByTestId("cost-profile-loading");
+  expect(loadingParagraph.getAttribute("role")).toBe("status");
+  expect(loadingParagraph.getAttribute("aria-live")).toBe("polite");
+  resolveSearch({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  await waitFor(() => expect(screen.queryByTestId("cost-profile-loading")).toBeNull());
+});
+
+test("UX05 round 2: locale='ar' translates every form label, select option and search-panel string", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [
+        searchResult({ id: "r-expired", disqualified_reason: "expired" }),
+        searchResult({
+          id: "r-certified",
+          verified_at: "2026-09-10T00:00:00+00:00",
+          certifiable_cheapest: true,
+          disqualified_reason: null,
+        }),
+      ],
+      current_cheapest_certified: baseRecord({ id: "r-certified" }),
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+  expect(document.querySelector('label[for="cost-profile-type"]')?.textContent).toBe("النوع");
+  expect(document.querySelector('label[for="cost-profile-label"]')?.textContent).toBe("التسمية");
+  expect(document.querySelector('label[for="cost-profile-rate-unit"]')?.textContent).toBe(
+    "وحدة السعر",
+  );
+  expect(document.querySelector('label[for="cost-profile-currency"]')?.textContent).toBe("العملة");
+  expect(document.querySelector('label[for="cost-profile-source"]')?.textContent).toBe("المصدر");
+  expect(screen.getByTestId("cost-profile-submit-button").textContent).toBe("تسجيل السعر");
+  expect(screen.getByText("بحث التكلفة لكل نجاح")).toBeTruthy();
+  await waitFor(() =>
+    expect(screen.getByTestId("cost-profile-disqualified-r-expired").textContent).toContain(
+      "منتهي",
+    ),
+  );
+  expect(screen.getByTestId("cost-profile-certified-r-certified").textContent).toBe(
+    "معتمد ومؤهّل للأرخص",
+  );
+  expect(screen.getByTestId("cost-profile-verify-r-expired").textContent).toBe("اعتماد");
+});
+
+test("UX05 round 2: locale='ar' translates the empty-state text, and the empty default locale='en' text is unchanged", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      locale: "ar",
+    }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(screen.getByTestId("no-certified-cheapest-rate").textContent).toBe(
+    "لا يوجد أرخص سعر معتمد بعد -- سجّل واعتمد سعرًا لتظهر هنا.",
+  );
+});
+
+// -- UX05 round 2 (second L2 return, PR #972) -----------------------------------------------
+
+test("UX05 r2 (L2 return): an empty {} 200 search response is a typed error, never a silently-accepted empty result (Law 17)", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  // Never silently accepted as a real, validated empty result set (EmptyState requires `search`
+  // to be set, which never happens on a rejected malformed response):
+  expect(screen.queryByTestId("cost-profile-reload-button")).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a results array whose item is malformed (certifiable_cheapest is a string) is rejected, not rendered", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [{ ...searchResult(), certifiable_cheapest: "yes" }],
+      current_cheapest_certified: null,
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+  expect(screen.queryByTestId(`cost-profile-result-${baseRecord().id}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a results array that is not an array (an object instead) is rejected", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: { not: "an array" }, current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-form-error")).toBeTruthy());
+});
+
+test("UX05 r2 (L2 return): the create/verify/select controls render through the shared Button component at the minimum target size", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      results: [searchResult({ verified_at: null })],
+      current_cheapest_certified: null,
+    }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`cost-profile-verify-${baseRecord().id}`)).toBeTruthy(),
+  );
+  for (const testId of ["cost-profile-submit-button", `cost-profile-verify-${baseRecord().id}`]) {
+    const el = screen.getByTestId(testId) as HTMLElement;
+    expect(el.style.minBlockSize).toBe("var(--target-min)");
+    expect(el.style.minInlineSize).toBe("var(--target-min)");
+  }
+  expect((screen.getByTestId("cost-profile-type-select") as HTMLElement).style.minBlockSize).toBe(
+    "var(--target-min)",
+  );
+});
+
+test("UX05 r2 (L2 return): a successful load with zero results shows an EmptyState with a reload action", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(screen.getByTestId("cost-profile-reload-button")).toBeTruthy());
+  expect(screen.getByText("No rates recorded yet")).toBeTruthy();
+});
+
+test("UX05 r2 (L2 return): a long source/label value in a result is wrapped, not left to overflow", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  const longResult = searchResult({ source: "https://example.com/" + "x".repeat(300) });
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ results: [longResult], current_cheapest_certified: null }),
+  });
+  render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId(`cost-profile-result-${longResult.id}`)).toBeTruthy(),
+  );
+  expect(
+    (screen.getByTestId(`cost-profile-result-${longResult.id}`) as HTMLElement).style.overflowWrap,
+  ).toBe("anywhere");
+});
+
+test("FTF-1301-F1 a stale search response from the previous project never overwrites the new project's result", async () => {
+  const PROJECT_B = "55555555-5555-5555-5555-555555555555";
+  const pending: Array<(value: unknown) => void> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(resolve);
+        }),
+    ),
+  );
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(1)); // request 1 (old project), in flight
+
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(pending.length).toBe(2)); // request 2 (new project), in flight
+
+  // The NEW project's response arrives first.
+  await act(async () => {
+    pending[1]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "new-cheapest",
+          label: "New project cheapest",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("New project cheapest")).toBeTruthy());
+
+  // The OLD project's response arrives LAST (out of order) -- it must not overwrite the
+  // new project's already-rendered result (Law 1: this must FAIL on the pre-fix code).
+  await act(async () => {
+    pending[0]?.({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "old-cheapest",
+          label: "Old project cheapest",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(screen.getByText("New project cheapest")).toBeTruthy();
+  expect(screen.queryByText("Old project cheapest")).toBeNull();
+});
+
+test("FTF-1301-F1 round 2: a Verify that finishes after a project switch refreshes the CURRENT project, not the one open when Verify was clicked", async () => {
+  const PROJECT_B = "66666666-6666-6666-6666-666666666666";
+  const calls: Array<{ url: string; resolve: (value: unknown) => void }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (url: string) =>
+        new Promise((resolve) => {
+          calls.push({ url, resolve });
+        }),
+    ),
+  );
+
+  const unverified = searchResult({
+    id: "r-unverified",
+    verified_at: null,
+    disqualified_reason: "unverified",
+  });
+
+  const view = render(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(1)); // initial search(project A)
+  await act(async () => {
+    calls[0]!.resolve({
+      ok: true,
+      json: async () => ({ results: [unverified], current_cheapest_certified: null }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByTestId("cost-profile-verify-r-unverified")).toBeTruthy());
+
+  fireEvent.click(screen.getByTestId("cost-profile-verify-r-unverified"));
+  await waitFor(() => expect(calls.length).toBe(2)); // verify POST, in flight, still project A's click
+
+  // Switch to project B while that verify write is still in flight.
+  view.rerender(
+    createElement(CostProfileSearchPanel, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      projectId: PROJECT_B,
+    }),
+  );
+  await waitFor(() => expect(calls.length).toBe(3)); // search(project B), triggered by the switch
+  await act(async () => {
+    calls[2]!.resolve({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({ id: "b-cheapest", label: "Project B cheapest" }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Project B cheapest")).toBeTruthy());
+
+  // The Verify write from the project-A click now resolves, well after the switch to B.
+  await act(async () => {
+    calls[1]!.resolve({ ok: true, json: async () => ({}) });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(calls.length).toBe(4)); // the post-write refresh
+
+  // The post-write refresh must query the project the user is CURRENTLY viewing (B), never
+  // the project that happened to be open when Verify was clicked (A) -- a stale render closure
+  // reading `projectId` directly, rather than a ref to the latest value, would still fetch A here.
+  expect(calls[3]!.url).toBe(costPerSuccessSearchUrl(API_BASE, ORG_ID, PROJECT_B));
+
+  await act(async () => {
+    calls[3]!.resolve({
+      ok: true,
+      json: async () => ({
+        results: [],
+        current_cheapest_certified: baseRecord({
+          id: "b-cheapest-2",
+          label: "Project B cheapest (post-verify)",
+        }),
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await waitFor(() => expect(screen.getByText("Project B cheapest (post-verify)")).toBeTruthy());
 });

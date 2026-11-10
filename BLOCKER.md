@@ -1,5 +1,84 @@
 # BLOCKER.md
 
+## RESOLVED 2026-10-20T04:45Z — `docs/certifications/mutation-allowlist.yaml` decision (was LIVE 2026-10-19T09:10Z)
+
+**Resolution:** a Control-plane session reviewed all six survivors against the PR heads (#869
+`ceb135a1`, #742 `930dfbf7`) and recorded them as equivalent mutants (route option 1): the four
+#869 M9 survivors act on `exc.code` (constructor-asserted member of the fixed lowercase `CODES`
+tuple, every raise site a literal) and on `action` (only the literals "approve"/"reject"); the two
+#742 M9 survivors act on the constant `STATE_SUCCEEDED = "succeeded"` and on SQLAlchemy's fixed
+lowercase `Dialect.name`. Each entry is line-pinned, so it resurfaces if the code moves. Because both files exist only on the relay branches, each entry carries `pending_pr` (the committed-allowlist file-exists check in tests/tasks/test_mutation_gate.py now waits until the file lands on main; a Control-plane gate-test change, Law 9, recorded in the ledger). Both PRs'
+`mutation-gate` should go green on their next run (merge main into each branch). The Control-plane
+gap the entry noted (no certification record 2026-10-16T14:05Z..2026-10-20) was this session
+being suspended; it has resumed.
+
+**Original entry, preserved for context:**
+
+## (historical) LIVE 2026-10-19T09:10Z — `docs/certifications/mutation-allowlist.yaml` decision stuck on two open `[relay]` PRs (Control-plane action needed)
+
+**What failed:** two open `[relay]` PRs have had a genuinely red `ci-verdict` for days, solely from
+`mutation-gate` survivors that are equivalent mutants under the gate's own stated rule
+(`docs/certifications/mutation-allowlist.yaml`'s header: "a SURVIVED mutant that cannot change
+observable behavior... reviewed by the Control plane at L2 like any other gate-weakening change,
+Law 9"). A `[relay]`-titled PR is structurally forbidden from editing that file —
+`scripts/ci_policy.py`'s `RELAY_FORBIDDEN_EXACT` lists it by exact path, and
+`.github/workflows/ci.yml` (~line 612) hard-fails any PR whose diff touches it with "Only the
+Control plane adds reviewed equivalent mutants". So neither PR can reach green without a
+Control-plane session adding the entries — no amount of relay-side test-writing can kill a mutant
+that cannot change any observable behavior.
+
+- **PR #742** (`relay/FTF-H010-P2-r2`, FTF-H010-P2 round 2): `mutation-gate` red since
+  2026-10-14T05:06Z. First diagnosed that shift; independently re-confirmed as the same two
+  equivalent-mutant survivors by every subsequent shift that checked it (at least 2026-10-15,
+  2026-10-16, 2026-10-18 x3, 2026-10-19 x3 per `docs/progress/*-relay.md`). **5+ days outstanding.**
+- **PR #869** (`relay/FTF-0519-P2-r1`, FTF-0519-P2 round 1): `mutation-gate` red since
+  2026-10-18T09:15Z. I independently pulled the real job log this shift (job `117630221840`, run
+  `39112098381`) rather than trusting prior shifts' text: **180 run | 176 KILLED | 0 TIMEOUT | 4
+  SURVIVED | score 97.8%**. All four survivors are operator M9 (`.strip().lower()`) applied to
+  `exc.code` (three call sites in `apps/api/app/datasets/dataset_split_manifest_routes.py`, lines
+  304/446/512 — `_refusal`, `.approve`, `.reject`) and to `action` (line 387, `._replayed`).
+  `exc.code`/`action` are set internally from a fixed, already-lowercase, whitespace-free set of
+  string literals raised by `SplitManifestError` itself — never from untrusted input — so
+  `.strip().lower()` is a true no-op on every reachable value and no behavioral test can
+  distinguish the mutant from the original. Same equivalence class as PR #742's own two survivors,
+  and the same class as the one existing allowlist entry
+  (`workers/data/tokenization_analysis.py` `ConversationTokenizer.prefix_token_counts`, M3).
+  **~1 day outstanding** (first surfaced 2026-10-18T10:51Z per `docs/progress/2026-10-18T1052Z-relay.md`).
+
+**What was tried:** every relay shift since first discovery has independently re-derived (not
+just re-read) the survivor list from the real job log, confirmed no production defect, and left
+the PR untouched rather than widen its scope or write meaningless test code to force-kill a
+mutant that cannot affect behavior (CLAUDE.md Law 9 cuts both ways: weakening the gate needs
+review, but so does inflating it with dead assertions). No relay session can add the allowlist
+entries itself (see above). No Control-plane session has picked this up in that window —
+`docs/certifications/queue.md`'s newest entry is still `2026-10-16T14:05Z`, three days stale as of
+this entry.
+
+**Three route options:**
+1. **(Recommended) A Control-plane session reviews and adds both PRs' survivors to
+   `docs/certifications/mutation-allowlist.yaml`**, one entry per survivor (file/function/operator/
+   line/reason, per the file's own documented shape), using the equivalence argument above and in
+   each PR's own submission doc. This is a ~10-minute L2-authority task that unblocks both PRs'
+   `ci-verdict` with no code change.
+2. **Relay adds an explicit canonical-form guard** (e.g., an internal assertion that `exc.code`/
+   `action` are always exactly one of the known literals, raised the instant that invariant is
+   violated) so the mutant becomes observable and genuinely killable. This trades a real equivalent
+   mutant for a few lines of defensive code whose only purpose is to satisfy the gate — workable,
+   but it is itself a production change a Control-plane session should review before a relay PR
+   ships it, so it does not avoid the same approval step, only changes what gets approved.
+3. **Owner/Control-plane triages the apparent Control-plane-routine gap directly**: no
+   `docs/certifications/queue.md` entry or ledger/CERT PR has landed since 2026-10-16T14:05Z even
+   though the relay routine has kept firing every ~2h in that window (8+ shift logs,
+   `docs/progress/2026-10-18*` and `2026-10-19*`). If the Control-plane routine has stopped firing
+   or lost its mutation-allowlist authority, that is a separate, larger gap worth the owner's
+   attention beyond just these two PRs.
+
+Not a full-stop blocker — every other Active/Backlog item is independently either certified,
+merged-PROVISIONAL awaiting L2, or has its own open `[relay]` claim PR with green CI (verified
+fresh this shift via `pull_request_read`); only these two PRs are stuck on this specific gate file.
+Relay continues normal shifts; this entry exists so the stuck decision has one canonical, visible
+place instead of being re-diagnosed and buried in a new PR description every ~2 hours.
+
 ## RESOLVED 2026-10-09T08:00Z — GitHub Actions billing stop (was LIVE 2026-10-08T23:41Z)
 
 **Resolution:** confirmed genuinely cleared by real CI runs on four separate PRs within the same

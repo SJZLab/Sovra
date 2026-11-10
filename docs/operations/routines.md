@@ -131,6 +131,13 @@ SAME-CLASS SWEEP: when a defect class is named (cursor cycle, fail-open parse, e
 duplicate identity, encoding, swallowed error), check and fix the same class in every sibling module
 under the same package, and list the result per module.
 
+STEP 5c — PRE-REVIEW (mandatory; the independent L2 review was returning most items for faults
+the relay could have found). After 5b, merge current main into the branch, then give
+docs/operations/l2-review-brief.md, filled in for this item, to a FRESH reviewer subagent that did
+not write the code (Agent tool; use the strongest model available to you). Fix every finding it
+returns and run it again, until it reports "<ID> CERTIFY" or three rounds have failed (then park).
+Paste its final report into the submission. This is evidence, not certification (Law 4).
+
 STEP 6 — submit. Merge current main into the branch. Set the item's spec-matrix entry to
 PROVISIONAL/L1-PROVEN (never CERTIFIED). Write the submission as a NEW file
 docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>.md and the shift log as a NEW file
@@ -138,7 +145,10 @@ docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md (except to park
 docs/certifications/queue.md: those are Control-plane files, and shared edits put every other open
 relay PR into conflict. Mark the PR ready, wait in this session for its run to finish, and merge it
 only when the latest `ci-verdict` check on the PR's current head SHA concluded success (merge =
-PROVISIONAL only). Never end the session with your own green PR left unmerged. Never open a docs-only
+PROVISIONAL only). FRESH BASE: if main has moved since that run started, merge current main into
+the branch, push, and wait for the new run's `ci-verdict` before merging. A green run on an old
+base is not evidence for the merged result (2026-10-21: #914 and #915 were each green on their own
+base and together left main with two Alembic heads). Never end the session with your own green PR left unmerged. Never open a docs-only
 "record this shift" PR; relay-policy rejects log-only PRs.
 
 REPEATED FAILURE: never push the same fix again, or re-run, to see whether a failure goes away.

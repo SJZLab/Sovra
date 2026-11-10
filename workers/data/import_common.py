@@ -40,6 +40,7 @@ Rules this module enforces:
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -507,6 +508,17 @@ class ImportMapping:
     system: Slot | None = None
     group_key: Slot | None = None
     metadata_slots: tuple[tuple[str, Slot], ...] = ()
+    # FTF-H011-P1's own additive field (IMPORTER ORDER catalog rule): a caller-supplied tap
+    # called first by `apply_mapping`, before any validation, with a *copy* of the row and
+    # headers so a mapping preview can show the exact raw row a rejection or candidate came
+    # from. Never set by `mapping_from_object`/`parse_mapping` (so no parsed MappingSpec ever
+    # carries one) and never read by `document`/`mapping_sha256` (`compare=False`,
+    # `repr=False`: two mappings that differ only by observer are the same mapping). A tap
+    # that mutates its own copy can never reach the importer's own row/headers, which stay
+    # the original objects.
+    row_observer: Callable[[Row, Sequence[str] | None], None] | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 def _bad(reason: str) -> MappingInvalidError:
@@ -852,6 +864,19 @@ def apply_mapping(
 ) -> MappedRow:
     """Builds the FTF-0506 raw record from one source row. A mapping never
     defaults a value: an empty optional slot is omitted."""
+    if mapping.row_observer is not None:
+        # OBSERVER-COPY: a *deep* copy, unconditionally -- a shallow
+        # `dict()`/`list()` still shares every nested mutable value with
+        # `row` itself, so an observer that mutates a nested list/dict in
+        # place would silently corrupt the very row this function is about
+        # to build the real candidate and hash from. `copy.deepcopy` is
+        # correct and safe for every `Row` shape uniformly (it is a no-op,
+        # returning the identical object, for the immutable `str`/`bytes`
+        # case -- unlike the old type-dispatched `dict()`/`list()` split,
+        # there is no longer a type check to get wrong here).
+        copied_row = copy.deepcopy(row)
+        copied_headers = None if headers is None else tuple(headers)
+        mapping.row_observer(copied_row, copied_headers)
     messages: list[dict[str, object]] = []
     if mapping.prompt is not None:
         system = _text_value(mapping.system, row, headers, "system", required=False)

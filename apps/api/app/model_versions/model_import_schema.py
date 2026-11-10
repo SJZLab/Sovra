@@ -22,10 +22,11 @@ insert, only its outcome does, mirroring `0024_dataset_uploads.py`'s own
 
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKeyConstraint, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -66,6 +67,7 @@ ALLOWED_ORIGINS = (ORIGIN_IMPORTED_WEIGHTS, ORIGIN_IMPORTED_ADAPTER, ORIGIN_EXTE
 ALLOWED_JOB_STATES = ("queued", "validating", "failed", "succeeded", "blocked_external")
 
 EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH = 2048
+_REFUSED_REF_CATEGORIES = frozenset({"Cc", "Cs"})
 
 
 class ModelImportValidationError(ValueError):
@@ -104,6 +106,12 @@ def validate_external_provider_model_ref(value: object) -> str:
             f"external_provider_model_ref must be at most "
             f"{EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH} characters"
         )
+    # FTF-H010-P2: a ref reaches PostgreSQL text and the gateway request, so a control character
+    # (NUL, CR, LF, ...) or a lone surrogate is refused here as a 400, never a driver error.
+    if any(unicodedata.category(ch) in _REFUSED_REF_CATEGORIES for ch in value):
+        raise ModelImportValidationError(
+            "external_provider_model_ref must not contain control or surrogate characters"
+        )
     return value
 
 
@@ -128,6 +136,18 @@ class ModelImportJob(Base):
     )
     external_provider_model_ref: Mapped[str | None] = mapped_column(
         String(EXTERNAL_PROVIDER_MODEL_REF_MAX_LENGTH), nullable=True
+    )
+    litellm_connection_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    result_model_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    claim_epoch: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     failure_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -174,6 +194,41 @@ class ModelImportJob(Base):
             name="ck_model_import_jobs_failure_code_matches_state",
         ),
         CheckConstraint("created_by <> ''", name="ck_model_import_jobs_created_by_not_blank"),
+        # FTF-H010-P2 (0029): the fence, the lease and the connection/result bindings.
+        ForeignKeyConstraint(
+            ["organization_id", "litellm_connection_id"],
+            ["litellm_connections.organization_id", "litellm_connections.id"],
+            ondelete="RESTRICT",
+            name="fk_model_import_jobs_organization_id_litellm_connection_id",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "project_id", "result_model_version_id", "requested_origin"],
+            [
+                "model_versions.organization_id",
+                "model_versions.project_id",
+                "model_versions.id",
+                "model_versions.origin",
+            ],
+            ondelete="RESTRICT",
+            name="fk_model_import_jobs_result_model_version",
+        ),
+        CheckConstraint("claim_epoch >= 0", name="ck_model_import_jobs_claim_epoch_non_negative"),
+        CheckConstraint(
+            "(state = 'succeeded') = (result_model_version_id IS NOT NULL)",
+            name="ck_model_import_jobs_succeeded_has_result",
+        ),
+        CheckConstraint(
+            "(state = 'validating') = (lease_expires_at IS NOT NULL)",
+            name="ck_model_import_jobs_validating_has_lease",
+        ),
+        CheckConstraint(
+            "(state = 'queued') = (claim_epoch = 0)",
+            name="ck_model_import_jobs_queued_epoch_zero",
+        ),
+        CheckConstraint(
+            "(requested_origin = 'external_endpoint') = (litellm_connection_id IS NOT NULL)",
+            name="ck_model_import_jobs_connection_matches_origin",
+        ),
     )
 
     def __init__(self, **kwargs: object) -> None:

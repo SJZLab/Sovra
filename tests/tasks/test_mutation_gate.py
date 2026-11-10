@@ -419,6 +419,14 @@ def test_allowlist_suppresses_exactly_its_entries(repo: Path) -> None:
     check(CID, "the committed allowlist exists and parses", committed is not None)
     for i, e in enumerate(committed or []):
         where = f"committed allowlist entry {i} ({e.get('file')}:{e.get('line')})"
+        # A Control-plane ruling on a survivor in a file that only exists on an open [relay] PR's
+        # branch carries `pending_pr: <n>` (a [relay] PR may not edit this file, and the
+        # mutation gate runs only on [relay] PRs, so the entry must land on main first). The
+        # existence check applies as soon as the file exists on main.
+        pending = e.get("pending_pr")
+        if isinstance(pending, int) and not isinstance(pending, bool) and pending > 0:
+            if not (ROOT / e["file"]).is_file():
+                continue
         check(CID, f"{where} names an existing production file", (ROOT / e["file"]).is_file())
         check(CID, f"{where} is inside the mutation roots", mg.under_source_roots(e["file"]))
         # Pinned to a line, so the entry goes stale and the survivor resurfaces if the code moves.
