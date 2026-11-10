@@ -9274,7 +9274,7 @@ Whether to retroactively fill `proving_symbol` for those four entries
 real live route) is a Control-plane judgment call, not a relay one.
 
 ## Owner actions — current
-- 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues.
+- 2026-10-08: FTF-0616 (LLM judge) needs a real judge call through the org LiteLLM gateway for its acceptance clause: a CI secret holding a gateway virtual key, plus the approved judge model id. Until then that clause stays BLOCKED_EXTERNAL; the rest of FTF-0616 continues. Amended 2026-10-23T18:52Z (FTF-H010 design): with the same gateway key, also name one existing fine-tuned deployment id, so FTF-H010 can import and evaluate a real endpoint-only fine-tune.
 - 2026-10-07: FTF-04A31 needs a private-repo test credential (or approval to use this repo with `github.token`). See Parked.
 
 ## Active (decided by Control plane — relay executes, top first)
@@ -9322,34 +9322,26 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
      Before submitting: the pre-review step (CLAUDE.md "Relay is execution-only" step 4) with docs/operations/l2-review-brief.md, and the full FTF-0904 matrix + W1 + FTF-0905 green on the new head.
      STOPPING RULE (Control plane): round 3 certifies once 2-5 land with their faults RED, #940 stays intact, the full matrix + W1 + FTF-0905 pass (FTF-0904 REQUALIFIED), and no leak of a value the certified module redacts is reproduced (differential vs b5f4739c: 0); a newly hand-picked variant does not block (advisories: `%20` before the quote, an unterminated generic quote with no close at all - both identical on the certified module).
    - **IMPORTER ORDER (Control-plane ruling, updated 2026-10-13T23:59Z):** FTF-0502-P1 is CERTIFIED (#770). FTF-0502, FTF-0503, FTF-0504 and FTF-0505 may now be claimed, each rebuilt on certified P1 (one lane at a time per the Backlog order 0502 → 0504 → 0503 → 0505). Catalog rule (refines the 20:4xZ ruling): an importer that needs a new code or limit field (e.g. FTF-0503 fatal structure errors with a byte offset; FTF-0505 max_cells and the sharedStrings cap) makes ONE additive, serialized edit to workers/data/import_common.py in its own PR, extending P1's CAT/limit tests in the same PR; existing codes are never renamed, moved between catalogs or removed, and a fatal error's location goes into ImportReport via an additive optional field. Each importer passes the dataset's verified sha256 as expected_sha256 and a mismatch with the reader's declared hash must fail (advisory from #766 verification: run_import today still reports completed).
-   - **0c. FTF-R006-P1b Argilla review scope, reviewer identity and workspace membership store round 2 (production + tests + CI; a reproduced cross-tenant access - take right after 0b).** Work in apps/api/app/reviews/argilla_identity_store.py, a NEW migration (never edit 0034 in place), tests/tasks/test_ftf_r006_p1b.py, tests/integration/test_argilla_identity_scope.py, tests/tasks/argilla_test_support.py, .github/workflows/ci.yml (title the PR `[GOVERNANCE]` if ci.yml changes, per CLAUDE.md) and the submission. Claim `relay/FTF-R006-P1b-r2`. Verifier findings (4f8624f, #953: P1a client.py reused unchanged; one Alembic head 0034, upgrade/downgrade/upgrade; ensure_* concurrency 16x converges to one row and one Argilla object; RLS ENABLE+FORCE, non-allow-all policy, no DELETE grant, cross-tenant RLS correct; 0 of 11 API keys in pg_dump or logs; against a REAL argilla-server 2.8.0 run locally (pip + OpenSearch 2.19.6, no Docker) role reads back annotator, 409/404 mapping correct, cross-org/project annotator access 403, narrowed role 403, server down -> ArgillaUnavailableError; ci.yml change purely additive; test_ftf_0501_f2 pin change weakens nothing; faults F1-F12/F17 RED):
-     FTF-R006-P1b RETURN -> round 2. Reproduced:
-     1. CROSS-TENANT-ARGILLA-WRITE (severity: security; R10/P1/P2): `sync_workspace_membership` trusts the caller's ReviewScopeRecord and calls `add_workspace_user` BEFORE the composite FK refuses the row, so an org1 annotator is really added to org2's workspace and reads org2's dataset (HTTP 200 on real Argilla 2.8.0). Re-read and verify the scope (org, project, binding) from the DB under the caller's tenant context before ANY Argilla call; a test that hands a foreign scope record must see no Argilla call at all.
-     2. REVOKE-SYNC-RACE (R11/P10): a sync running concurrently with revoke leaves a revoked identity with workspace access (HTTP 200 on real Argilla). Serialize them (SELECT ... FOR UPDATE on the identity row, or re-check after the Argilla call and compensate) and test the interleaving deterministically.
-     3. LAW-17-UNPINNED (F13/F14/F15/F16 GREEN): swallowing ArgillaUnavailableError in sync-remove, revoke or sync-add, or fabricating a workspace on an ensure_review_scope outage, passes every test - pin each so an outage surfaces as unavailable/pending, never as success.
-     4. CONCURRENT-SYNC (P11): 6 of 8 parallel `sync_workspace_membership` calls raise an uncaught IntegrityError - converge (ON CONFLICT or retry) and test 8x parallel.
-     5. UPDATE-GRANT-TOO-WIDE (P13g): the app role has table-wide UPDATE, so a raw `UPDATE ... SET status='active', revoked_at=NULL` resurrects a revoked identity and the store accepts it; argilla_user_id, credential_secret_ref and argilla_workspace_id are also rewritable. Column-limited UPDATE grants plus a 0026-style trigger that forbids un-revoking and rewriting identity columns (new migration); RED tests for each.
-     6. DoD SCOPE (no recorded approval for the deferrals): a REAL pinned Argilla stack in CI (the verifier ran argilla-server 2.8.0 + OpenSearch without Docker, so "infeasible" does not hold; the fake never reads the API key, so cross-org 403/404 is untested by it, and it diverges from the real API: `search_engine` is an object) covering annotator 403/404 on another org's/project's workspace and dataset, the R002 `/validate` live version/health and unhealthy-once-stopped leg; the compose stack named in the bullet; a gate step running tests/tasks/test_ftf_r006_p1b.py; test_ci_policy coverage for the new job. (Control-plane ruling: the real-Argilla CI job is required in this slice - no P1c split.)
-     Fix if cheap (advisories): the role passed to sync is caller-asserted, the store never reads `memberships` (P3) - prefer reading it; an mlflow component binding is accepted for a review scope (P12) and an orphan Argilla workspace is created when the binding FK fails (P12b); an OpenBao failure after create_user leaves the identity stuck and retries are misreported as a username rejection (P8); the ref CHECK accepts 'openbao://argilla.apikey.SECRET' (P13o); the fake's divergences from v2.8.0.
-     Before submitting: the pre-review step (CLAUDE.md "Relay is execution-only" step 4) with docs/operations/l2-review-brief.md, including a run against a real argilla-server.
-     STOPPING RULE (Control plane): round 2 certifies once 1-6 land with their faults RED, the real-Argilla CI job passes on the head, and no cross-tenant or revoked-access read is reproduced on real Argilla; a newly hand-picked variant does not block.
-   - **0f. FTF-UX06 Evaluation UI redesign round 2 (web component + tests + submission).** Work in apps/web/components/evaluation-factory/evaluation_case_editor_import.tsx, strings_0602.ts, apps/web/tests/ftf_ux06*.spec.ts (a new ftf_ux06_browser.spec.ts) and the submission. Claim `relay/FTF-UX06-r2`. Verifier findings (26424fe, #964: parent FTF-0602 REQUALIFIED (ftf_0602.spec.ts byte-identical, task script passes); axe 0 light and dark; lang/dir correct in every state; loading has aria-busy + Pending; a rejected fetch, 500, `{}` 200, a null list item and the 403 restricted case each show one role=alert without unmounting; keyboard order correct with a 2 px outline; no dependency change; 8/24 faults RED):
-     FTF-UX06 RETURN -> round 2. Reproduced (real Chromium):
-     1. REAL-BROWSER-IN-CI: no ftf_ux06_browser.spec.ts (deferred against the UX01/UX02/UX03 ruling) - every state x en/ar x light/dark at 1280/768/390/320 and 200 %, keyboard-only with a visible outline, axe 0, in CI on the head SHA.
-     2. OVERFLOW-LONG-NAMES (severity 3, WCAG 1.4.10): with a 100-char case key and 64-char snake_case names (the API allows 200) the list scrolls 508 / 578 / 517 px at 390 / 320 / 200 %, the edit form 729 px at 390 - wrap the case-key, category and group spans, the edit heading and the row hint; max-length fixtures, a RED pin per site.
-     3. FOCUS-LOST-TO-BODY (severity 3): after a failed save, import or load focus falls to <body> (the button disables itself, no ErrorSummary) - focus a UX01 ErrorSummary, never <body>.
-     4. NOT-BILINGUAL (severity 3): English under locale=ar - "Failed to fetch", the JSON parser message on a non-JSON 200 (labelled a network error and quoting the body), unknown server detail codes, raw field codes and names (`too_long`, `required`, `group_key`), the severity option labels; no <bdi> around user data - localize every system string, a distinct malformed-200 message that never echoes the body.
-     5. ERRORS-NO-RECOVERY (severity 2): no error gives a recovery step; the empty state has no action (`action={null}`).
-     6. NOT-ON-UX01 (severity 2): Field unused for the four plain inputs it fits; static element ids - use Field (or a recorded decision) and `useId`.
-     7. UNPINNED (16 GREEN): role=alert removed from the list/import/edit/weight/grader-config errors, role=status from the notice, each of the three Pending indicators, the form aria-busy, the save and load-more disabled guards, five Arabic strings replaced with English (errMalformedListing, emptyTitle, errNetwork, errGeneric, jsonHint), the empty-state title ignoring locale - a RED test for each, plus one catalogue-wide test for stray English under ar.
-     8. EVIDENCE: the skill queries (`--domain ux`, `--stack react`) with output, the 39-item pro-rules checklist item by item, an H1-H10 x state table; correct the false claims ("no English can survive in an Arabic render", "validate_spec exits 1", the "round 2" PR title for a first L2 round).
-     STOPPING RULE (Control plane): round 2 certifies once 1-8 land with their faults RED, FTF-0602 still requalifies, and no severity 3-4 finding remains; a newly hand-picked variant does not block.
-   - **0g. FTF-H011-P2 Mapping persistence round 2 (store + tests only; small).** Work in apps/api/app/datasets/dataset_mapping_store.py, tests/tasks/test_ftf_h011_p2.py, tests/integration/test_ftf_h011_p2_dataset_mappings.py and the submission. Claim `relay/FTF-H011-P2-r2`. Verifier findings (935f14d, #934: one Alembic head 0035 over 0034, upgrade/downgrade/upgrade clean; ENABLE+FORCE RLS, non-allow-all policy, column-limited grants, no DELETE/TRUNCATE; the immutability trigger refuses every UPDATE of an approved/rejected row; CHECKs refuse case variants, wrong approver role and training approval on an evaluation-only snapshot; cross-org/sibling-project access sees nothing; 8-16x parallel propose/approve/reject converge with no uncaught IntegrityError; Law 17 storage outage/drift surfaces as source_unavailable/source_changed; FTF-H011-P1 REQUALIFIED; uncapped mutation gate 320/320; ci.yml additive; 63/64 faults RED, the GREEN one equivalent):
-     FTF-H011-P2 RETURN -> round 2. Reproduced:
-     1. REJECTION-OVERRIDDEN-BY-REUSE (fail-open): `resolve_approved_mapping` reuses a prior dataset version's approved mapping for a dataset whose own byte-identical mapping an admin explicitly REJECTED (resolve(v2) returns v1's approval with reused=True). Control-plane ruling: an explicit rejection always wins - when the dataset has no approved mapping of its own and its own latest decision is `rejected`, resolve returns `mapping_reapproval_required`; a RED test in both suites (the submission's advisory A3 "recorded reading" is withdrawn - only the Control plane records readings).
-     2. REUSE-ACROSS-REVOKED-CONNECTION (P13l): a prior approval made under a connection that is now revoked is still reused for a new version uploaded through another live connection. Control-plane ruling (Law 16, permissions explicit and fail closed): reuse requires the prior approval's own connection/grant to be live as well; otherwise `mapping_reapproval_required`; a RED test in both suites.
-     Advisory: a 150-character actor_id is refused by the audit writer after the UPDATE (the transaction rolls back, but the error is not a stable code) - map it to a stable code if cheap.
-     STOPPING RULE (Control plane): round 2 certifies once 1-2 land with their tests RED on the round-1 code, both suites and the mutation gate stay green, and FTF-H011-P1 still requalifies; a newly hand-picked variant does not block.
+   - **0c. FTF-R006-P1b Argilla review scope, reviewer identity and workspace membership store round 3 (production + tests + CI; title the PR `[GOVERNANCE]` because it changes ci.yml).** Work in apps/api/app/reviews/argilla_identity_store.py, its tests, tests/integration/test_argilla_real_server.py, infra/docker/argilla/docker-compose.yml (new), .github/workflows/ci.yml, tests/unit/test_ci_policy.py and the submission. Claim `relay/FTF-R006-P1b-r3`. Verifier findings (264f53d, #971: CROSS-TENANT FIXED - on real argilla-server 2.8.0 a foreign scope, forged workspace id, relabelled org or foreign identity makes 0 Argilla calls and an org1 annotator gets 403 on org2's dataset (F18/F19 RED); round-1 race R11a closed; 8x parallel sync converges (F21 RED); column-limited UPDATE + trigger refuse un-revoke and identity-column rewrites (F24-F27 RED); new migration 0036, one head; F13/F15 RED; ci.yml additive; P1a REQUALIFIED):
+     FTF-R006-P1b RETURN -> round 3. Reproduced on real argilla-server 2.8.0:
+     1. REVOKE-SYNC-RACE (security, not closed): revoke reads the active memberships BEFORE marking the identity revoked, so a sync that starts after that read and writes before the final UPDATE passes the UPSERT liveness guard - a revoked identity reads a workspace dataset (HTTP 200) in deterministic interleavings R11b and R11c and in 2 of 5 free-running trials (R11e). Mark the identity revoked (or `revoking`) FIRST and then remove memberships, or hold SELECT ... FOR UPDATE on the identity row across sync's add+UPSERT and in revoke; deterministic RED tests for R11b and R11c.
+     2. LAW-17-UNPINNED: F14 (revoke loop swallows ArgillaUnavailableError) and F16 (ensure_review_scope fabricates a workspace on an outage) stay GREEN in every suite - outage tests for both.
+     3. REAL-ARGILLA-CI-HOLLOW: the new real-server job never creates an annotator, never calls the store, never checks cross-org/cross-project 403/404 on workspace or dataset, and "unhealthy once stopped" is port 1, not a stopped server (its access log shows only /version x3 and /me/workspaces). It must run the store against the real server: annotator 403/404 across orgs and projects, narrowing and revoke, the race, and a really stopped server.
+     4. STACK-BREAKS-RULINGS (Law 0 licence terms): CI runs Elasticsearch 8.8.2 (SSPL/ELv2 - the owner chose OpenSearch, Apache-2.0, live 2026-10-14) and Redis 7.4.11 (RSAL/SSPL - the licence ruling allows only 7.2.x). Use OpenSearch (2.19.x) and Redis 7.2.x pinned by digest, the Argilla worker container, telemetry OFF, CI-generated bootstrap credentials, and infra/docker/argilla/docker-compose.yml. The /status "upstream bug" and the `get_version` workaround in the certified P1a client exist only because of the ES choice (real /status returns 200 on OpenSearch 2.19.6) - remove the workaround unless still needed, and requalify P1a.
+     5. A gate step for tests/tasks/test_ftf_r006_p1b.py and tests/unit/test_ci_policy.py coverage for the new job.
+     6. Title the PR `[GOVERNANCE]` (it changes ci.yml; QUEUE 0c and CLAUDE.md).
+     Advisory: real Argilla returns 500 on its own workspaces_users UNIQUE race and the store surfaces it as Unavailable for 1 of 8 parallel calls - Law-17-correct, keep it.
+     STOPPING RULE (Control plane): round 3 certifies once 1-6 land with their faults RED, the real-Argilla CI job exercises the store's clauses on the ruled stack, and no revoked or cross-tenant read is reproduced on real Argilla; a newly hand-picked variant does not block.
+   - **0f. FTF-UX06 Evaluation UI redesign round 3 (UX lane; web component + tests + submission).** Work in apps/web/components/evaluation-factory/evaluation_case_editor_import.tsx, strings_0602.ts, apps/web/tests/ftf_ux06*.spec.ts and the submission. Claim `relay/FTF-UX06-r3`. Verifier findings (8fa5187, #979: browser spec runs in CI; axe 0 on 168 real-Chromium pages, lang/dir in every state; malformed replies and rejected fetches on load/import/save each show one localized, focused role=alert with a recovery step, nothing unmounts, no fake empty state; round-1 overflow sites 0 px with 100/200-char names; empty-state action works; FTF-0602 REQUALIFIED; 11 of round 1's 16 GREEN faults now RED; 21/24 new faults RED):
+     FTF-UX06 RETURN -> round 3. Reproduced in real Chromium:
+     1. OVERFLOW-SAVED-NOTICE (severity 3): the "Saved {key}." notice has no wrap - a 100-char snake_case case_key scrolls 395/465/929 px at 390/320/200 %, a 200-char key 1235-2609 px (345 px even at 1280). Wrap at the component root so every descendant inherits it; save-success and import-success browser states with 200-char keys; RED pins for the notice and the alert wrap (N4).
+     2. FAILED-SAVE-403-SILENT (severity 3): a save answered 403 `final_suite_content_restricted` unmounts the form, renders no error and no role=alert, and focus lands on <body> - an announced alert outside the form and focus on a stable element; save field errors through the UX01 ErrorSummary (field links).
+     3. NOT-BILINGUAL residue: real store codes `invalid_type`, `unknown_field`, `empty_object`, `too_large` shown raw under ar; three Arabic catalogue strings contain "weight", "expected_json", "case_key"; no <bdi> on the saved notice, row hint and edit heading; the "no English can survive" header claim is false; a producer test pins the raw fallback. Map every code the store emits; an unmapped code shows a localized generic phrase under ar (remove the raw-fallback pin); a catalogue test that rejects Latin text except an allow-list (N22 RED).
+     4. UNPINNED: F1 (list-error role=alert), F12 (import-error), F13 (edit-error), F18 (weight field error), F23 (grader_config blur-error) stay GREEN - each RED when removed on its own (F23 without a timing-dependent test).
+     5. WRONG-RECOVERY (severity 2): a 403 `role_not_authorized` says "fix the field"/"fix the file", and an import network failure says "fix the file" (N24) - name an access step / retry, pinned.
+     6. STATIC-IDS (Control-plane ruling): use `useId`; the FTF-UX program DoD already lets parent specs move to role/label queries, so "the certified parent spec could not change" does not justify static ids.
+     7. EVIDENCE: raw skill output (not paraphrased), the 39-item checklist item by item, a numeric severity in every H1-H10 x state cell, and the four false claims corrected ("no severity 3-4 remains", checklist item 39 and the others).
+     STOPPING RULE (Control plane): round 3 certifies once 1-7 land with their faults RED in real Chromium, FTF-0602 still requalifies, and no severity 3-4 finding remains; a newly hand-picked variant does not block.
    - **0d. FTF-1301-F1 Stale cost reply after a project switch round 2 (web component + tests + submission; small).** Work in apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx, apps/web/tests/ftf_1301.spec.ts, apps/web/tests/ftf_ux05_browser.spec.ts, apps/web/tests/browser/ux05_entry.tsx and the submission. Claim `relay/FTF-1301-F1-r2`. Verifier findings (dab64d2, #996: the named race is fixed - out-of-order A/B replies, A->B->A, stale error after fresh success, stale success after fresh error, create/retry racing a switch and an organization switch all correct; a Verify finishing after a switch refreshes the current project; FTF-1301 spec not weakened; UX05/UX01 specs pass; faults F1, F2, F6 RED):
      FTF-1301-F1 RETURN -> round 2. Reproduced:
      1. MISSING-BROWSER-TEST (explicit DoD clause): no out-of-order test in the UX05 Chromium harness (F1 leaves ftf_ux05_browser.spec.ts GREEN 251/251) - extend ux05_entry.tsx to re-render in place and hold replies; an A->B test with B first and A last, RED on dab64d21^1 and under F1.
@@ -9381,7 +9373,7 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
        6. FTF-H011-P3 (#974): continue on #974 once FTF-H011-P2 is certified (route option 1: one more pre-review aimed at the Postgres-only input 500s, then submit).
        7. FTF-R006-P2 (#961): continue once FTF-R006-P1b is certified, with the real pinned Argilla CI leg (the P1b ruling applies).
        8. FTF-H011-P4, FTF-R004-P4, FTF-H011-P5, FTF-R006-P3 as their predecessors certify.
-     Control plane writes the missing designs next: the FTF-H010 parent (import wizard + disclosures), FTF-0701 (training config schema; unblocks 22 tasks), FTF-0603 and FTF-H027. Until a design lands, those are not claimable.
+     Designs landed 2026-10-23T18:52Z (top of the Backlog): FTF-0701 P1-P3 (P1 claimable now; take it right after item 3 above, after #998 merges or rebased onto it - both create workers/training/__init__.py) and the FTF-H010 parent remainder P5 (wizard, claimable now) and P6 (after P4 and P5). FTF-0603 and FTF-H027 designs are next; until they land those are not claimable.
    - **0o.** Then the Backlog.
    - FTF-H007 + FTF-04A06 are CERTIFIED (2026-10-05); FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902, FTF-0500D, FTF-1002, FTF-0103A and FTF-0510 are CERTIFIED
      (2026-10-06); FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 are CERTIFIED (2026-10-07/08); follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1 and FTF-0608-F1 are CERTIFIED.
@@ -9505,6 +9497,415 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
 "2026-10-01T13:40Z". One PR per item group, titled "[relay] <ID>: fix L2 round-2 findings".
 
 ## Backlog (sliced, ready — relay takes these after Active; Refill & Sweep keeps >= 3)
+- **FTF-0701 Training config schema** (Control-plane design 2026-10-23; FINE_TUNING_FACTORY_RELEASE_1.md §0, §6.15, §13, §14.1–14.2, §15.1–15.5, §16 steps 1–9, §17, §68.2–68.4, §70.1/70.3, §77.3–77.6, §78.1 steps 1/3/4, §81; ADR 0004 Consequences ("FTF-0701, when designed, reserves training method value `seq_cls_lora` in the 07 domain schema; validation refuses it until FTF-0708A is CERTIFIED"); CAP-09; Q10, Q13; deps FTF-0307, FTF-0403, FTF-0519 all CERTIFIED; also composes certified FTF-0301/0305/0306 (artifact, license, digest), FTF-0308 (catalog mapping), FTF-0401/0402 (project, security profile), FTF-0500 (`authorize_dataset_source_purpose`, reached only through 0519's `load_training_split`), FTF-0104/0105/H003/0103A. DoD `python tools/r1_handoff.py packet FTF-0701 --plan FINE_TUNING_FACTORY_RELEASE_1.md` plus this entry. FTF-0701 is the phase-07 contract owner (`contract_owner: FTF-0701`): it creates `packages/contracts/openapi/07-interface.yaml` and `packages/contracts/jsonschema/07-domain.schema.json`, which do not exist yet. Locks `contracts:07` (P1, P3), `migration:application` (P2). Acceptance: "Freeze the minimum shared phase interface and domain schemas at the declared owner paths, with schema/client validation and no placeholder endpoints. Then: Version typed config includes method/tokenizer/template/train+validation grants/precision/budget limits." / "Independent review, exact merged commit, real relevant integration and negative-test evidence recorded." Negative: "Invalid rank/LR/length/unsupported dtype and held-out training source are blocked server-side." Three slices: P1 pure schema + contract freeze (UNWIRED), P2 persistence (UNWIRED), P3 routes (WIRED, proving_symbol `build_training_experiment_router`); the parent closes when all three are certified. When it closes, FTF-0705 (NVIDIA environment validation) and FTF-0706 (base artifact loading) become dependency-ready; the other 20 dependents still wait on 0702/0705–0715/0801/R003.
+  - Common rules:
+    - Path refinements, recorded: the packet's `services/training-worker/trainers/training_config_schema.py` becomes `workers/training/training_config_schema.py` (`workers/training` is the real SOURCE_ROOT; same refinement FTF-H010 recorded for `continuation.py`). The packet's `/api/v1/projects/{id}/training/...` becomes `/api/v1/organizations/{organization_id}/projects/{project_id}/training/...` (repo convention). Persistence and routes live in a new `apps/api/app/training/` package (FTF-0403 `apps/api/app/budget/` precedent).
+    - The packet's `api_contract` names the whole phase-07 route family (estimate, experiments, runs, metrics, cancel). FTF-0701 declares and implements **only** `training/experiments`. `/training/estimate` is FTF-0703, `/training/runs/{id}` and `/metrics` are FTF-0711/0717, `/cancel` is FTF-0718, and `/training/runs/{id}/engine` (§77.6) is FTF-R003. Declaring any of them now is the placeholder endpoint Law 11 and this acceptance forbid. Each owner extends `07-interface.yaml` later under `contracts:07` (FTF-0902 / FTF-0601 precedent).
+    - The Axolotl boundary is unchanged and needs no owner ask. The config is a Factory-owned, engine-neutral typed spec (§77.3: "typed job specification -> local configuration"). FTF-0701 does not import, pin or install Axolotl, writes no Axolotl YAML (§78.1 step 4: "The UI never asks the user to write YAML") and adds no passthrough field. The pinned-release translation and validation is FTF-R003's job (§78.1 step 4). If the pin cannot honour a v1 field, that is BLOCKED_DEFECT at R003, and the fix is a `training_config.v2` with a Law 15 requalification of FTF-0701. It is never an untyped escape hatch.
+    - No runtime dependency: stdlib `decimal`/`json`/`hashlib`/`re` only. There is no `jsonschema` package. The contract is checked by a stdlib structural validator inside the test (FTF-0102 / FTF-0902 precedent). No secret, no keyed service, no GPU, no Temporal and no budget reservation.
+    - Coordination: open PR #998 (FTF-H010-P4) creates `workers/training/__init__.py` and migration `0037_model_role_assignments` and edits `main.py` and `10-interface.yaml`. P1 merges after #998 or rebases onto it, and never creates a competing `workers/training/__init__.py`. P2 takes the next free migration number at claim time (0038 if #998 lands first). Revision id ≤ 32 characters.
+    - Must not edit (compose through public functions only; no Law 15 requalification):
+      - `workers/training/continuation.py`;
+      - anything in `workers/data/`;
+      - `apps/api/app/datasets/dataset_split_manifest_store.py` and `dataset_source_connection_crud.py`;
+      - `apps/api/app/budget/*`, `apps/api/app/artifacts/*` (including `training_capability_classifier.py`) and `apps/api/app/litellm/model_catalog_mapping_store.py`;
+      - `apps/api/app/model_versions/*`;
+      - every existing migration.
+    - Build in the ledger lessons:
+      - exact allow-lists at every nesting level;
+      - plain-JSON, exact-type parsing (`type(x) is int`, so bool is not an int; `type(x) is str`; no float wherever an int or decimal is expected);
+      - one boundary table per bounded field;
+      - property-generated Unicode/case/whitespace variants for every enum (FTF-0616 r8);
+      - complete constraint tables;
+      - one shared META-LEAK check over the rendered exception chain, audit rows and logs (0903 r8);
+      - fail-closed behaviour pinned by faults.
+    - Every DoD bullet gets its own behavioural fault→RED row. The uncapped `scripts/mutation_gate.py` over each slice's new production modules must reach 0 survivors.
+  - Recorded readings (default-resolution rule; none reopens an architecture decision):
+    - **Training data.** §6.15's `train_dataset_id`/`validation_dataset_id` become `(split_manifest_id, role)` pairs on one locked four-role FTF-0519 manifest. They are read only through FTF-0519's `load_training_split`, the certified view: it re-verifies the frozen hash, leakage report, latest quality report and every frozen grant live, and serves `train`/`validation` rows only. So "train+validation grants" means the live grant re-check that view performs, and the config stores the manifest's frozen hash plus both `role_sha256` values.
+    - **Tokenizer.** v1 accepts only the base artifact's own tokenizer at its `base_model_revision`. §68.4 says tokenizer modifications produce new artifact identities.
+    - **Template.** v1 accepts only `source: "base_artifact"` with `loss_policy: "assistant_only"` and `packing: false` (§68.2: "Default packing is OFF"). Template bytes and hash, special tokens and mask compilation are validated at preflight by FTF-0707 (§16 step 11). FTF-0701 never claims them.
+    - **Methods.** The `TrainingMethod` enum is `lora | qlora | full_sft | seq_cls_lora`; the enabled set is `lora | qlora`. `full_sft` → 409 `method_not_enabled`: §15.1 item 3 needs an administrator enablement plus a separate cost-approval gate, and no task has built either. `seq_cls_lora` → 409 `method_not_enabled` until FTF-0708A is CERTIFIED (ADR 0004). An unknown or variant string → 400 `invalid_method`.
+    - **Mode.** `mode` is `advanced | auto`. `auto` → 409 `auto_rule_version_unknown` because the versioned rule registry is FTF-0702's (§14.1 "derived from a versioned rule engine"). `auto_rule_version` must be null in advanced mode.
+    - **Writers and readers.** Writers are `{ml_engineer, organization_admin}` (§45 "ml_engineer: datasets/training"; the `MODEL_VERSION_WRITE_ROLES` precedent). Readers are every project role.
+    - **Idempotency.** Scope is (organization, requested_by, key), the §70.1 tenant/actor/action triple.
+    - **v1 schema-validity bounds.** The spec fixes only the buckets (§15.2) and the seed default (§15.5). The rest are Control-plane picks for the adapter-tuning range, versioned with the schema; FTF-0702's per-family registry picks values inside them, and changing a bound is a schema version bump:
+      - **Integers:**
+        - `epochs` 1..20;
+        - `max_seq_length` ∈ {1024, 2048, 4096, 8192, 16384};
+        - `micro_batch_size` 1..128;
+        - `gradient_accumulation_steps` 1..1024;
+        - `seed` 0..2147483647 (absent → 3407, stored explicitly);
+        - `checkpoint_interval_steps` 1..1000000;
+        - `max_checkpoints` 1..50;
+        - `lora_rank` 1..256;
+        - `lora_alpha` 1..1024;
+        - `max_wall_clock_seconds` 60..2592000.
+      - **Decimals** (JSON strings, no exponent, normalized before hashing so "0.00020" and "0.0002" hash equally):
+        - `learning_rate` 0.0000001..0.001;
+        - `warmup_ratio` 0..0.5;
+        - `weight_decay` 0..1;
+        - `max_grad_norm` >0..100;
+        - `lora_dropout` 0..0.5;
+        - `max_cost` >0 with ≤ 14 integer and ≤ 4 fractional digits (FTF-0403's own numeric shape).
+      - **Enums:**
+        - `optimizer` {adamw_torch, adamw_torch_fused, paged_adamw_8bit};
+        - `scheduler` {cosine, linear, constant_with_warmup};
+        - `compute_dtype` {bf16, fp16, fp32};
+        - `quantization` {none, nf4}, with `qlora` ⇔ `nf4` and `lora` ⇒ `none`.
+      - **Other fields:**
+        - `gradient_checkpointing` is a strict bool;
+        - `target_modules` is 1..32 unique identifiers matching `^[A-Za-z_][A-Za-z0-9_]{0,63}$`.
+  - **FTF-0701-P1 Pure typed config schema and phase-07 contract freeze (no DB, no route; lock `contracts:07`; UNWIRED, proving_symbol blank; ready now, after #998 as above).**
+    - Files:
+      - `workers/training/training_config_schema.py` (pure, no I/O);
+      - `packages/contracts/jsonschema/07-domain.schema.json`;
+      - `packages/contracts/openapi/07-interface.yaml` (`paths: {}` in P1, the FTF-0902 precedent: the module description says the experiments paths arrive with P3 and every other phase-07 route with its owner task);
+      - `tests/tasks/test_ftf_0701_p1.py` (stdlib `check()` script);
+      - an additive `gate` step `uv run python3 tests/tasks/test_ftf_0701_p1.py`.
+    - Module API:
+      - Constants: `SCHEMA_VERSION = "training_config.v1"`, `METHODS`, `ENABLED_METHODS`, `RESERVED_METHODS` (each with its reason), `SEQUENCE_BUCKETS`, `DEFAULT_SEED = 3407`, one frozen `LIMITS` mapping, and `ERROR_CODES` mapping each code to its HTTP status.
+      - `TrainingConfigError(code)`.
+      - `parse_training_config_request(body) -> TrainingConfigRequest`: exact allow-list at every level, typed values, Decimal normalization.
+      - `TrainingConfigFacts`: built server-side only. It holds the artifact id/status/weights digest/base revision/license state; the FTF-0307 capability; an optional catalog entry + version + mapped artifact; the split view summary (manifest id, version, frozen sha, train/validation counts and `role_sha256`); the budget policy (id, row_version, currency, scopes, total, reserved); and the project's security profile.
+      - `resolve_training_config(request, facts) -> ResolvedTrainingConfig`: runs the checks in a fixed order (shape 400 → enablement 409 → source role 403/400 → facts 409/403) and the first failing check wins; the order is pinned by a test.
+      - `canonical_config_json`, `compute_config_sha256` and `verify_config_sha256`.
+    - Request shape. Every object is exact; no other key at any level:
+      - Top level: `{schema_version, mode, auto_rule_version, method, base, tokenizer, template, data, precision, hyperparameters, adapter, budget}`.
+      - `base` = `{trainable_artifact_id, model_catalog_entry_id|null, catalog_version|null}`.
+      - `tokenizer` = `{source: "base_artifact", revision}`.
+      - `template` = `{source: "base_artifact", loss_policy: "assistant_only", packing: false}`.
+      - `data` = `{train: {split_manifest_id, role}, validation: {split_manifest_id, role}, frozen_manifest_sha256}`.
+      - `precision` = `{compute_dtype, quantization}`.
+      - `hyperparameters` holds the fourteen §14.2 non-adapter fields.
+      - `adapter` = `{lora_rank, lora_alpha, lora_dropout, target_modules}`, required for lora/qlora.
+      - `budget` = `{max_cost, currency, max_wall_clock_seconds}`.
+      - The resolved config adds the server facts: artifact weights digest and base revision, the manifest frozen sha and both role hashes, budget policy id/row_version, security profile, and the effective seed. `config_sha256` covers all of it.
+    - Error codes (exact, frozen in the domain schema as `TrainingConfigErrorCode`):
+      - **400:**
+        - `invalid_body`, `unsupported_schema_version`, `invalid_mode`, `invalid_method`, `invalid_source_role`;
+        - `split_manifest_mismatch` (train and validation on different manifests);
+        - `invalid_tokenizer`, `invalid_template`, `packing_not_qualified`;
+        - `invalid_lora_rank`, `invalid_lora_alpha`, `invalid_lora_dropout`, `invalid_target_modules`;
+        - `invalid_learning_rate`, `invalid_epochs`, `invalid_warmup_ratio`, `invalid_max_seq_length`, `invalid_batch_size`, `invalid_gradient_accumulation`, `invalid_optimizer`, `invalid_scheduler`, `invalid_weight_decay`, `invalid_max_grad_norm`, `invalid_seed`, `invalid_checkpoint_policy`;
+        - `unsupported_dtype`, `invalid_quantization`, `method_quantization_mismatch`;
+        - `invalid_budget`, `invalid_currency`.
+      - **403:**
+        - `heldout_training_source_denied` (a role of `development_eval`, `final_qualification` or legacy `heldout_test` in either slot);
+        - `dataset_grant_changed`.
+      - **409:**
+        - `method_not_enabled`, `auto_rule_version_unknown`;
+        - `split_manifest_not_locked`, `split_manifest_changed`, `split_manifest_tampered`, `quality_report_changed`;
+        - `train_split_empty`, `validation_split_empty`;
+        - `artifact_not_trainable`, `license_not_accepted`, `tokenizer_revision_mismatch`;
+        - `catalog_mapping_changed`, `catalog_artifact_mismatch`;
+        - `budget_policy_missing`, `budget_scope_not_authorized`, `budget_currency_mismatch`, `budget_limit_exceeds_policy` (max_cost > total − reserved; equal is allowed; no reservation is made);
+        - `idempotency_key_reused`.
+    - Domain schema `$defs`:
+      - `TrainingConfigV1` and every nested object with `additionalProperties: false`;
+      - `TrainingMethod` (all four values) and `EnabledTrainingMethod`, each reserved value annotated with its reason;
+      - every enum and bound;
+      - `TrainingConfigErrorCode`;
+      - `ResolvedTrainingConfig`.
+    - DoD tests (no network):
+      - A boundary table for every bounded field: min−1/min/max/max+1 and, where defined, a value between buckets. Each wrong type is its own row (bool, float, int-as-string, null, list), with the exact code asserted.
+      - A generated allow-list table from the schema's own property lists: a missing key and an unknown key at each level → `invalid_body`. This explicitly includes engine passthrough keys: `trust_remote_code`, `push_to_hub`, `hub_model_id`, `report_to`, `wandb_project`, `base_model`, `datasets`, `plugins`, `deepspeed`, `fsdp`, `special_tokens`, `chat_template`, `torch_compile`.
+      - Property-generated variants of every enum value are refused: case, surrounding whitespace, NBSP, ZWSP, full-width, NFKC-compatible forms. Examples: `LoRA`, `lora `, `ｌora`, `bfloat16`, `BF16`, `torch.bfloat16`, `fp8`, `int8`.
+      - `full_sft` and `seq_cls_lora` → `method_not_enabled` with every other field valid; `auto` → `auto_rule_version_unknown`.
+      - The qlora/nf4 and lora/none truth table.
+      - Held-out table: train or validation `role` ∈ {development_eval, final_qualification, heldout_test} → 403 `heldout_training_source_denied`; `Train`, `""`, `validation` in the train slot (and the reverse) → 400 `invalid_source_role`.
+      - Every facts row: capability ≠ `trainable_open_weight`, license unaccepted, tokenizer revision ≠ base revision, the catalog table, and the budget table including the equal/+0.0001 boundary.
+      - Hash properties:
+        - every resolved leaf, mutated one at a time (generated), changes `config_sha256`;
+        - decimal spellings that normalize equal hash equal;
+        - the hash is equal under two `PYTHONHASHSEED` subprocesses and any key order.
+      - Contract parity: every enum, bound, allow-list and error code in `07-domain.schema.json` byte-equals the module constants, and `07-interface.yaml` has `paths == {}`.
+      - Schema/client validation: the stdlib validator accepts every request the module accepts (a generated valid set) and rejects every shape-invalid row of the boundary and allow-list tables.
+      - META-LEAK: a canary in `target_modules`, `revision` and `max_cost` never reaches an exception message, its chain or `str()`.
+    - Faults that must go RED:
+      - each bound widened by one step;
+      - an unknown key accepted at each level;
+      - an enum casefolded or stripped;
+      - a float accepted for an int;
+      - a bool accepted as an int;
+      - a reserved method enabled;
+      - `auto` accepted;
+      - a held-out role accepted in either slot;
+      - qlora without nf4;
+      - decimals hashed un-normalized;
+      - each resolved leaf dropped from the hash;
+      - the check order swapped;
+      - schema/module drift.
+  - **FTF-0701-P2 `training_experiments` persistence (migration; lock `migration:application`; UNWIRED, proving_symbol blank; after P1 CERTIFIED).**
+    - Files:
+      - `apps/api/alembic/versions/00NN_training_experiments.py`;
+      - `apps/api/app/training/__init__.py`;
+      - `apps/api/app/training/training_experiment_store.py`;
+      - `tests/tasks/test_ftf_0701_p2.py` (gate step);
+      - `tests/integration/test_ftf_0701_p2_training_experiments.py`.
+    - Additive job `training-experiment-store-integration`: postgres service as `model-import-integration`; classify focus entry; `ci-verdict` needs; `tests/unit/test_ci_policy.py` coverage.
+    - Table `training_experiments`:
+      - **Columns:**
+        - `id`, `organization_id`, `project_id`;
+        - `name` (non-blank, ≤ 200), `version` ≥ 1, `parent_version` (NULL for v1, otherwise < version);
+        - `status` CHECK = 'draft' (FTF-0801 widens it by its own migration);
+        - `method` CHECK IN ('lora','qlora');
+        - `config_schema_version` CHECK = 'training_config.v1';
+        - `config_json` JSONB, `config_sha256` (hex64);
+        - `trainable_artifact_id`, `model_catalog_entry_id` NULL;
+        - `split_manifest_id`, `frozen_manifest_sha256`;
+        - `budget_policy_id`, `max_cost` NUMERIC(18,4) > 0, `currency` ~ '^[A-Z]{3}$';
+        - `security_profile`;
+        - `requested_by` (non-blank, ≤ 200), `request_id`, `idempotency_key` (1..128 printable ASCII), `request_sha256` (hex64), `created_at`.
+      - **Composite FKs** (organization_id, x) → projects, trainable_artifacts, model_catalog_entries, dataset_split_manifests and budget_policies, all ON DELETE RESTRICT.
+      - **Uniqueness:** UQ (organization_id, id); UQ (project_id, name, version); UQ (organization_id, requested_by, idempotency_key).
+      - **Consistency CHECK:** `config_json->>'schema_version' = config_schema_version`, `->>'method' = method`, `data.train.role = 'train'`, `data.validation.role = 'validation'`, and both `split_manifest_id`s equal the column. This is the DB-level held-out refusal.
+      - **BEFORE INSERT trigger:** the manifest row must be `locked` with `frozen_manifest_sha256 = NEW.frozen_manifest_sha256`, and the artifact must be `ready` with `license_accepted_at` set. Defense in depth, 0030 child-guard style.
+      - **Grants:** `sovra_app` gets SELECT, INSERT only (no UPDATE, no DELETE). Rows are immutable; a changed config is a new `version` row with `parent_version`.
+      - RLS ENABLE + FORCE with policy `tenant_isolation` exactly as 0030.
+    - `create_training_experiment(session, context, project_id, *, name, config_body, idempotency_key, actor)` does everything in one transaction:
+      1. Project write authorization.
+      2. P1 parse.
+      3. Idempotency: same key + same `request_sha256` → the existing row, with 0 new rows and 0 audit; same key + a different body → `idempotency_key_reused`.
+      4. Build the facts only through certified public functions:
+         - the FTF-0301 tenant-scoped artifact read plus FTF-0307 `classify_training_capability`. Capability comes from the artifact dimension only; access is not used for training, per 0307's own orthogonality rule;
+         - FTF-0308 `require_current_mapping` when a catalog entry is given;
+         - FTF-0519 `load_training_split`, whose `SplitManifestError` codes map 1:1 (`grant_changed` → 403 `dataset_grant_changed`, `quality_report_changed`, `manifest_tampered` → `split_manifest_tampered`, not locked → `split_manifest_not_locked`). The returned frozen sha must equal the request's, else `split_manifest_changed`;
+         - the FTF-0403 policy read (no `reserve_budget_allocation` call);
+         - the project row.
+      5. P1 `resolve_training_config`.
+      6. `version = max + 1` for (project, name), serialized by `SELECT … FOR UPDATE` on the project row; the UQ is the backstop.
+      7. INSERT, plus `write_audit_event` `training_experiment.create` in the same transaction. The audit is content-free: ids, version, method, `config_sha256`; never the name, target modules or revision text.
+    - `get_training_experiment` / `list_training_experiments` (bounded page, ordered by name then version) recompute `config_sha256` from `config_json` on every read. A mismatch raises `config_integrity_failed` and the row is never served.
+    - Law 17: a database or storage error raises its own error with nothing written, never success. Disclosed: `load_training_split` reads the role rows (≤ 1,000,000, its cap) at create time; record the measured time for the largest fixture in the submission, never a guessed figure.
+    - DoD tests (real PG16, as `sovra_app`; fixtures built through the certified FTF-0519/0403/0301/0305 APIs, not raw SQL):
+      - happy path for lora and qlora, with the DB `config_sha256` equal to a pure recompute;
+      - replay gives 0 rows and 0 audit; key reuse → 409;
+      - two threads posting the same name → versions 1 and 2; two threads with the same key → exactly one row;
+      - a held-out role in the request → 403 and an independent DB count of 0;
+      - raw INSERTs as `sovra_app` refused: `config_json` naming `final_qualification` (CHECK); a `proposed` manifest (trigger); a stale frozen sha (trigger); a license-revoked artifact (trigger);
+      - a grant narrowed or revoked after lock, through the certified FTF-0500 CRUD → 403 `dataset_grant_changed`;
+      - quality report replaced → 409; license revoked through FTF-0305 `revoke_license` → `license_not_accepted`;
+      - the budget table: no policy, scope without `training`, currency mismatch, max_cost at and above available;
+      - raw UPDATE and DELETE refused by grant;
+      - cross-tenant: identical `not_found` for foreign and missing; a raw org2 INSERT with org1 ids is refused; dropping FORCE turns the cross-tenant test RED;
+      - a superuser edit of `config_json` → GET refuses `config_integrity_failed`;
+      - META-LEAK over the exception chain, audit rows and captured logs.
+    - Faults that must go RED:
+      - UPDATE granted; DELETE granted; FORCE dropped;
+      - the held-out CHECK dropped; the lock trigger dropped;
+      - idempotency scope widened to the organization, or narrowed to (actor, key, body);
+      - `load_training_split` replaced by a raw manifest read;
+      - the grant re-check, license check or budget check skipped;
+      - version assignment without the row lock;
+      - the read integrity check removed;
+      - the audit written outside the transaction.
+    - Law 18: `data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure` passes with the new table. Law 15: no certified module is edited; P1's suite is rerun on the head.
+  - **FTF-0701-P3 Routes and contract paths (lock `contracts:07`; WIRED, proving_symbol `build_training_experiment_router`; after P2 CERTIFIED).**
+    - Files:
+      - `apps/api/app/training/training_experiment_routes.py`;
+      - `apps/api/app/main.py` (one additive mount; no other line changed);
+      - `packages/contracts/openapi/07-interface.yaml` and `07-domain.schema.json` (exactly three paths plus the request/response schemas, additive);
+      - `tests/tasks/test_ftf_0701.py` (the packet's named test: contract parity and route table);
+      - `tests/integration/test_ftf_0701_routes.py` (a real uvicorn server over PG16 as `sovra_app`, through the live FTF-0103A auth path).
+    - Additive job `training-experiment-routes-integration`.
+    - Routes:
+      - `POST/GET /api/v1/organizations/{organization_id}/projects/{project_id}/training/experiments`;
+      - `GET …/training/experiments/{experiment_id}`.
+    - POST behaviour:
+      - The body is exactly `{name, idempotency_key, config}`, capped at 64 KiB; anything else is 400 `invalid_body`.
+      - 201 for a new experiment, 200 for a replay.
+      - Writers `{ml_engineer, organization_admin}`; reads by every role.
+      - Errors are `{"detail": code}` with P1's status table. 404 `not_found` is identical for missing and foreign ids.
+      - The response is the row plus the resolved config: ids, hashes and hyperparameters only — no dataset rows, record ids, grant snapshots or secret refs.
+    - DoD tests:
+      - Role truth table: 6 roles × {POST, list, get} → exact status.
+      - Every `ERROR_CODES` entry is reachable through the route with its status, from a generated table.
+      - A held-out POST → 403 with an independent DB count of 0.
+      - The `07-interface.yaml` paths and methods equal the router's registered routes exactly: no undeclared route, no placeholder path. Every 2xx body validates against `07-domain.schema.json` with the stdlib validator.
+      - Malformed JSON, a non-object body or an oversized body → 400.
+      - `scripts/product_truth_check.py --fail-on-unwired` passes: the live caller is `main.py`; the user-visible assertion is the 403 `heldout_training_source_denied` detail; removing the held-out check reddens it.
+    - Faults that must go RED:
+      - the router mounted without `require_role`;
+      - writers widened to evaluator or viewer;
+      - foreign → 403 instead of 404;
+      - a placeholder path (`/training/estimate`) added to `07-interface.yaml`;
+      - another project's experiment served;
+      - a replay that writes audit.
+    - Law 15: `main.py` changed, so rerun `live-auth-path-integration` and `product_truth_check` on the head.
+    - Parent closure in this PR (the Control plane certifies; never self-certified):
+      - the spec-matrix FTF-0701 `proving_test` lists the P1/P2/P3 task and integration tests, and `proving_symbol` is `build_training_experiment_router`;
+      - the notes carry the disclosures below.
+  - Disclosed (parent):
+    - **Engine boundary:** no Axolotl translation or validation (FTF-R003).
+    - **Method/model compatibility:** not checked. §13 `method_support`/`quantization_support`/VRAM are not produced by FTF-0307 (its own disclosed narrowing); FTF-0702/0705/0709 own this. `max_seq_length` is checked against the buckets only, because no model-limit field exists yet (FTF-0702/0706).
+    - **AUTO mode:** §14.1's default mode stays refused until FTF-0702.
+    - **Draft only:** no submission, reservation, workflow or GPU. Admission is FTF-0801/0807/H016 (§70.1/70.3).
+    - **Template:** template validation and loss masks are FTF-0707.
+    - **BLOCKED_EXTERNAL:** none for FTF-0701's own clauses. "Real relevant integration" is PG16 plus the live route. Q10/Q13 GPU evidence belongs to FTF-0708–0714 (`gpu_driver` BLOCKED_EXTERNAL in `spec/compatibility-lock.json`).
+  - Ask-first: none. No new runtime dependency, secret or keyed service, and no reused component swapped, forked or re-formed.
+  - **Control-plane rulings (2026-10-23, on the design's recorded conflicts):** (1) the 07 contract declares only the `experiments` routes FTF-0701 builds - the rest of the phase-07 family is added by its owning tasks (no placeholder endpoints, Law 11); (2) AUTO mode is refused with `auto_rule_version_unknown` until FTF-0702 lands, `full_sft` is refused until a task owns the §15.1 admin enablement/approval gate, `seq_cls_lora` is reserved and refused (ADR 0004) - each refusal is a stable code with a RED test, never a silent default; (3) sequence length is checked against the §15.2 buckets only, and method/model compatibility is disclosed as not checkable until §13 per-model fields exist (FTF-0307's recorded narrowing) - disclosed in the submission and spec-matrix notes, not claimed; (4) train/validation sources are (split manifest, role) pairs through FTF-0519 `load_training_split`; (5) the numeric bounds in this design are the Control plane's and are recorded here.
+- **FTF-H010 parent remainder: import wizard, version panel and disclosed parent closure** (Control-plane design 2026-10-23; FINE_TUNING_FACTORY_RELEASE_1.md §0.12, §6.17, §17 paragraphs 3–4, §22, §58A, §68.1, §72.1–72.5, §77.6, §81; AF-14; Q07; FTF-H010-P1 (#699), P2 (#918), P3a (#839), P3 (#989) CERTIFIED; P4 PROVISIONAL in PR #998 `relay/FTF-H010-P4-r1`). This replaces the one-line re-queue note ("Then FTF-H010 (parent: `ImportModelWizard.tsx` on the P1–P4 routes plus its disclosures) is re-queued"). Two more child slices refine the parent under "For each card" step (3): P5 (wizard) and P6 (version panel plus parent closure). They add no criteria: no count change and no ADR. DoD `python tools/r1_handoff.py packet FTF-H010 --plan FINE_TUNING_FACTORY_RELEASE_1.md` plus the 2026-10-09 child-slice entry plus this entry. Acceptance: "Import and evaluate a real existing endpoint-only fine-tune; import/load full weights and adapter+base; continue only permitted artifacts; resumed step differs from new continuation." / "No full release claim until all mapped scenarios and exact-revision evidence pass." Negative: "Do not require fictitious artifact hash for endpoint-only imports or infer retrainability from alias; incompatible adapter/base and license denial block use."
+  - Clause status after P1–P6 (updates the 2026-10-09 clause map; the union still covers the parent):
+
+    | Parent clause | Covered by | State at parent closure |
+    |---|---|---|
+    | "Import ... a real existing endpoint-only fine-tune" | P1 enqueue, P2 validation (stand-in gateway), P5 UI | Real endpoint **BLOCKED_EXTERNAL**: `litellm_gateway` is BLOCKED_EXTERNAL in `spec/compatibility-lock.json`; needs the org gateway virtual key (Owner actions 2026-10-08, the FTF-0616 line) plus one existing fine-tuned deployment id on it |
+    | "... and evaluate" it | none | **BLOCKED_EXTERNAL** (the same key) and BLOCKED_DEPENDENCY (FTF-R004 target-runtime evaluation, FTF-0601-series runs) |
+    | "import ... full weights and adapter+base" (validation) | P3a, P3, P5 | Met for `local` artifact sources. `private_s3`/`huggingface` end `blocked_external metadata_files_unavailable` (P3's own disclosure) |
+    | "... load full weights and adapter+base" | none | **BLOCKED_EXTERNAL** (`gpu_driver`) and BLOCKED_DEPENDENCY (FTF-1003/1004 vLLM) |
+    | "continue only permitted artifacts" | P4 eligibility + server denial, P6 display | Met as eligibility. The actual continued training is **BLOCKED_EXTERNAL** (GPU) and BLOCKED_DEPENDENCY (FTF-R003/0701/0801) |
+    | "resumed step differs from new continuation" | P4 `continuation_plan` property, P6 display | Met as a plan property. The real resume is **BLOCKED_EXTERNAL** (GPU) and BLOCKED_DEPENDENCY (FTF-0713/0714) |
+    | negative "fictitious artifact hash for endpoint-only imports" | P1 CHECK, P2 success path, P5 (no hash field), P6 (no placeholder digest) | Met |
+    | negative "infer retrainability from alias" | P2, P4, P6 | Met |
+    | negative "incompatible adapter/base and license denial block use" | P3 (validation), P4 (actions refuse), P5/P6 (shown with reason) | Met |
+    | goal "alias role assignment" | P4, P6 | Met |
+    | production dispatch of import jobs | none | BLOCKED_DEPENDENCY FTF-0801/H016: UNWIRED, no dispatcher calls `claim_model_import_job`/`validate_*`, so a real job stays `queued` and the UI says so |
+    | "No full release claim ..." | parent | Q07 is not claimed; the parent's notes say so |
+
+  - Certification shape (precedent): FTF-0616, ledger 2026-10-09T18:33Z — "CERTIFIED for the adapter scope ... The real-judge clause stays BLOCKED_EXTERNAL (org LiteLLM gateway key, dated owner action); FTF-1810 precedent". The parent certifies for its import-validation, role, action and UI scope. Every BLOCKED_EXTERNAL and BLOCKED_DEPENDENCY row above stays listed in the spec-matrix notes, the ledger entry and the `docs/certifications/queue.md` submission, each with its owner/dependency and next action. None is converted to evidence and none is skipped. Q07 stays unpassed.
+  - Owner action (Control plane edits, not the relay; Owner actions live in one place): amend the existing 2026-10-08 FTF-0616 line rather than add a second ask for the same key. The amended line asks for the gateway virtual key and judge model id (FTF-0616), plus one existing fine-tuned deployment id on that gateway (FTF-H010 endpoint import + evaluate). The relay never requests, stores or invents a credential.
+  - Common rules (P5, P6):
+    - **Path refinement, recorded:** the packet's `apps/web/components/models/ImportModelWizard.tsx` becomes `apps/web/components/model-import/import_model_wizard_ui.tsx` (plus P6's `model_version_panel_ui.tsx`), matching the snake_case `<domain>/<name>_ui.tsx` convention of all 20 existing components.
+    - **UI-only:** no apps/api module, migration or OpenAPI path changes. One allowed contract edit, P5, doc only, under `contracts:10`: P3's `_finish` in `model_import_weights_validation.py` also sets `result_model_version_id` for weights/adapter jobs, so `10-interface.yaml`'s description "The endpoint-only ModelVersion a `succeeded` job created (FTF-H010-P2)" is stale. P5 corrects that description additively; the schema is unchanged.
+    - **No new runtime dependency.** React and `@radix-ui/react-dialog` are already approved, and no i18n library is added. No secret, no keyed service. Only standard system phrases, written in English and Arabic without asking: buttons, field validation, error messages, empty/loading text and status labels.
+    - **No owner-approval copy:** no license or legal explanatory text, no brand or marketing copy. A license appears only as the artifact's `license_id` data and its state label.
+    - **UNWIRED until FTF-H029** mounts the screens; the UI `proving_symbol` stays blank (FTF-0309 / H011-P4 precedent). Only screen-reader checks and routed journeys wait for H029. Everything in brief item 8 is proven now.
+    - **UX evidence:** CLAUDE.md "UI design standard". The work is designed with `.claude/skills/ui-ux-pro-max` inside §72 tokens and UX01 components, and meets docs/design/UX_STANDARD.md §4 items 1–5 in full:
+      - the skill queries (`--domain ux`, `--stack react`) with their output;
+      - an H1–H10 × state severity table per component, where the states are empty, loading, populated, error and permission-denied/blocked;
+      - behavioural H1/H3/H5/H9 tests;
+      - 1280/768/390 px viewports, keyboard-only and 200 % zoom;
+      - axe plus the manual WCAG 2.2 AA items.
+      A severity 3–4 finding blocks the slice; a severity 2 finding needs a recorded decision.
+    - **L2 review brief item 8:** the submission reports every class as met or not met, each with a test that turns RED when its fault is applied:
+      - NOT-ON-UX01;
+      - REAL-BROWSER-IN-CI (`ftf_h010_p{5,6}_browser.spec.ts` on the Chromium harness: every state × en/ar × light/dark at 1280/768/390/320 and 200 % zoom, keyboard-only with a visible focus outline, axe wcag2a..22aa with 0 violations, run in CI on the head SHA);
+      - ERRORS-SILENT / MALFORMED-200 (a rejected fetch, a non-JSON 200, a `{}` 200 and a list containing `null`, for every GET the component makes);
+      - MISSING-STATES;
+      - NOT-BILINGUAL (`lang`/`dir` on every state; user data in `<bdi>`);
+      - OVERFLOW-LONG-NAMES (0 px horizontal scroll at 390/320 and 200 % with a 2048-character unbroken provider ref, 64-hex digests, a 200-character artifact name and a 128-character idempotency key);
+      - FOCUS (a failed submit focuses the ErrorSummary; each confirm Dialog has an accessible name, takes focus, Escape cancels, focus returns on cancel and lands on a stable element after confirm);
+      - UNPINNED;
+      - EVIDENCE (the 39-item `references/pro-rules.md` checklist item by item).
+    - **UI CHECKLIST a–f (Control-plane ruling 2026-10-09):**
+      - (a) a generated strict-parse table over every response field of every route used;
+      - (b) one binding function comparing every sent field with the response;
+      - (c) drafts keyed by organization and project and reset on any prop change; nothing in localStorage;
+      - (d) only a typed 2xx with a bound body counts as success;
+      - (e) 5xx, non-JSON and unknown codes are retryable and keep state (Law 17);
+      - (f) a real-API test against the real routers in a CI job.
+    - **Real-API tests run against real routers:** a real uvicorn server over PG16 as `sovra_app` on the live FTF-0103A auth path. No production dispatcher exists, so the Python harness advances jobs by calling the real certified P2/P3 functions (`claim_model_import_job`, `validate_endpoint_import`, `validate_weights_import`, `validate_adapter_import`). It is labelled in the test and the submission as standing in for the absent FTF-0801/H016 dispatcher, never as product behaviour. Endpoint success reuses P2's own local TLS gateway and OpenBao KV stand-in fixtures from `tests/integration/test_ftf_h010_p2_import_validation.py`, labelled stand-in; real-gateway proof stays BLOCKED_EXTERNAL. Weights/adapter use P3's stdlib safetensors fixtures from `test_ftf_h010_p3_weights_import.py`.
+    - **Must not edit:** any `apps/api` module, migrations 0027–0037, P1–P4 tests, `workers/training/continuation.py`, or the UX01 components (`apps/web/components/ui/*`, compose them).
+    - **Mutation and faults:** `scripts/mutation_gate.py` mutates Python only. The new Python presence tests go through it uncapped with 0 survivors, and the TSX is pinned by an explicit fault→RED row for every DoD bullet (the UX0x precedent).
+  - **FTF-H010-P5 Import wizard UI (ready now: P1/P2/P3a/P3 CERTIFIED; does not need P4).**
+    - Files:
+      - `apps/web/components/model-import/import_model_wizard_ui.tsx`;
+      - `apps/web/tests/ftf_h010_p5.spec.ts` (DOM Vitest, UI CHECKLIST a–e);
+      - `apps/web/tests/ftf_h010_p5_browser.spec.ts` + `apps/web/tests/browser/h010_p5_entry.tsx`;
+      - `apps/web/tests/real_api/ftf_h010_p5_ui_real_api.realapi.ts` + `tests/integration/test_ftf_h010_p5_ui_real_api.py`.
+    - Additive job `model-import-ui-real-api-integration`, following the `dataset-quality-ui-real-api-integration` precedent: classify focus entry, `ci-verdict` needs, `tests/unit/test_ci_policy.py` coverage.
+    - Step 1, origin choice. Three options on UX01 radio cards: endpoint model / full weights / adapter + base.
+    - Step 2, form per origin:
+      - **external_endpoint:**
+        - Pick an active connection from `GET /organizations/{org}/connections/litellm`.
+        - Pick the alias/provider id from that connection's `GET …/catalog`, or type the exact ref (≤ 2048 characters, sent verbatim, never trimmed or case-folded).
+        - No artifact, digest or hash field exists in this branch (negative clause), and `base_url` is never rendered.
+        - Both routes are `CONNECTION_ADMIN_ROLES` (organization_admin only; certified FTF-0201/0308, and the 2026-10-10 `base_url` ruling). For an ml_engineer the branch shows the permission-denied state ("Requires an organization administrator") with no submit control, and the weights/adapter branches stay usable. Recorded reading below.
+      - **imported_weights:** pick a TrainableArtifact from `GET /organizations/{org}/artifacts`, showing status, license state and digest (monospace, wrapped, in `<bdi>`). An artifact that is not ready or has an unaccepted license shows its blocked reason before submit; the server still decides.
+      - **imported_adapter:** pick the adapter artifact plus the base ModelVersion from `GET …/model-versions`. Only `imported_weights` versions are listed, with origin and lineage. Exact base only: no family or name matching, and `base_model_name_or_path` is never used.
+    - Step 3, review:
+      - the summary;
+      - the project security profile, read-only;
+      - the expected lineage: "Unknown" for endpoint, "Partial" for weights/adapter;
+      - an explicit confirm checkbox;
+      - then `POST …/model-imports`.
+    - The P1 POST has no idempotency key, so a lost response is never blindly retried. The wizard re-lists `GET …/model-imports` and shows the job if one was created. Only when none matches is resubmit enabled, after an explicit user action.
+    - Step 4, status. The job list comes from `GET …/model-imports` on mount, so it survives refresh (§68.1 "persisted state survives refresh"). Per-job StatusBadge states:
+      - `queued` → "Queued – validation has not started" (no ETA, progress bar or percentage);
+      - `validating`;
+      - `failed` + localized failure code;
+      - `blocked_external` + reason (never shown as failed or success);
+      - `succeeded` → `onModelVersion(result_model_version_id)`.
+    - Polling uses bounded backoff (2 s → 30 s), stops at a terminal state and is announced via `role=status` / `aria-live=polite`.
+    - Failure-code table: a Python test imports every `CODE_*` constant from `model_import_validation.py` and `model_import_weights_validation.py`, plus the P1 route error codes. It asserts each code has an en and an ar entry in the component's message map, so a missing code is RED. An unknown code renders "Validation failed" with the code in `<bdi>`: never success, never empty.
+    - Real-API scenarios (independent DB check after each):
+      - R1: endpoint import → `queued` shown; the harness validates → `succeeded` shown with lineage "Unknown". There is no digest in the DOM, and the DB row has NULL `artifact_sha256`/`endpoint_reference`.
+      - R2: a resolved-model echo that differs → `failed` with its code.
+      - R3: gateway unreachable → `blocked_external`, never success.
+      - R4: a local full-weight fixture (P3 integration's tiny safetensors) → `succeeded`, lineage "Partial".
+      - R5: digest mismatch → `failed digest_mismatch`.
+      - R6: adapter on a mismatched base → `adapter_base_incompatible`.
+      - R7: license revoked before validation → `license_not_accepted`.
+      - R8: viewer and evaluator → permission-denied state with no submit control; ml_engineer on the endpoint branch → admin-required state.
+      - R9: a foreign project → `not_found` shown.
+      - R10: reload mid-queue → the job is restored.
+      - R11: the POST response dropped → exactly one job row and the wizard shows it.
+      - R12: a `private_s3` artifact → `blocked_external metadata_files_unavailable`.
+    - Faults that must go RED:
+      - a hash/digest field shown or required for endpoint;
+      - success shown while queued;
+      - `blocked_external` rendered as failed or success;
+      - an unknown code rendered as success or empty;
+      - a blind re-POST after a lost response;
+      - `base_url` rendered;
+      - the base list including unvalidated or name-matched versions;
+      - `role=alert` removed;
+      - ErrorSummary focus removed;
+      - an English fallback under `ar`;
+      - the wrap removed;
+      - polling without backoff or stop.
+  - **FTF-H010-P6 Model version panel (lineage, roles, capability-driven actions) and parent closure (after P4 CERTIFIED (#998) and P5 CERTIFIED).**
+    - Files:
+      - `apps/web/components/model-import/model_version_panel_ui.tsx`;
+      - `apps/web/tests/ftf_h010_p6.spec.ts`;
+      - `apps/web/tests/ftf_h010_p6_browser.spec.ts` + `apps/web/tests/browser/h010_p6_entry.tsx`;
+      - `apps/web/tests/real_api/ftf_h010_p6_ui_real_api.realapi.ts` + `tests/integration/test_ftf_h010_p6_ui_real_api.py`.
+    - Additive job `model-roles-ui-real-api-integration`.
+    - Lineage section, from the FTF-1001 GET item:
+      - `origin` and `lineage_completeness` verbatim; unknown parent and training data are shown as "Unknown" (§68.1);
+      - the artifact digest only when present; an endpoint version shows "No training artifact", never a placeholder digest;
+      - the observed deployment fingerprint when present, in `<bdi>`.
+    - Roles section, from `GET …/roles`, active and revoked:
+      - Assign: a role select plus a confirm Dialog naming the role and the version. One `idempotency_key` (`crypto.randomUUID()`) per confirmed attempt is reused on retry of that same attempt, so a lost response gives a 200 replay and one row. `current_production`/`judge` attempts by a non-admin show the server's 403.
+      - Revoke: a confirm Dialog. A retry after a lost response gets 409 `role_not_assigned`; that re-fetches and shows the revoked state, not an error.
+    - Actions section, from `GET …/actions`: a table of action × "Allowed" / "Not available" + localized reason. It is read-only. No effect route exists yet for any action (evaluate → FTF-R004/0601, continue_tuning → FTF-0701/0801, request_qualification → H020, deploy_route → FTF-10xx, retire → status lifecycle), so P6 renders no buttons for them (Law 11: no placeholder controls). The `continuation_plan` is shown when present: new_run start_step 0 vs exact_resume checkpoint step.
+    - Reason-code table: generated from the P4 `continuation.py` constants and the P4 route error codes, en + ar each, with a Python presence test. An unknown reason renders "Not available" + code, never "Allowed" (fail closed).
+    - Real-API scenarios:
+      - R1: an endpoint version whose ref contains `ft:`, `lora`, `llama`, `trainable` or `teacher`, and that holds a `teacher` role → continue_tuning shows "Not available `endpoint_not_trainable`".
+      - R2: an imported adapter → continue_tuning allowed as a new run; exact_resume shows "Not available `no_trusted_checkpoint`".
+      - R3: license revoked through FTF-0305 → every use action not available.
+      - R4: two admin browser contexts assign `current_production` concurrently → one succeeds, the other shows `incumbent_exists`.
+      - R5: judge on a candidate → `self_judging_role_conflict`.
+      - R6: ml_engineer assigning judge → 403 shown.
+      - R7: an unvalidated FTF-1001 synchronous row → `import_not_validated` everywhere.
+      - R8: revoke, then revoke again → the revoked state is shown.
+      - R9: a foreign version → `not_found`.
+    - Faults that must go RED:
+      - "Allowed" shown when the server denies;
+      - an unknown reason shown as allowed;
+      - an effect button rendered;
+      - a placeholder digest for an endpoint;
+      - "Unknown" lineage replaced with a guess;
+      - a new idempotency key on retry (duplicate row);
+      - the 409 on a second revoke shown as a generic error;
+      - focus lost after confirm;
+      - the brief-item-8 class faults as in P5.
+    - Parent closure (same PR; the Control plane certifies, never self-certified):
+      - **`docs/spec-matrix.yaml` FTF-H010:**
+        - `proving_test` lists every P1–P6 task, integration and UI test file;
+        - `proving_symbol` is `build_model_role_router` (the live `…/actions` route in `main.py`, as the P4 design reserved);
+        - `implementation_state` IMPLEMENTED;
+        - the notes carry the clause table above, every BLOCKED_EXTERNAL/BLOCKED_DEPENDENCY row with its next action, "UI UNWIRED until FTF-H029", "dispatch UNWIRED until FTF-0801/H016", and "no Q07/release claim".
+      - **Submission:** `docs/certifications/queue.md` gets a clause → evidence map with test ids and CI job ids per row.
+      - **Law 15:** the P1–P4 suites and the `model-import-*` integration jobs are rerun on the closure head; `product_truth_check --fail-on-unwired` and `validate_spec --strict` must pass; `data_exposure_check` is unchanged.
+  - Recorded readings (default-resolution rule):
+    - **§68.1 "Require explicit project role, rights and privacy selection".** The P1 contract has no rights or privacy field.
+      - Rights are the artifact license gate (FTF-0305; P3 refuses an unaccepted license) and, for endpoints, the org-admin-registered connection under the org gateway policy (FTF-0204).
+      - Privacy is the project security profile (FTF-0402), which the import inherits. P5 shows it read-only and requires the explicit confirm.
+      - No backend field is added, because a new field would be an FTF-H010-P1 contract change and a requalification.
+    - **Endpoint import from the UI needs an organization_admin to list connections and aliases**, because both routes are `CONNECTION_ADMIN_ROLES`. The P2 POST still accepts an ml_engineer with a known connection id. P5 does not widen a certified read route.
+  - Ask-first for the relay: none. No new runtime dependency, secret, keyed service, owner-approval copy, or reused-component change. The gateway key is an existing open owner action, extended by the Control plane.
+  - **Control-plane rulings (2026-10-23, on the design's recorded conflicts):** (1) §68.1 "explicit project role, rights and privacy selection": the design's reading stands - rights = the license gate plus the admin-registered connection; privacy = the project security profile, shown read-only with an explicit confirm; no P1 contract change; (2) the organization-admin-only connection list and catalog routes (certified FTF-0201/0308) are not widened: the endpoint branch shows an "admin required" state for ml_engineers while weights and adapter stay usable; (3) "evaluate" and "load" are disclosed BLOCKED_DEPENDENCY/BLOCKED_EXTERNAL per the clause table (FTF-0616 precedent), never claimed; (4) the existing 2026-10-08 FTF-0616 owner ask (org LiteLLM gateway key) is amended to also ask for one existing fine-tuned deployment id - no second owner ask; the relay never requests a secret; (5) the `10-interface.yaml` description fix and the snake_case component name are accepted.
 - **FTF-UX UI redesign to the UX standard (owner instruction, live 2026-10-16: "all our design must be redesigned using [ui-ux-pro-max] and following all NN/g best practices as a must"; Control-plane design 2026-10-16T16:40Z).** Standard: docs/design/UX_STANDARD.md (NN/g H1-H10 with severity-rated heuristic evaluation, NN/g form/error/empty-state/response-time rules, WCAG 2.2 AA) inside FINE_TUNING_FACTORY_RELEASE_1.md §72 (tokens and Radix/shadcn component pattern FIXED - the skill never picks a new palette/font/style; §72.5 viewports 1280/768/390, keyboard-only, zoom 200 %). Tooling: the vendored skill `.claude/skills/ui-ux-pro-max` (`search.py ... --domain ux`, `--stack react`, pre-delivery checklist). Child slices, no count change; each redesign slice REQUALIFIES the certified parents it touches (Law 15: their suites re-run, their certification stands only if no certified behaviour regresses). Every UI slice from now on (H011-P4, 0520, 0619, 0704, 0717, 1009, 1108, 1310, H029, R007) carries the UX_STANDARD.md §4 evidence in its DoD (CLAUDE.md "UI design standard"). Take in order:
   - **FTF-UX00 Heuristic audit (docs only; ready now; claim `relay/FTF-UX00-r1`).** `docs/design/audit-2026-10.md`: for each of the 16 components in apps/web/components (and the OIDC login), H1-H10 x the states it has (empty, loading, populated, error, permission-denied/blocked), each finding with an NN/g severity 0-4, the ui-ux-pro-max guideline it breaks (query + guideline name), the §72 clause, and the slice below that fixes it; a summary table of severity 3-4 findings. No code change. Certified by an independent second evaluation of a sample (NN/g: more than one evaluator).
   - **FTF-UX01 Design-system foundation (ready after UX00; lock `module:web_ui_foundation`).** `apps/web/styles/tokens.css` with the §72.1 token values exactly (light + separately contrast-tested dark tokens, RTL-safe logical properties); shared accessible components in `apps/web/components/ui/` (Button, Field with visible label/helper/error association, ErrorSummary (focusable, linked to fields), StatusBadge (text + icon, never colour alone, the §72.2 state words), EmptyState, DataTable (sortable, responsive summary/details), Dialog (focus trap + return), Banner/Breadcrumbs, Progress/Pending (NN/g 0.1/1/10 s rules)) on Radix primitives - Radix is fixed by §72.1 (default-resolution rule; not a fresh ask): pin exact versions in apps/web/package.json + the lockfile, no CDN, local/system fonts. Tests: DOM Vitest per component (keyboard, roles/names, error association, focus return, contrast of every token pair >= 4.5:1 text / 3:1 UI computed in the test), each with a fault that goes RED; UX_STANDARD.md §4 evidence.
@@ -9599,7 +10000,7 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
     language/group fields that §68.2/§69.2 and FTF-0602 need, so they are added; the live error convention is
     `{"detail": code}`, not §40's envelope; FTF-0501's "resumable UI" clause is not in its file list and stays with
     FTF-0501's own refinement.
-- FTF-0904-F2 (FIRST: live regression of FTF-0904), FTF-UX02, FTF-R006-P1b (security: cross-tenant), FTF-UX06, FTF-H011-P2, FTF-1301-F1 are returned work in item 0 above.
+- FTF-0904-F2 (FIRST: live regression of FTF-0904), FTF-UX02, FTF-R006-P1b (security: cross-tenant), FTF-UX06, FTF-1301-F1 are returned work in item 0 above.
 - **FTF-UX01-F1 Shared UI error/focus library hardening (follow-up on CERTIFIED FTF-UX01/FTF-UX05; Control-plane 2026-10-23T09:10Z; small; ready now; take BEFORE FTF-UX06 round 2 or any other area reuses these modules).** Work in apps/web/components/ui/AlertMessage.tsx, errors.ts, focus.ts, singleflight.ts and a new apps/web/tests/ftf_ux01_f1.spec.ts; claim `relay/FTF-UX01-F1-r1`. Found by the FTF-UX05 r3 verifier (#983): (1) `RECOVERY_PHRASE[error.kind]` in AlertMessage is not Object.hasOwn-safe - a kind outside the union ("toString", "bogus") throws during render; (2) `networkError` passes any other Error's English message through under locale=ar; (3) errors.ts, focus.ts and singleflight.ts have no direct unit tests (pinned only through four components); (4) `kindForStatus(400)` -> "rejected" is unpinned (V33 GREEN). Fix each with a direct unit test RED on the current code; Law 15: UX01, UX03, UX05 and UX07 specs stay green.
 - **FTF-1301-F1 [round 1 merged (#996), RETURNED: item 0d] Cost panel shows the previous project's cheapest rate after a project switch (follow-up on CERTIFIED FTF-1301; Control-plane 2026-10-23T09:10Z; small; ready now).** Work in apps/web/components/cost-and-model-search/costprofile_schema_ui.tsx and apps/web/tests/ftf_1301*.spec.ts; claim `relay/FTF-1301-F1-r1`. Found by the FTF-UX05 r3 verifier (#983, reproduced in jsdom; pre-existing): when the user switches project and the old project's cheapest-rate response arrives last, the new project's panel shows the old project's rate. Ignore stale replies (a request counter like 0309's `stale()` guard); a test with an out-of-order response RED on the current code, in jsdom and the UX05 browser harness.
 - **FTF-0501-F2 Finalize admits declared non-UTF-8 text encodings — CERTIFIED 2026-10-22 (see Done)** (two Alembic heads); the migration rechain is the Control plane's own fix in this PR, so a separate-session certifier reviews it and FTF-0501-F2 together - relay: no work, do not claim** (follow-up on CERTIFIED FTF-0501; Control-plane 2026-10-20T21:15Z; small; ready now; Law 15: FTF-0501 requalifies, and the 0502-P1/0503/0504 and H011-P1 suites re-run). Work in apps/api/app/datasets/direct_object_storage_upload.py (`sniff_content`, `SNIFF_BYTES`) and its tests; claim `relay/FTF-0501-F2-r1`. Found by the FTF-H011-P1 r3 verifier (#892): finalize refuses a small windows-1256 `;` CSV as text/csv because the sniff decodes as UTF-8 only, while FTF-0503/0504 (QUEUE "encoding ∈ utf-8, utf-8-sig, utf-16-le, utf-16-be, windows-1256") and the H011 P4 scenario need it accepted; and the sniff covers only the first 64 KiB, so the same file behind a >64 KiB ASCII preamble IS accepted - the decision depends on where the first non-ASCII byte falls. Fix: the declared `encoding` of the upload session (one of the five above, default utf-8) is the one the sniff decodes with, strictly, over the whole sniffed window; an undeclared non-UTF-8 text body is refused with a stable code, independent of its byte position. Tests: cp1256 / utf-16 CSV accepted when declared and refused when not, the >64 KiB-preamble variant refused when undeclared, each fault RED; the H011-P1 integration then gains the cp1256 `;` CSV with an Arabic header on row 3 (masked whole-result scan).
@@ -9779,8 +10180,8 @@ normalisation and binding, int cap, whitespace name). Exact DoD: docs/certificat
   - Purpose/grants (source-use grant = FTF-0500 `allowed_purposes`; §67.4 DataUseGrant is FTF-H013): probe, preview, propose, approve and `resolve_approved_mapping` each re-run `authorize_dataset_source_purpose(connection from the dataset's upload session, purpose)` live; the approved purpose must equal `datasets.purpose` (409 `purpose_mismatch`; §9 no reclassification), authorization checked first - a training approval on an evaluation-only connection, or one narrowed/revoked after upload, gets 403 `purpose_not_authorized`, and again at resolve time.
   - Masking (§67.2 "masked unless the user has preview permission"): values visible to workspace_admin/organization_admin, and to ml_engineer only when the connection's `security_classification` is public or internal; otherwise every string leaf, header and key becomes `{"masked":true,"chars":n}` and mapping documents are withheld (JSON types and the `identical` flag stay visible).
   - **FTF-H011-P1 Preview runner — CERTIFIED 2026-10-21 (see Done)** (pure + read-only DB/S3; lock `module:import_common`; UNWIRED, proving_symbol blank; ready now). Files `workers/data/dataset_mapping_review.py`, `apps/api/app/datasets/dataset_mapping_service.py`, `tests/tasks/test_ftf_h011_p1.py` (script; additive `gate` step), `tests/integration/test_ftf_h011_p1_mapping_preview_postgres_s3.py`, additive ci.yml job `dataset-mapping-preview-integration` (PG16 + SeaweedFS; `dataset-import-source-integration` precedent) + classify focus + ci-verdict `needs` + `tests/unit/test_ci_policy.py`. ONE additive serialized `import_common.py` edit (IMPORTER ORDER catalog rule): `ImportMapping.row_observer: Callable[[Row, Sequence[str] | None], None] | None = field(default=None, compare=False, repr=False)`, called first by `apply_mapping` with a copy of the row, never in `document` or `mapping_sha256`, never set by `mapping_from_object`; differential test (candidates and `report_sha256` identical with and without it); the 0502-P1/0502/0503/0504 suites (and 0505's when it lands) re-run in the same PR. If FTF-0505 r4 (#826) also edits import_common.py, P1 waits for it. `run_mapping_probe(format block)` (one minimal certified probe mapping per importer; candidates discarded; headers + <= 20 raw rows). `run_mapping_preview(mapping)`: importer chosen by the server-verified content type only (jsonl, json, csv; XLSX -> `importer_unavailable` until P6); `ImportLimits(max_rejections=200, deadline_seconds=30)`, preview max 20 (lower-only); per row the locator, raw row (masked as above), outcome and code/slot, canonical candidate and comparison rows `{slot, raw_type, canonical_type, identical}` plus `not_mapped` columns/keys; `observed_role_values`, counts, `complete`, `tool_definitions_sha256`, `source_schema_sha256`; `preview_sha256` over (dataset sha, mapping sha, tool-definitions sha, candidates' record/normalized hashes, rejections, counts); storage failure -> `blocked`/`source_unavailable`, object changed -> `source_changed` (Law 17). Tests over the irregular fixtures listed in P4 on real PG16 + SeaweedFS, uploaded through the real FTF-0501 routes. Faults, each RED by a behavioural check: observer mutates the row; observer in the hash; observer called after mapping (raw of rejected rows lost); tap/event pairing off by one; masking skipped or a header left in clear; type coerced or text normalized; preview limit raised; XLSX dispatched to the provisional importer; `tool_schemas` not passed; held-out readable; either critical check skipped; `preview_sha256` omits rejections or tool definitions; grant not re-authorized; socket to a non-storage host allowed; content in an exception or log (shared META-LEAK helper `tests/tasks/import_test_support.py`).
-  - **FTF-H011-P2 Mapping persistence - round 1 merged (#934), RETURNED: item 0g** (after P1 CERTIFIED; lock `migration:application`; UNWIRED). Files `apps/api/alembic/versions/00NN_dataset_mappings.py` (next free number at claim time; revision id <= 32 chars), `apps/api/app/datasets/dataset_mapping_store.py`, `tests/tasks/test_ftf_h011_p2.py`, `tests/integration/test_ftf_h011_p2_dataset_mappings.py`, additive job `dataset-mapping-store-integration`. Table `dataset_mappings`: composite FK (org, project, dataset_id, name, purpose, version, sha) -> `uq_datasets_quality_lineage`; `dataset_source_connection_id` FK -> `uq_dataset_source_connections_org_project_id`; `mapping_version` >= 1 with a parent chain (0519 pattern); `mapping_document` JSONB, `mapping_sha256`, `importer`, `importer_version`, `transform_version`, `source_schema_sha256` (nullable), `tool_definitions_sha256`, `preview_sha256`, `preview_counts` JSONB (content-free), `ignored_keys_sha256`; `status` proposed|approved|rejected, `allowed_purposes_snapshot` text[], `approved_purpose`, `approved_by`, `approver_role`, `approved_at`; CHECKs approved <=> all approval columns NOT NULL, `approved_purpose = dataset_purpose`, `approved_purpose = ANY(allowed_purposes_snapshot)` (raw SQL cannot record a training approval under an evaluation-only grant); every hash `~ '^[0-9a-f]{64}$'`; ENABLE + FORCE RLS with the 0026 `tenant_isolation` policy; sovra_app SELECT, INSERT, column-limited UPDATE, never DELETE; BEFORE UPDATE trigger (0026 `to_jsonb` diff) allows one proposed -> approved|rejected transition; `data_exposure_check.py --backends postgres_rls,s3_identity` passes (no new bucket/identity). Store (each refusal a stable code that writes nothing; content-free audit `dataset_mapping.proposed|approved|rejected`): `propose_dataset_mapping` (parse, critical checks, versioning); `approve_dataset_mapping(expected_preview_sha256, purpose, acknowledged_ignored_keys)` (approver from the principal; admins only `approval_not_permitted`; preview re-run outside the transaction must match `preview_changed`; `preview_incomplete`, `critical_rows_unmapped`, grant/purpose checks); `reject_dataset_mapping`; `resolve_approved_mapping(dataset_id, purpose)` (the input for a later import run: the dataset's own approved mapping, or a prior version's only when the re-probed header `source_schema_sha256` and `tool_definitions_sha256` are equal and the grant is live, else `mapping_reapproval_required`; JSON/JSONL always need a fresh approval). Faults: trigger dropped; FORCE dropped; purpose-equality or snapshot CHECK removed; approver from input; stale preview accepted; reuse-on-drift check skipped; revoked grant resolves; cross-tenant INSERT allowed; version gap.
-  - **FTF-H011-P3 Routes and contract** (after P2; lock `contracts:05`; WIRED, proving_symbol `build_dataset_mapping_router` in `apps/api/app/main.py`). `apps/api/app/datasets/dataset_mapping_routes.py` under `/api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/`: POST `mapping-probe`, POST `mapping-preview` (read-only, DATASET_SOURCE_ROLES; content-free audit `dataset_mapping.previewed` with ids, counts, masked flag); POST `mappings` (Idempotency-Key); GET `mappings` (limit <= 200, after), GET `mappings/{mapping_id}`; POST `mappings/{id}/approve` and `/reject` (rationale 1..2000; admins only; Idempotency-Key + request fingerprint). Errors `{"detail": code}`: 400 (`mapping_invalid`, `mapping_unsupported`, `critical_role_unmapped`, `tool_id_unmapped`), 401, 403 (`purpose_not_authorized`, `approval_not_permitted`), 404 `not_found`, 409 (store codes, `importer_unavailable`, `source_changed`), 503 `storage_unavailable`. Contract: additive 05 paths + `$defs` (`DatasetMappingSpec` mirrors the certified allow-list, `additionalProperties:false` at every level, plus preview/mapping/request bodies); drift test over a generated table (schema-valid <=> `mapping_from_object` accepts). `tests/tasks/test_ftf_h011.py`, `tests/integration/test_ftf_h011_routes_postgres_s3.py` (real uvicorn, PG16, SeaweedFS), additive job `dataset-mapping-routes-integration`.
+  - **FTF-H011-P2 Mapping persistence — CERTIFIED 2026-10-23 (see Done)** (after P1 CERTIFIED; lock `migration:application`; UNWIRED). Files `apps/api/alembic/versions/00NN_dataset_mappings.py` (next free number at claim time; revision id <= 32 chars), `apps/api/app/datasets/dataset_mapping_store.py`, `tests/tasks/test_ftf_h011_p2.py`, `tests/integration/test_ftf_h011_p2_dataset_mappings.py`, additive job `dataset-mapping-store-integration`. Table `dataset_mappings`: composite FK (org, project, dataset_id, name, purpose, version, sha) -> `uq_datasets_quality_lineage`; `dataset_source_connection_id` FK -> `uq_dataset_source_connections_org_project_id`; `mapping_version` >= 1 with a parent chain (0519 pattern); `mapping_document` JSONB, `mapping_sha256`, `importer`, `importer_version`, `transform_version`, `source_schema_sha256` (nullable), `tool_definitions_sha256`, `preview_sha256`, `preview_counts` JSONB (content-free), `ignored_keys_sha256`; `status` proposed|approved|rejected, `allowed_purposes_snapshot` text[], `approved_purpose`, `approved_by`, `approver_role`, `approved_at`; CHECKs approved <=> all approval columns NOT NULL, `approved_purpose = dataset_purpose`, `approved_purpose = ANY(allowed_purposes_snapshot)` (raw SQL cannot record a training approval under an evaluation-only grant); every hash `~ '^[0-9a-f]{64}$'`; ENABLE + FORCE RLS with the 0026 `tenant_isolation` policy; sovra_app SELECT, INSERT, column-limited UPDATE, never DELETE; BEFORE UPDATE trigger (0026 `to_jsonb` diff) allows one proposed -> approved|rejected transition; `data_exposure_check.py --backends postgres_rls,s3_identity` passes (no new bucket/identity). Store (each refusal a stable code that writes nothing; content-free audit `dataset_mapping.proposed|approved|rejected`): `propose_dataset_mapping` (parse, critical checks, versioning); `approve_dataset_mapping(expected_preview_sha256, purpose, acknowledged_ignored_keys)` (approver from the principal; admins only `approval_not_permitted`; preview re-run outside the transaction must match `preview_changed`; `preview_incomplete`, `critical_rows_unmapped`, grant/purpose checks); `reject_dataset_mapping`; `resolve_approved_mapping(dataset_id, purpose)` (the input for a later import run: the dataset's own approved mapping, or a prior version's only when the re-probed header `source_schema_sha256` and `tool_definitions_sha256` are equal and the grant is live, else `mapping_reapproval_required`; JSON/JSONL always need a fresh approval). Faults: trigger dropped; FORCE dropped; purpose-equality or snapshot CHECK removed; approver from input; stale preview accepted; reuse-on-drift check skipped; revoked grant resolves; cross-tenant INSERT allowed; version gap.
+  - **FTF-H011-P3 Routes and contract** (after P2; lock `contracts:05`; WIRED, proving_symbol `build_dataset_mapping_router` in `apps/api/app/main.py`). `apps/api/app/datasets/dataset_mapping_routes.py` under `/api/v1/organizations/{organization_id}/projects/{project_id}/datasets/{dataset_id}/`: POST `mapping-probe`, POST `mapping-preview` (read-only, DATASET_SOURCE_ROLES; content-free audit `dataset_mapping.previewed` with ids, counts, masked flag); POST `mappings` (Idempotency-Key); GET `mappings` (limit <= 200, after), GET `mappings/{mapping_id}`; POST `mappings/{id}/approve` and `/reject` (rationale 1..2000; admins only; Idempotency-Key + request fingerprint). Errors `{"detail": code}`: 400 (`mapping_invalid`, `mapping_unsupported`, `critical_role_unmapped`, `tool_id_unmapped`), 401, 403 (`purpose_not_authorized`, `approval_not_permitted`), 404 `not_found`, 409 (store codes, `importer_unavailable`, `source_changed`), 503 `storage_unavailable`. Contract: additive 05 paths + `$defs` (`DatasetMappingSpec` mirrors the certified allow-list, `additionalProperties:false` at every level, plus preview/mapping/request bodies); drift test over a generated table (schema-valid <=> `mapping_from_object` accepts). `tests/tasks/test_ftf_h011.py`, `tests/integration/test_ftf_h011_routes_postgres_s3.py` (real uvicorn, PG16, SeaweedFS), additive job `dataset-mapping-routes-integration`. **Control-plane rulings for P3 (2026-10-23T18:52Z, from the P2 certification):** (a) re-resolve the approved mapping INSIDE the import transaction (P2 `resolve_approved_mapping` is unlocked); (b) reuse never skips a newer rejection of the identical mapping: refuse with `mapping_reapproval_required` when any dataset version newer than the reused approval has a `rejected` decision with the same mapping_sha256 (P2 advisory V2c: v1 approved, v2 rejected, v3 still reused v1); (c) pin the refusal code for "own mapping rejected, no prior approval anywhere" (F8); (d) map the audit writer's refusal of an over-long actor_id to a stable code.
   - **FTF-H011-P4 Wizard UI** (after P3; UNWIRED until FTF-H029, proving_symbol blank). `dataset_mapping_wizard_ui.tsx`, `apps/web/tests/ftf_h011.spec.ts` (DOM Vitest; full UI CHECKLIST a–f), `apps/web/tests/real_api/ftf_h011_ui_real_api.realapi.ts` + `tests/integration/test_ftf_h011_ui_real_api.py`, additive job `dataset-mapping-ui-real-api-integration` (`resumable-upload-ui-real-api-integration` precedent). Steps: format options -> probe -> map -> preview (raw beside canonical, rejected rows with codes) -> propose -> approve (purpose read-only from the dataset, explicit confirm); states Draft / Validation required / Blocked - reason / Approved; data cells `dir="auto"`, text nodes only (an HTML payload renders as text); nothing in localStorage; standard phrases in English and Arabic (buttons, validation errors, empty/loading, "Hidden"/"مخفي"), no brand copy. Real-API scenarios: R1 windows-1256 `;` CSV with an Arabic header on row 3 -> approved, DB row has the exact `mapping_sha256`; R2 JSONL with tool calls, an orphan id and an unknown tool -> rows rejected and shown; R3 no assistant in `role_map` -> 400 shown, nothing stored; R4 unmapped raw role -> approve 409 shown; R5 evaluation-only connection approved as training -> 403, a narrowed connection -> 403; R6 ml_engineer on a confidential connection sees only masked values; R7 foreign dataset -> 404; R8 storage stopped -> blocked shown; R9 JSON with a container pointer; then an independent DB check and the canary scan.
   - **FTF-H011-P5 Grouped rows and label maps** (after P4; lock `module:import_common`; Law 15 requalify 0502-P1/0504). One serialized edit to `import_common.py` + `csv_importer.py`: the recognised-unsupported `grouped_multi_row` shape becomes `group_rows {group_key, order_key: int|rfc3339}`; rows of a group contiguous and strictly ordered; a gap, duplicate order, non-contiguous group, or a group ending without an assistant turn is quarantined (`incomplete_group`, additive code); memory bounded by one group <= max_record_bytes. `label_enum_map` exact and only for `language` / `task_category`; `consent` / `quality_label` stay verbatim (§67.2: no invented "approved").
   - **FTF-H011-P6 XLSX** (only after FTF-0505 is CERTIFIED): registry entry for `XLSX_CONTENT_TYPE` and a sheet probe through 0505's public API (exact names, hidden sheets flagged), plus XLSX rows in the P1/P3/P4 tables (formula cell -> `formula_cell` shown, Arabic sheet name). Until then XLSX gets a visible `importer_unavailable`, never a fallback.
@@ -14355,6 +14756,7 @@ CERTIFIED a prior shift via PR #118 (merge commit `b4b47c0`) — see
 - FTF-UX07 — Identity (OIDC login) UI redesign (child slice of the FTF-UX program). CERTIFIED 2026-10-23, PR #982 (merge `2aa77912727f66268fcbc5e5bac2a339fd447505`), round 3 (evidence only) under the stopping rule, produced by session_01PDKdVZqtr7bzUPWph2JqMg (earlier rounds session_013YxyzTt9T2gAhF4H2eASsZ, session_01JmTeL9WgrMwRcFe8xps1Dd); child slice (no count change); parent FTF-0101 REQUALIFIED. Advisories (severity 1-2): the focus-ring contrast pin ignores alpha and compares with the page background, so N2 (inset ring in the fill colour) and N1 in light mode stay GREEN - the submission's "N1/N2 taken" overstates it; H8 cell says "about two lines" (1-4 by width); commit 0d98699b has no Claude-Session trailer; resolveLocale exact match, loginUrl strips only one trailing slash, invisible-character-only labels render an empty-looking link; UNBROKEN-LABEL recorded severity-2 decision; no manual screen-reader pass.
 - FTF-UX05 — Models/capabilities/cost UI redesign (child slice of the FTF-UX program; 0214/0308/0309/1301 screens). CERTIFIED 2026-10-23, PR #983 (merge `5d793fb8d1d8b84306ec48cc52c740a2ceebafbf`), round 3 under the stopping rule, produced by session_01FSq4kMCexAgMEGEk8MYndX (earlier rounds session_013MQz6mrcx4MQbctyaWFF73, session_01Dac8RABSVdB4a7cCQoFhKN); child slice (no count change); parents FTF-0214/0308/0309/1301 and FTF-UX01 REQUALIFIED (four new shared ui modules); UNWIRED until FTF-H029. NOT-ON-UX01 met through recorded decisions D1-D3 (D2: ftf_1301 spec asserts exact label text). Follow-ups queued: FTF-UX01-F1 (shared library hardening), FTF-1301-F1 (stale cost reply after a project switch). Advisory: the submission says 22 additive phrases (20).
 - FTF-H010-P3 — Full-weight and adapter import validation (child slice of FTF-H010). CERTIFIED 2026-10-23, PR #989 (merge `e54745261e66d8799f5fc3ad5f76fedf6795c414`), round 2 under the stopping rule, produced by session_01KCUWZomH33bcWZ49kEP1ff (round 1 session_01Wsq53ciagmBnxqZppFLCuR); child slice (no count change); P3a and P2 suites and P1/P2 integrations REQUALIFIED; UNWIRED (no dispatcher yet). Advisories: the advisory lock unpinned (as certified P2); the L3 test matches the text " FOR SHARE" so SKIP LOCKED passes on SQLite (RED on PG, fails closed); a path deleted before validation ends `failed artifact_source_invalid` rather than blocked_external; a job naming an artifact its tenant cannot see raises `job_invalid` and stays `validating`; VF20b (header hashed then parsed from a second read) hand-picked; the integration suite's /tmp cleanup is not in a `finally`.
+- FTF-H011-P2 — Mapping persistence (child slice of FTF-H011). CERTIFIED 2026-10-23, PR #978 (merge `df2218effe11d4bb7b8da2b1bc6a06ab6f275072`), round 2 under the stopping rule, produced by session_0184kEDzTAo4bXYZtvM3vh3G (round 1 session_01RjchJLT6vbaC5fk5YQ8Mkm and others); child slice (no count change); FTF-H011-P1 REQUALIFIED; UNWIRED (P3 wires it). Advisories carried into the P3 bullet as rulings (re-resolve in the import transaction; newer identical rejection blocks reuse; F8 pin; actor_id code).
 
 ## Queue (ordered by dependency)
 Full 300-record dependency graph: `docs/TASK_INDEX.md` (canonical) and

@@ -27,3 +27,6 @@ reports/
 
 # Python type-checker cache (never commit)
 .mypy_cache/
+
+# Next.js build output (generated, never committed)
+.next/
