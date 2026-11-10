@@ -2974,6 +2974,22 @@ def test_case_fingerprint_comparison_is_exact() -> None:
         _code(_run, spy) == "runtime_identity_changed",
     )
 
+    class _UpperCase(_Spy):
+        """Cases report the pinned digest upper-cased (and padded) while attest stays exact."""
+
+        def invoke(self, request):
+            result = super().invoke(request)
+            return dataclasses.replace(
+                result, runtime_fingerprint=" " + result.runtime_fingerprint.upper() + " "
+            )
+
+    check(
+        "FTF-R004-P3-AC6",
+        "a case fingerprint that is the pinned digest only after strip/lower is refused",
+        _code(_run, _UpperCase(build_isolated_tool_backend_adapter()))
+        == "runtime_identity_changed",
+    )
+
 
 def main() -> None:
     for name, fn in sorted(globals().items()):
