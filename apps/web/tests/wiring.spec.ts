@@ -9,11 +9,9 @@ import { JOURNEYS } from "../lib/journeys";
 
 const WEB = resolve(__dirname, "..");
 
-// Components that call the API but are not yet a page of their own, with the reason.
-const UNWIRED: Record<string, string> = {
-  "components/target-application/github_branch_ref_selector_immutable_sha_resolver.tsx":
-    "second step of a flow: it receives a credential from the repository-selection step, which must never travel in a URL; needs a combined repo-to-branch journey",
-};
+// Components that call the API but are not reachable from a page, each with its reason. Empty means
+// every API-calling component is wired.
+const UNWIRED: Record<string, string> = {};
 
 function walk(dir: string): string[] {
   const out: string[] = [];

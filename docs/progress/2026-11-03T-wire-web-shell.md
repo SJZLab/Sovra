@@ -57,3 +57,14 @@ journey page.
   `credential` carried over from the repository-selection step; a credential must never travel in a
   URL. It is listed in the test's UNWIRED map with that reason and needs a combined repo-to-branch
   journey.
+
+## Fourth batch: repository-to-branch journey (2026-11-10)
+- #1017 merged as 3246dbc3 (14 journeys). This closes the last API-calling component that had no page.
+- New journey "github-branch": the repository selector hands its credential to the branch selector
+  through the new `onSelectWithCredential` callback and component state only. The credential is never
+  in a URL or in storage. `onSelect` keeps its single-argument contract (ftf_04a03.spec.ts pins it).
+- tests/ftf_wire_github_branch.spec.ts: the branch step appears only after an explicit repository
+  click, receives the credential in its request body, and no URL contains the token. Shown able to
+  fail: replacing the carried credential with "" fails WIRE-GH-1 on the request body.
+- tests/wiring.spec.ts now has an empty UNWIRED map: every component that calls /api/v1 is reachable
+  from a page.
