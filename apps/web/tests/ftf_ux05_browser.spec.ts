@@ -1952,7 +1952,9 @@ describe("[UX05-BROWSER] FTF-1301-F1 round 2: out-of-order project-switch race (
       );
       await page.waitForFunction(
         (suffix) =>
-          (window as unknown as { __requests: string[] }).__requests.some((r) => r.endsWith(suffix)),
+          (window as unknown as { __requests: string[] }).__requests.some((r) =>
+            r.endsWith(suffix),
+          ),
         `/projects/${PROJECT_B}/costs/cost-per-success/search`,
       );
       await page.getByTestId("no-certified-cheapest-rate").waitFor({ state: "visible" });

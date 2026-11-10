@@ -1138,7 +1138,9 @@ test("FTF-1301-F1 round 3 (UNPINNED-RESET-NOTICE): 'Rate recorded.' for project 
   fireEvent.change(screen.getByTestId("cost-profile-rate-amount-input"), {
     target: { value: "2.5000000000" },
   });
-  fireEvent.change(screen.getByTestId("cost-profile-source-input"), { target: { value: "TCO v3" } });
+  fireEvent.change(screen.getByTestId("cost-profile-source-input"), {
+    target: { value: "TCO v3" },
+  });
   fireEvent.click(screen.getByTestId("cost-profile-submit-button"));
   await waitFor(() =>
     expect(screen.getByTestId("cost-profile-created-notice").textContent).toBe("Rate recorded."),
