@@ -2951,6 +2951,30 @@ def test_round3_route_params_fingerprints_and_mismatch() -> None:
     )
 
 
+def test_case_fingerprint_comparison_is_exact() -> None:
+    import dataclasses
+
+    class _Upper(_Spy):
+        """Pins an upper-case source fingerprint while cases report the lower-case digest."""
+
+        def attest(self):
+            real = self.inner.attest()
+            return dataclasses.replace(real, source_fingerprint=real.source_fingerprint.upper())
+
+    spy = _Upper(build_isolated_tool_backend_adapter())
+    real_fp = spy.inner.attest().source_fingerprint
+    check(
+        "FTF-R004-P3-AC6",
+        "fixture: the digest has letters, so upper() differs",
+        real_fp != real_fp.upper(),
+    )
+    check(
+        "FTF-R004-P3-AC6",
+        "a case fingerprint that differs from the pinned one only by case is refused",
+        _code(_run, spy) == "runtime_identity_changed",
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

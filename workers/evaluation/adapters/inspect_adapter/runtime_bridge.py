@@ -575,7 +575,7 @@ def _verify_log(log_path: Path, case_keys: frozenset[str]) -> tuple[str, str]:
     steps = [step.solver for step in (log.plan.steps if log.plan else ())]
     if steps != [NATIVE_SOLVER_NAME]:
         raise BridgeError(CODE_GENERIC_AGENT)
-    if log.eval.model != _MODEL_LESS or (log.stats and log.stats.model_usage):
+    if log.eval.model != "none/none" or (log.stats and log.stats.model_usage):
         raise BridgeError(CODE_GENERIC_AGENT, "model call")
     sample_ids = {str(sample.id) for sample in (log.samples or ())}
     if sample_ids != case_keys:
