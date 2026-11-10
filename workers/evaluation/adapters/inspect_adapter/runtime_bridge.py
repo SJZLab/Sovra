@@ -80,9 +80,9 @@ from app.target_connectors.production_faithful_target_agent_harness_contract imp
     validate_runtime_entry_kind,
 )
 from workers.evaluation.adapters.inspect_adapter.case_adapter import (
-    LOCKED_LOADER_PROVENANCE,
     BridgeCase,
     SuiteCaseSet,
+    is_loaded_suite_case_set,
 )
 from workers.evaluation.adapters.inspect_adapter.generation_config_parity import (
     DeclaredGenerationChange,
@@ -129,6 +129,7 @@ CODE_INVALID_REQUEST = "bridge_invalid_request"
 CODE_ADAPTER_MISMATCH = "adapter_case_mismatch"
 CODE_HOOK_UNBINDABLE = "bridge_hook_unbindable"
 STATUS_DEADLINE_EXCEEDED = "deadline_exceeded"
+STATUS_OUTCOME_MISMATCH = "outcome_mismatch"
 
 _TELEMETRY_ENV = ("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS", "INSPECT_API_KEY_OVERRIDE")
 
@@ -290,11 +291,11 @@ class _NetworkGuard:
         return connect
 
     def _guarded_send(self, original: Callable[..., Any]) -> Callable[..., Any]:
-        # A datagram socket sends without ever connecting (statsd-style telemetry, a raw DNS
-        # query by IP). Stream sockets are already refused at `connect`, so a send on a
-        # connection opened before the run (e.g. the caller's own database handle) is untouched.
+        # Every non-local send is an outbound call: a datagram socket sends without ever
+        # connecting (statsd-style telemetry, a raw DNS query by IP), and a stream socket
+        # opened before the run would otherwise carry data out past the connect guard.
         def send(sock: socket.socket, *args: object, **kwargs: object) -> Any:
-            if sock.family != getattr(socket, "AF_UNIX", None) and sock.type == (socket.SOCK_DGRAM):
+            if sock.family != getattr(socket, "AF_UNIX", None):
                 return self._blocked()
             return original(sock, *args, **kwargs)
 
@@ -468,18 +469,27 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
     if invoked.case_id != case.case_key or collected.case_id != case.case_key:
         raise BridgeError(CODE_ADAPTER_MISMATCH)
     overran = elapsed > state.deadline_seconds
+    if invoked.runtime_fingerprint != state.pinned_attestation.source_fingerprint:
+        # the FTF-04A26 adapter reports its pinned source fingerprint on every case
+        raise BridgeError(CODE_IDENTITY_CHANGED, "case runtime_fingerprint")
+    matches = invoked == collected
+    status = invoked.status
+    if not matches:
+        status = STATUS_OUTCOME_MISMATCH
+    if overran:
+        status = STATUS_DEADLINE_EXCEEDED
     return CaseRunRecord(
         case_key=case.case_key,
         case_id=case.case_id,
-        # an overrun never scores as correct, whatever the adapter reported
-        status=STATUS_DEADLINE_EXCEEDED if overran else invoked.status,
+        # an overrun or a collect/invoke disagreement never scores as correct
+        status=status,
         error_classification=invoked.error_classification.value,
         trace_ref=invoked.trace_ref,
         runtime_fingerprint=invoked.runtime_fingerprint,
         route_fingerprint=invoked.route_fingerprint,
         business_outcome_sha256=_outcome_digest(collected),
         side_effect_count=len(invoked.side_effects),
-        collected_matches_invoke=invoked == collected,
+        collected_matches_invoke=matches,
         deadline_exceeded=overran,
         adapter_exception_type=None,
     )
@@ -597,7 +607,7 @@ def run_suite_through_runtime(
         raise BridgeError(CODE_INVALID_REQUEST, "run_id/tenant_namespace")
     if case_set.purpose != "development":
         raise BridgeError(CODE_INVALID_REQUEST, "purpose")
-    if case_set.provenance is not LOCKED_LOADER_PROVENANCE:
+    if not is_loaded_suite_case_set(case_set):
         # rows not read through `load_locked_development_suite` (which refuses draft, final
         # and unknown-purpose suites before reading a case) are never run
         raise BridgeError(CODE_INVALID_REQUEST, "provenance")
@@ -634,7 +644,7 @@ def run_suite_through_runtime(
     bind = getattr(adapter, "bind_bridge_hook", None)
     if callable(bind):
         bind(hook)
-    elif (model_binding.model_id, model_binding.provider) != (
+    elif model_binding.route_params or (model_binding.model_id, model_binding.provider) != (
         _MODEL_LESS_BINDING,
         _MODEL_LESS_BINDING,
     ):

@@ -154,13 +154,11 @@ def _raw_case_set(records: list[Any] | None = None, *, purpose: str = "developme
 
 def _case_set(records: list[Any] | None = None, *, purpose: str = "development"):
     """What `load_locked_development_suite` returns: the mapped rows carrying its provenance."""
-    import dataclasses
+    import workers.evaluation.adapters.inspect_adapter.case_adapter as ca_mod
 
-    from workers.evaluation.adapters.inspect_adapter.case_adapter import LOCKED_LOADER_PROVENANCE
-
-    return dataclasses.replace(
-        _raw_case_set(records, purpose=purpose), provenance=LOCKED_LOADER_PROVENANCE
-    )
+    cs = _raw_case_set(records, purpose=purpose)
+    ca_mod._LOADED_SETS[id(cs)] = cs  # exactly what the loader does with the set it returns
+    return cs
 
 
 def _hook(approved: dict[str, Any] | None = None) -> BridgeHook:
@@ -593,7 +591,10 @@ def test_unsupported_binding_key_entry_kind_and_purpose_are_refused() -> None:
         _code(_run, model_binding=ModelBinding("n/a", "n/a", (("top_secret_knob", "1"),)))
         == "unsupported_model_binding_key",
     )
-    ok = _run(model_binding=ModelBinding("n/a", "n/a", (("temperature", "0.1"),)))
+    ok = _run(
+        _BindingSpy(build_isolated_tool_backend_adapter()),
+        model_binding=ModelBinding("n/a", "n/a", (("temperature", "0.1"),)),
+    )
     check("FTF-R004-P3-AC5", "a declared binding key runs", len(ok.cases) == 2)
     check(
         "FTF-R004-P3-AC5",
@@ -2703,12 +2704,29 @@ def test_bridge_refuses_rows_that_did_not_come_from_the_locked_loader() -> None:
         f"a development-labelled set that skipped the locked-suite loader is refused (got {code})",
         code == "bridge_invalid_request" and spy.invokes == [],
     )
-    relabelled = dataclasses.replace(_raw_case_set(purpose="development"), provenance=object())
+    loaded = _case_set()
+    copy = dataclasses.replace(loaded, cases=loaded.cases[:1], samples=loaded.samples[:1])
     spy2 = _Spy(build_isolated_tool_backend_adapter())
     check(
         "FTF-R004-P3-AC3",
-        "a forged provenance value is refused, and nothing is invoked",
-        _code(_run, spy2, relabelled) == "bridge_invalid_request" and spy2.invokes == [],
+        "a copy of a loaded set with substituted cases is not the loaded object: refused, nothing invoked",
+        _code(_run, spy2, copy) == "bridge_invalid_request" and spy2.invokes == [],
+    )
+    hand = type(loaded)(**{f.name: getattr(loaded, f.name) for f in dataclasses.fields(loaded)})
+    check(
+        "FTF-R004-P3-AC3",
+        "a hand-built set with the loaded set's own field values is refused",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter()), hand) == "bridge_invalid_request",
+    )
+    from workers.evaluation.adapters.inspect_adapter.case_adapter import is_loaded_suite_case_set
+
+    check(
+        "FTF-R004-P3-AC3",
+        "a loaded set is recognised; None, a dict and a raw set are not",
+        is_loaded_suite_case_set(loaded)
+        and not is_loaded_suite_case_set(None)
+        and not is_loaded_suite_case_set({})
+        and not is_loaded_suite_case_set(_raw_case_set()),
     )
     for blank in ("", "   "):
         spy3 = _Spy(build_isolated_tool_backend_adapter())
@@ -2844,8 +2862,6 @@ def test_round2_mutation_survivors_have_real_tests() -> None:
     seen: list[bytes] = []
 
     def local_sends(_r: Any) -> None:
-        client.send(b"tcp")  # a connection opened before the run is not a new outbound call
-        seen.append(server.recv(3))
         a, b = sk.socketpair(sk.AF_UNIX, sk.SOCK_DGRAM)
         try:
             a.send(b"dg")
@@ -2859,13 +2875,79 @@ def test_round2_mutation_survivors_have_real_tests() -> None:
             _Spy(build_isolated_tool_backend_adapter(), on_invoke=local_sends),
             _case_set(_records()[:1]),
         )
+        server.settimeout(0.2)
+        try:
+            leaked = server.recv(5)
+        except OSError:
+            leaked = b""
+        check("FTF-R004-P3-AC8", "nothing reached the peer of the pre-opened stream", leaked == b"")
     finally:
         for sock in (client, server, listener):
             sock.close()
     check(
         "FTF-R004-P3-AC8",
-        "a pre-existing stream connection and a local datagram pair are not blocked",
-        seen == [b"tcp", b"dg"] and res.network_attempts == 0,
+        "a local AF_UNIX datagram pair is not blocked",
+        seen == [b"dg"] and res.network_attempts == 0,
+    )
+
+    def stream_out(_r: Any) -> None:
+        try:
+            client.sendall(b"EXFIL")  # a connection opened before the run
+        except BridgeError:
+            raise
+        except OSError:
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "a send on a stream connection opened before the run is an outbound call",
+        _code(
+            _run,
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=stream_out),
+            _case_set(_records()[:1]),
+        )
+        == "outbound_call_blocked",
+    )
+
+
+def test_round3_route_params_fingerprints_and_mismatch() -> None:
+    import dataclasses
+
+    spy = _Spy(build_isolated_tool_backend_adapter())
+    code = _code(_run, spy, model_binding=ModelBinding("n/a", "n/a", (("temperature", "0.1"),)))
+    check(
+        "FTF-R004-P3-AC2",
+        f"route params on an adapter with no hook are refused even for n/a ids (got {code})",
+        code == "bridge_hook_unbindable" and spy.invokes == [],
+    )
+
+    class _Drift(_Spy):
+        def invoke(self, request):
+            result = super().invoke(request)
+            return dataclasses.replace(result, runtime_fingerprint="f" * 64)
+
+    spy2 = _Drift(build_isolated_tool_backend_adapter())
+    check(
+        "FTF-R004-P3-AC6",
+        "a case reporting a runtime fingerprint other than the pinned one -> runtime_identity_changed",
+        _code(_run, spy2) == "runtime_identity_changed",
+    )
+
+    def forged(case_id: str, inner: Any) -> Any:
+        real = inner.collect_outcome(case_id)
+        return dataclasses.replace(real, business_outcome=(("forged", True),))
+
+    from inspect_ai.log import read_eval_log
+
+    res = _run(_Spy(build_isolated_tool_backend_adapter(), collect=forged))
+    log = read_eval_log(res.log_path)
+    scores = [v.value for sample in (log.samples or ()) for v in (sample.scores or {}).values()]
+    check(
+        "FTF-R004-P3-AC6",
+        "a collect_outcome that disagrees with invoke is outcome_mismatch and scored INCORRECT",
+        {c.status for c in res.cases} == {"outcome_mismatch"}
+        and not any(c.collected_matches_invoke for c in res.cases)
+        and scores == ["I", "I"],
     )
 
 

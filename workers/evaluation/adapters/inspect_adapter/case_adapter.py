@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import json
 import uuid
+import weakref
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from typing import Any
 
 from inspect_ai.dataset import Sample
@@ -45,7 +46,7 @@ __all__ = [
     "CODE_SUITE_NOT_LOCKED",
     "CODE_UNSUPPORTED_PURPOSE",
     "BridgeCase",
-    "LOCKED_LOADER_PROVENANCE",
+    "is_loaded_suite_case_set",
     "CaseAdapterError",
     "SuiteCaseSet",
     "freeze_declared_inputs",
@@ -91,11 +92,15 @@ class BridgeCase:
     declared_inputs: tuple[tuple[str, object], ...]
 
 
-# Set only by `load_locked_development_suite`, after it has refused every draft, final and
-# unknown-purpose suite. The runtime bridge refuses a case set without it, so rows that
-# were not read through the locked-suite loader (or a hand-built set relabelled
-# "development") cannot be run.
-LOCKED_LOADER_PROVENANCE: object = object()
+# Instances produced by `load_locked_development_suite`, which has already refused every
+# draft, final and unknown-purpose suite. Membership is by object identity, held weakly: a
+# set built by hand, a `dataclasses.replace` copy with substituted cases, or one relabelled
+# "development" is a different object and is never a member, so the runtime bridge refuses it.
+_LOADED_SETS: weakref.WeakValueDictionary[int, SuiteCaseSet] = weakref.WeakValueDictionary()
+
+
+def is_loaded_suite_case_set(case_set: object) -> bool:
+    return isinstance(case_set, SuiteCaseSet) and _LOADED_SETS.get(id(case_set)) is case_set
 
 
 @dataclass(frozen=True)
@@ -107,7 +112,6 @@ class SuiteCaseSet:
     grading_logic_version: int
     cases: tuple[BridgeCase, ...]
     samples: tuple[Sample, ...]
-    provenance: object = field(default=None, repr=False, compare=False)
 
 
 def _freeze(value: object, depth: int = 0) -> object:
@@ -252,14 +256,13 @@ def load_locked_development_suite(
     else:
         raise CaseAdapterError(CODE_INVALID_CASE)
 
-    return replace(
-        samples_from_cases(
-            suite_id=str(suite.id),
-            project_id=str(suite.project_id),
-            agent_manifest_id=str(suite.agent_manifest_id),
-            purpose=suite.purpose,
-            grading_logic_version=suite.grading_logic_version,
-            records=records,
-        ),
-        provenance=LOCKED_LOADER_PROVENANCE,
+    loaded = samples_from_cases(
+        suite_id=str(suite.id),
+        project_id=str(suite.project_id),
+        agent_manifest_id=str(suite.agent_manifest_id),
+        purpose=suite.purpose,
+        grading_logic_version=suite.grading_logic_version,
+        records=records,
     )
+    _LOADED_SETS[id(loaded)] = loaded
+    return loaded
