@@ -116,9 +116,12 @@ def make_facts(
     checkpoint: Any = None,
     prerequisites: Any = None,
     new_run_id: str = RUN_NEW,
+    weights_usable: Any = "auto",
 ) -> Any:
     if license_accepted == "auto":
         license_accepted = None if origin == "external_endpoint" else True
+    if weights_usable == "auto":
+        weights_usable = True if origin in ("imported_weights", "factory_trained") else None
     if base_compatible == "auto":
         base_compatible = True if origin == "imported_adapter" else None
     if model_ref is None and origin == "external_endpoint":
@@ -134,6 +137,7 @@ def make_facts(
         model_ref=model_ref,
         checkpoint=checkpoint,
         prerequisites={} if prerequisites is None else prerequisites,
+        weights_usable=weights_usable,
     )
 
 
@@ -205,6 +209,75 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
                 decision.code == want[action] and decision.allowed == (want[action] is None),
             )
     check("A1", "decision table exercised a non-trivial number of cells", rows >= 280)
+
+    # ---- A1w: unusable weights artifact (r2 finding 1) ---------------------------------
+    for origin in ("imported_weights", "factory_trained"):
+        got = m.evaluate_model_actions(make_facts(m, origin=origin, weights_usable=False))
+        for action, d in got.items():
+            want = "retire" == action
+            check(
+                "A1w",
+                f"{origin} unusable weights: {action} "
+                + ("is not a use action" if want else "denied weights_artifact_unusable"),
+                (d.code != "weights_artifact_unusable")
+                if want
+                else (d.code == "weights_artifact_unusable" and not d.allowed),
+            )
+        got = m.evaluate_model_actions(
+            make_facts(m, origin=origin, weights_usable=False, license_accepted=False)
+        )
+        check(
+            "A1w",
+            f"{origin}: a revoked license outranks an unusable artifact",
+            got["evaluate"].code == "license_not_accepted",
+        )
+        got = m.evaluate_model_actions(
+            make_facts(m, origin=origin, weights_usable=False, validated=False)
+        )
+        check(
+            "A1w",
+            f"{origin}: validation outranks an unusable artifact",
+            got["evaluate"].code == "import_not_validated",
+        )
+        got = m.evaluate_model_actions(make_facts(m, origin=origin, weights_usable=True))
+        check("A1w", f"{origin}: usable weights allow evaluate", got["evaluate"].allowed)
+    for bad in (0, 1, "yes", "False"):
+        for origin in ("imported_weights", "factory_trained"):
+            try:
+                make_facts(m, origin=origin, weights_usable=bad)
+                ok = False
+            except m.ContinuationFactsError:
+                ok = True
+            check("A1w", f"{origin}: weights_usable {bad!r} is refused", ok)
+    for origin in ("imported_weights", "factory_trained"):
+        try:
+            make_facts(m, origin=origin, weights_usable=None)
+            ok = False
+        except m.ContinuationFactsError:
+            ok = True
+        check("A1w", f"{origin}: a missing weights_usable is refused (no fail-open)", ok)
+    for origin in ("external_endpoint", "imported_adapter"):
+        for val in (True, False):
+            try:
+                make_facts(m, origin=origin, weights_usable=val)
+                ok = False
+            except m.ContinuationFactsError:
+                ok = True
+            check("A1w", f"{origin}: weights_usable {val} is refused (wrong origin)", ok)
+    try:
+        m.ModelActionFacts(
+            model_version_id=VID,
+            origin="imported_weights",
+            validated=True,
+            license_accepted=True,
+            base_compatible=None,
+            roles=frozenset(),
+            new_run_id=RUN_NEW,
+        )
+        ok = False
+    except TypeError:
+        ok = True
+    check("A1w", "weights_usable has no default (omitting it is a TypeError)", ok)
 
     # ---- A2: unvalidated rows ---------------------------------------------------------
     for origin in ORIGINS:
@@ -509,6 +582,7 @@ def suite(m: Any, source: str, *, big: bool = True) -> None:
             validated=True,
             license_accepted=True,
             base_compatible=None,
+            weights_usable=True,
             roles=frozenset(),
             new_run_id=RUN_NEW,
         ),
@@ -729,6 +803,9 @@ def _jsonb_as_json(element: Any, compiler: Any, **kw: Any) -> str:
 
 from workers.training.continuation import (  # noqa: E402
     ContinuationFactsError as ContinuationFactsErrorType,
+)
+from workers.training.continuation import (  # noqa: E402
+    evaluate_model_actions as real_evaluate_model_actions,
 )
 
 import app.auth.organization_workspace_schema  # noqa: E402,F401  (FK targets in the metadata)
@@ -1713,6 +1790,85 @@ def store_suite(crud: Any) -> None:
             "F1",
             "restored -> accepted",
             crud.build_action_facts(e.session, e.ctx, w).license_accepted is True,
+        )
+
+        # r2 finding 1: a weights / factory version whose artifact is archived, registered or has
+        # a drifted digest fails closed (ContinuationFactsError) while the license stays accepted
+        def facts_raise(row: Any) -> bool:
+            f = crud.build_action_facts(e.session, e.ctx, row)
+            doc = real_evaluate_model_actions(f)
+            return f.weights_usable is False and all(
+                doc[a].code == "weights_artifact_unusable"
+                for a in ("evaluate", "compare", "continue_tuning", "request_qualification")
+            )
+
+        fac_art = e.artifact(char="4")
+        fac_row = e.version("factory", artifact=fac_art)
+        for who, row, art in (("weights", w, w_art), ("factory_trained", fac_row, fac_art)):
+            digest = art.weights_digest
+            for label, field, bad in (
+                ("archived", "status", "archived"),
+                ("registered", "status", "registered"),
+                ("drifted digest", "weights_digest", "sha256:" + "e" * 64),
+            ):
+                good = getattr(art, field)
+                setattr(art, field, bad)
+                e.session.flush()
+                check(
+                    "F1",
+                    f"{who}: artifact {label} -> every use action weights_artifact_unusable",
+                    facts_raise(row),
+                )
+                setattr(art, field, good)
+                e.session.flush()
+            check(
+                "F1",
+                f"{who}: restored artifact -> facts built, license accepted",
+                crud.build_action_facts(e.session, e.ctx, row).license_accepted is True,
+            )
+        # the helper itself compares exactly (no strip / case-folding), on plain value objects
+        from types import SimpleNamespace as NS
+
+        d = "sha256:" + "c" * 64
+        for label, art_status, art_digest, ver_digest, want in (
+            ("exact", "ready", d, d, True),
+            ("padded status", "ready ", d, d, False),
+            ("upper-case status", "READY", d, d, False),
+            ("padded artifact digest", "ready", d + " ", d, False),
+            ("upper-case artifact digest", "ready", d.upper(), d, False),
+            ("upper-case version digest", "ready", d, d.upper(), False),
+            ("padded version digest", "ready", d, " " + d, False),
+        ):
+            check(
+                "F1",
+                f"_weights_artifact_usable exact comparison: {label} -> {want}",
+                crud._weights_artifact_usable(
+                    NS(weights_digest=ver_digest), NS(status=art_status, weights_digest=art_digest)
+                )
+                is want,
+            )
+        check("F1", "no artifact -> never usable", crud._weights_artifact_usable(w, None) is False)
+        # a revoked license on an archived artifact keeps the license denial, not the facts error
+        w_art.status = "archived"
+        w_art.license_accepted_by = None
+        e.session.flush()
+        check(
+            "F1",
+            "archived + revoked license -> license denial outranks (license_not_accepted)",
+            crud.build_action_facts(e.session, e.ctx, w).license_accepted is False,
+        )
+        w_art.status = "ready"
+        w_art.license_accepted_by = "seed"
+        e.session.flush()
+        # an adapter whose OWN artifact is archived is an adapter-base matter, never the weights error
+        ad_base = e.version("weights", artifact=e.artifact(char="3"))
+        ad_row = e.version(
+            "adapter", artifact=e.artifact(char="2", status="archived"), parent=ad_base
+        )
+        check(
+            "F1",
+            "adapter with an archived own artifact: base_compatible False, no weights error",
+            crud.build_action_facts(e.session, e.ctx, ad_row).base_compatible is False,
         )
         e.session.delete(w_art)
         e.session.flush()
@@ -2768,8 +2924,28 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "base-before-license",
-        "    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)\n    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)",
-        "    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)\n    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)",
+        "    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)\n    if facts.weights_usable is False:\n        return _deny(action, CODE_WEIGHTS_ARTIFACT_UNUSABLE)\n    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)",
+        "    if facts.base_compatible is False:\n        return _deny(action, CODE_ADAPTER_BASE_INCOMPATIBLE)\n    if facts.license_accepted is False:\n        return _deny(action, CODE_LICENSE_NOT_ACCEPTED)\n    if facts.weights_usable is False:\n        return _deny(action, CODE_WEIGHTS_ARTIFACT_UNUSABLE)",
+    ),
+    (
+        "weights-unusable-allowed",
+        "    if facts.weights_usable is False:\n        return _deny(action, CODE_WEIGHTS_ARTIFACT_UNUSABLE)\n",
+        "",
+    ),
+    (
+        "weights-usable-non-bool-accepted",
+        '            if type(self.weights_usable) is not bool:\n                raise ContinuationFactsError("weights_usable_invalid")\n        elif self.weights_usable is not None:',
+        '            if False:\n                raise ContinuationFactsError("weights_usable_invalid")\n        elif self.weights_usable is not None:',
+    ),
+    (
+        "weights-usable-wrong-origin-accepted",
+        '        elif self.weights_usable is not None:\n            raise ContinuationFactsError("weights_usable_invalid")',
+        '        elif False:\n            raise ContinuationFactsError("weights_usable_invalid")',
+    ),
+    (
+        "weights-usable-factory-origin-skipped",
+        "if self.origin is ORIGIN_IMPORTED_WEIGHTS or self.origin is ORIGIN_FACTORY_TRAINED:\n            if type(self.weights_usable)",
+        "if self.origin is ORIGIN_IMPORTED_WEIGHTS:\n            if type(self.weights_usable)",
     ),
     (
         "run-id-collision-allowed",
