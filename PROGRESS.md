@@ -30988,3 +30988,82 @@ STEP 4 stop condition: single-item outcome -- FTF-UX01-F1 round 1 (lane B's item
 `main`, PROVISIONAL, awaiting Control-plane L2 certification. No new `BLOCKER.md` entry. No new
 "Owner actions" line. Certified count unchanged (merge != certification, Law 4); product-true
 count unchanged (this item touches no `proving_symbol` -- UNWIRED, same as its UX01/UX05 parents).
+
+## 2026-10-27T12:52Z -- Scheduled relay shift -- systemic CI outage discovered; BLOCKER.md written, shift stopped
+
+STEP 0/0.1 clean: hash matched (`sha256sum CLAUDE.md` == `CLAUDE.md.sha256`); read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh rather than assuming state. Found the
+designated branch already at current `origin/main` HEAD (`bb940d3`) -- a prior session's
+designated branch had already been merged, so this one restarted clean per the normal rule.
+STEP 0.2: no `cognee-cli` available; text-search fallback used throughout (declared here per the
+routine's own instruction).
+
+Surveyed all 18 open PRs (none merged into `main`, none stale-claimed inside the 3-hour window --
+every one genuinely open and unclaimed by this shift). Every PR's `updated_at` stopped at
+~2026-10-23T22:49Z -- four days of no shift progress despite the stated 2-hour relay cadence.
+
+Per "Returned work first," checked CI on every non-draft relay/governance PR (#998, #1005, #1011,
+#1003, #950, #1009): all six show `ci-verdict` red. Investigated PR #1005 (FTF-1301-F1 round 2)
+first since it had the clearest signature -- two failing integration jobs
+(`json-import-integration`, `egress-verification-integration`) entirely unrelated to its own
+frontend-only diff (confirmed via `pull_request_read get_files`: 5 files, all `apps/web`/docs, zero
+overlap with the failing jobs' own source files). Ruled out "this PR's own fault": pulled
+`tests/integration/test_ftf_0906_egress_verification.py` and ran it locally against the current
+`main` head -- passes cleanly; ran `tests/unit/test_ci_policy.py` locally -- 72/72 pass (the
+base-branch policy script `ci-verdict` always re-fetches fresh is not broken either). Re-ran the
+failed jobs once (CI contract's flake-confirmation allowance) -- failed again in ~2s with
+`runner_id: 0` (no runner ever assigned, died before any test body ran). Re-ran the entire workflow
+fresh -- `classify`/`relay-policy`/`secret-scanning`/`gate`/`mutation-gate` (zero service
+containers, zero cross-job dependencies) ALL failed in 2-3s with `runner_id: 0`; every job
+depending on `classify` was then correctly `skipped`. No job log exists for any of these (`HTTP
+404` on every attempt, including seconds after completion) -- consistent with "no runner was ever
+dispatched," not an expired log.
+
+Cross-checked the other five PRs' check-runs: identical shape on every one -- `ci-verdict` red,
+every job that actually got a runner (all from the original 2026-10-23 attempts) succeeded or was
+correctly skipped, nothing attempted today got a runner. No shared code-level cause links these six
+PRs; the common factor is the CI platform itself failing to provision runners at all, not any PR's
+diff, not a flaky test, not a policy-script bug.
+
+This is a systemic CI/config failure per STEP 4(b)/(c) -- not an item-level park. `ci-verdict` is
+the sole definition of "CI green" in this repo; if no job can ever acquire a runner, no PR (open or
+future) can ever reach green, so nothing can merge or certify, and no new relay work can be
+validated or claimed. Wrote the full evidence trail and three owner-facing route options
+(Actions billing/usage limit, Actions disabled/restricted at repo or org level, a GitHub-side
+runner-provisioning outage) to `BLOCKER.md` under a new LIVE entry and stopped there, per
+"same action, same failure, reproduced 3x -- never retry a 4th time."
+
+STEP 3: this file and `BLOCKER.md` only (docs-only, this designated branch; no `[relay]`-titled PR,
+no item claimed, no shared-file edit beyond these two). No code or tracker file was touched on any
+of the 18 open PRs -- PR #1005 was left subscribed with its re-run already queued, in case runners
+recover on their own, but nothing was pushed to it. STEP 4 stop condition: (b)/(c) true blocker --
+`BLOCKER.md` written, shift stopped. Certified/product-true counts unchanged (0 items claimed, 0
+merged, 0 certified this shift).
+
+## 2026-11-10T09:50Z -- PR-activity wake (follow-up, not a scheduled shift) -- CI outage confirmed resolved; BLOCKER.md/QUEUE.md closed out
+
+Woken by a `check_suite.completed` event on PR #1005 (subscribed since the 2026-10-27T1252Z shift).
+Checked PR #1005's live state fresh rather than assuming anything from 14 days ago: `ci-verdict`
+now reports `success` (run `42786224839`, 92/92 check-runs green, including every job that was
+previously failing with `runner_id: 0` -- `classify`/`gate`/`secret-scanning`/`mutation-gate` and
+the full `*-integration` set). A separate, concurrent session was already actively driving PR #1005
+itself (merging fresh `main` in, `mergeable_state: unstable` with a new CI run in flight) -- left
+that PR untouched to avoid colliding with in-progress work; no push made there.
+
+This confirms the systemic GitHub Actions runner-provisioning outage from 2026-10-27 has cleared.
+Since my own `BLOCKER.md` LIVE entry and the unmerged docs-only PR #1012 (`claude/wizardly-fermat-
+wiu2ah`) describing it as ongoing would now be stale and misleading if left as-is, updated them
+rather than abandoning the branch: merged fresh `main` into `claude/wizardly-fermat-wiu2ah` (one
+real conflict in QUEUE.md's "Owner actions" block -- `main` had amended the unrelated FTF-0616
+line in the interim; resolved by keeping main's amended FTF-0616 line and dropping my own now-
+resolved CI-outage line entirely, since it never reached `main` and so needs no history kept
+there), and re-titled the `BLOCKER.md` entry `RESOLVED 2026-11-10T09:50Z` with the resolution
+evidence (PR #1005's own green run, cited above, plus `main` having advanced through several
+merges in the interim -- each needing its own green `ci-verdict`), preserving the original entry
+text underneath per this file's own convention rather than deleting it.
+
+STEP 3: this file, `BLOCKER.md` and `QUEUE.md` (closing out the earlier shift's own entries; no new
+item claimed, no code touched). Pushed to `claude/wizardly-fermat-wiu2ah`; PR #1012 updated to its
+fresh-based head. Will merge PR #1012 once its own `ci-verdict` reports green, then resume normal
+scheduled-shift work -- no `BLOCKER.md` entry is LIVE any longer. Certified/product-true counts
+unchanged.
