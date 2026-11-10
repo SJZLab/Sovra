@@ -21,6 +21,8 @@
     ]
   },
   "include": [
+    "lib/**/*.tsx",
+    "lib/**/*.ts",
     "pages/**/*.tsx",
     "pages/**/*.ts",
     "src/**/*.ts",

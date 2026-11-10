@@ -1,7 +1,9 @@
 import Head from "next/head";
 import type { ReactElement } from "react";
 
-// Front door (CLAUDE.md Law 6): "/" is where a user starts. Each journey is reached from here.
+import { JOURNEYS } from "../lib/journeys";
+
+// Front door (CLAUDE.md Law 6): "/" is where a user starts. Each journey is a form here.
 export default function Home(): ReactElement {
   return (
     <main>
@@ -9,22 +11,20 @@ export default function Home(): ReactElement {
         <title>Sovra Factory</title>
       </Head>
       <h1>Sovra Factory</h1>
-      <h2>Map a model to a trainable artifact</h2>
-      <form action="/artifact-mapping" method="get">
-        <label>
-          Organization ID
-          <input name="organizationId" required />
-        </label>
-        <label>
-          Connection ID
-          <input name="connectionId" required />
-        </label>
-        <label>
-          Model name
-          <input name="modelName" required />
-        </label>
-        <button type="submit">Open mapping</button>
-      </form>
+      {JOURNEYS.map((j) => (
+        <section key={j.slug}>
+          <h2>{j.title}</h2>
+          <form action={`/${j.slug}`} method="get">
+            {j.params.map((p) => (
+              <label key={p.name}>
+                {p.label}
+                <input name={p.name} required />
+              </label>
+            ))}
+            <button type="submit">Open</button>
+          </form>
+        </section>
+      ))}
     </main>
   );
 }
