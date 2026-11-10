@@ -1,11 +1,14 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-11-10T11:20Z. Source: `python3 scripts/status.py` on main.
-- **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-11-10T14:50Z. Source: `python3 scripts/status.py` on main.
+- **Status: 158/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
+- **Certified (2026-11-10): FTF-0617 (zero-egress judge policy), 158/304.** On strict projects the server accepts only a private judge or authorized humans, and an outside fallback or an unknown judge is refused even when its alias looks local. 250 of 250 deliberate code breakages were caught, and 36 hostile inputs were all handled correctly. It is not reachable from the running product yet: nothing calls the rule today (the first callers come with FTF-0618 and the evaluation worker), so it does not add to the 49 product-true.
+- **Returned (2026-11-10): FTF-1301-F1 (cost panel after a project switch).** It works and no serious usability problem remains, but five deliberate breakages (clearing the old message and organization on a switch, and three stale-reply cases) go uncaught in the real-browser tests. It goes back for a third, tests-only round.
+- **Relay (2026-11-10):** the relay lane that was stuck for 18 days is running again; it merged FTF-0617 and FTF-1301-F1 round 2 today. FTF-1504 is open for the next lane (a dead claim was ruled void).
 - **Certified (child slice, 2026-11-10): FTF-UX01-F1** - the shared error and keyboard-focus code is hardened: an unknown error kind no longer crashes a screen, no English text leaks into Arabic errors (checked in a real browser too), and the two helper modules have their own tests. 33 deliberate breakages were tried and 32 were caught; the one that was not is a change no test can observe. The count stays 157/304 because this is a child slice.
 - **Returned (2026-11-10): FTF-H010-P4** (model roles and continuation eligibility): the routes are live and 352 of 352 code breakages are caught, but an archived or changed weights file still shows "continue tuning" as allowed, and two database safeguards (a lock that stops one model being judge and candidate at once, and a revocation consistency rule) are not covered by any test. It goes back for a second round; import-wizard slices P5 and P6 still follow. The first relay merge after 18 days of a stuck lane was #998; lane B is running again.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
