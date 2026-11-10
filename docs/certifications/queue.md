@@ -25281,3 +25281,6 @@ different session.
   2026-10-23T1040Z-FTF-UX01-F1.md`. Shift logs: `docs/progress/2026-10-23T1040Z-laneB.md` (lane B,
   authored the fix) and `docs/progress/2026-10-23T1652Z-relay.md` (this session's fresh-base merge
   and final push to green).
+- **Returned:** FTF-R006-P1b r2 -> r3 (0c): revoke-first or row lock (R11b/R11c), pin F14/F16, real-Argilla CI that exercises the store, OpenSearch + Redis 7.2 per the licence rulings, gate step, [GOVERNANCE] title.
+- **Returned:** FTF-UX06 r2 -> r3 (0f): wrap at the root, 403 save announced with focus, Arabic codes/catalogue/bdi, pin F1/F12/F13/F18/F23/N24, access recovery, useId, evidence.
+- **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
