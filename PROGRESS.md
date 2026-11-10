@@ -31069,3 +31069,27 @@ item claimed, no code touched). Pushed to `claude/wizardly-fermat-wiu2ah`; PR #1
 fresh-based head. Will merge PR #1012 once its own `ci-verdict` reports green, then resume normal
 scheduled-shift work -- no `BLOCKER.md` entry is LIVE any longer. Certified/product-true counts
 unchanged.
+
+## 2026-11-10T11:38Z -- PR-activity wake (follow-up, continued) -- FTF-1301-F1 round 2 merged (#1005), queue.md appended
+
+Continuation of the 2026-11-10T0950Z follow-up: PR #1005's `ci-verdict` went green on a later
+fresh-base push (head `a4fece0`, from a concurrent session's own fresh-base chase, confirmed
+untouched by this session), 93/93 check runs passing, `mergeable_state: clean`, base already at
+`main`'s current tip (`1b98682`, this session's own prior merge of PR #1012). No open review
+threads. Merged as `5e0d91b4` (merge commit, repo convention).
+
+Appended the required `docs/certifications/queue.md` entry for Control plane ("## 2026-11-10T1138Z
+-- PROVISIONAL: FTF-1301-F1 round 2 merged (#1005)") summarizing the four findings closed, the
+pre-review's `FTF-1301-F1-r2 CERTIFY` verdict (evidence only, Law 4), and a note on the CI-outage
+history for the record (cross-referenced to `BLOCKER.md`'s now-`RESOLVED` entry). Restarted the
+designated branch from current `main` (the prior PR #1012 had just merged, so nothing to carry
+forward) per the normal "already merged -> restart from main" rule.
+
+STEP 3: this file and `docs/certifications/queue.md` (the one shared-file edit, appending only --
+QUEUE.md's own item 0d text is left for Control plane to process on its own review, per the
+no-shared-file-edits convention). STEP 4 stop condition: single-item outcome -- FTF-1301-F1 round 2
+(QUEUE.md item 0d) is now merged to `main`, PROVISIONAL, awaiting Control-plane L2 certification.
+No new `BLOCKER.md` entry (the only LIVE one from this session's earlier shift is now RESOLVED).
+No new "Owner actions" line. Certified count unchanged (merge != certification, Law 4);
+product-true count unchanged (this item touches no `proving_symbol`, same as its UX05/1301
+parents -- UNWIRED).
