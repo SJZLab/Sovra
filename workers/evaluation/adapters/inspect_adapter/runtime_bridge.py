@@ -179,10 +179,9 @@ def observe_inspect_generation_forwarding(
         value = getattr(config, config_field, None)
         if value is None:
             continue
-        key = request_key
-        if config_field == "max_tokens" and "max_completion_tokens" in body:
-            key = "max_completion_tokens"
-        observed[key] = value
+        observed[request_key] = value
+    if "max_tokens" in observed and "max_completion_tokens" in body:
+        observed["max_completion_tokens"] = observed.pop("max_tokens")
     return capture_effective_generation_settings(observed)
 
 
@@ -602,7 +601,7 @@ def run_suite_through_runtime(
         # rows not read through `load_locked_development_suite` (which refuses draft, final
         # and unknown-purpose suites before reading a case) are never run
         raise BridgeError(CODE_INVALID_REQUEST, "provenance")
-    if not tenant_namespace.strip():
+    if not tenant_namespace or tenant_namespace.isspace():
         raise BridgeError(CODE_INVALID_REQUEST, "tenant_namespace")
     if (
         isinstance(deadline_seconds, bool)

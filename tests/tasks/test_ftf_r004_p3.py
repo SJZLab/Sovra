@@ -2791,6 +2791,84 @@ def test_a_model_routing_adapter_that_cannot_receive_the_hook_is_refused() -> No
     )
 
 
+def test_round2_mutation_survivors_have_real_tests() -> None:
+    import socket as sk
+    import types
+
+    import workers.evaluation.adapters.inspect_adapter.case_adapter as ca_mod
+
+    # Sample.input is canonical ASCII JSON: a non-ASCII value is escaped, never raw
+    cs = _raw_case_set(
+        [_record("case-001", "search_records", "subject-a1", {"query": "caf\u00e9"})]
+    )
+    check(
+        "FTF-R004-P3-AC1",
+        "the Sample input is ASCII-escaped canonical JSON",
+        "\\u00e9" in str(cs.samples[0].input) and "\u00e9" not in str(cs.samples[0].input),
+    )
+
+    # the loader compares the stored status exactly: " LOCKED " / "Locked" are not "locked"
+    real_get = ca_mod.get_evaluation_suite
+    try:
+        for odd in (" locked", "locked ", "LOCKED", "Locked"):
+            ca_mod.get_evaluation_suite = lambda *a, _s=odd, **k: types.SimpleNamespace(
+                purpose="development",
+                status=_s,
+                id=uuid.uuid4(),
+                project_id=uuid.uuid4(),
+                agent_manifest_id=uuid.uuid4(),
+                grading_logic_version=1,
+            )
+            code = _code(
+                ca_mod.load_locked_development_suite,
+                None,
+                None,
+                project_id=uuid.uuid4(),
+                suite_id=uuid.uuid4(),
+                role=None,
+            )
+            check(
+                "FTF-R004-P3-AC3",
+                f"stored status {odd!r} is not 'locked' (got {code})",
+                code == "suite_not_locked",
+            )
+    finally:
+        ca_mod.get_evaluation_suite = real_get
+
+    # only a datagram socket that is not local is a connectionless outbound send
+    listener = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    client = sk.create_connection(listener.getsockname())  # before the run, outside the guard
+    server, _ = listener.accept()
+    seen: list[bytes] = []
+
+    def local_sends(_r: Any) -> None:
+        client.send(b"tcp")  # a connection opened before the run is not a new outbound call
+        seen.append(server.recv(3))
+        a, b = sk.socketpair(sk.AF_UNIX, sk.SOCK_DGRAM)
+        try:
+            a.send(b"dg")
+            seen.append(b.recv(2))
+        finally:
+            a.close()
+            b.close()
+
+    try:
+        res = _run(
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=local_sends),
+            _case_set(_records()[:1]),
+        )
+    finally:
+        for sock in (client, server, listener):
+            sock.close()
+    check(
+        "FTF-R004-P3-AC8",
+        "a pre-existing stream connection and a local datagram pair are not blocked",
+        seen == [b"tcp", b"dg"] and res.network_attempts == 0,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
