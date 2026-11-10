@@ -6,6 +6,7 @@
 import { resolve } from "node:path";
 
 import { chromium, type Browser, type Page } from "@playwright/test";
+import { browserLaunchOptions } from "./support/browser_launch";
 import { build } from "vite";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
@@ -32,7 +33,7 @@ beforeAll(async () => {
   );
   const bundle = outputs.find((o) => o.type === "chunk")?.code ?? "";
   expect(bundle.length, "the in-memory bundle must be built").toBeGreaterThan(100);
-  browser = await chromium.launch();
+  browser = await chromium.launch(browserLaunchOptions());
   page = await browser.newPage();
   await page.setContent("<!doctype html><html><body></body></html>");
   await page.addScriptTag({ content: bundle });
