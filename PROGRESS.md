@@ -1,11 +1,13 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T18:52Z. Source: `python3 scripts/status.py` on main.
+Updated: 2026-11-10T11:20Z. Source: `python3 scripts/status.py` on main.
 - **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
+- **Certified (child slice, 2026-11-10): FTF-UX01-F1** - the shared error and keyboard-focus code is hardened: an unknown error kind no longer crashes a screen, no English text leaks into Arabic errors (checked in a real browser too), and the two helper modules have their own tests. 33 deliberate breakages were tried and 32 were caught; the one that was not is a change no test can observe. The count stays 157/304 because this is a child slice.
+- **Returned (2026-11-10): FTF-H010-P4** (model roles and continuation eligibility): the routes are live and 352 of 352 code breakages are caught, but an archived or changed weights file still shows "continue tuning" as allowed, and two database safeguards (a lock that stops one model being judge and candidate at once, and a revocation consistency rule) are not covered by any test. It goes back for a second round; import-wizard slices P5 and P6 still follow. The first relay merge after 18 days of a stuck lane was #998; lane B is running again.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
 - **FTF-0103A (live login + Membership): CERTIFIED.** Every /api/v1 route now authorizes real logged-in members, and
