@@ -41,3 +41,19 @@ journey page.
 - Still unwired: CostProfileSearchPanel, OIDC login, GitHub target-application components, the
   dataset-issue and dataset-source components, the evaluation-case import, and the candidate and
   manifest review components. Each still needs its journey.
+
+## Third batch: eight more journeys, sign-in, and a wiring test (2026-11-10)
+- Why #1016 sat unmerged for five days: it was green from 2026-11-05 and I waited on a scheduled
+  check instead of merging. Merged as e1668f5d once seen.
+- New journeys: cost-profile, github-repositories, candidate-selection, manifest-review,
+  mandate-editor, dataset-issues, dataset-source, evaluation-cases. The front door also shows the
+  OIDC sign-in button. 14 journeys total, all mounted from "/".
+- Chromium check, local build, no API running: all 14 journeys mount with zero page errors; the ones
+  that load on open show their "could not reach the server" state (Law 17).
+- New test apps/web/tests/wiring.spec.ts: every journey in the registry has its page, every page is a
+  registered journey, and every component that calls /api/v1 is reachable from a page. Shown able to
+  fail: removing pages/dataset-issues.tsx makes WIRING-1 and WIRING-3 fail and names the component.
+- Left unwired on purpose: GitHubBranchRefSelector. It is the second step of a flow and takes a
+  `credential` carried over from the repository-selection step; a credential must never travel in a
+  URL. It is listed in the test's UNWIRED map with that reason and needs a combined repo-to-branch
+  journey.

@@ -65,4 +65,74 @@ export const JOURNEYS: Journey[] = [
       { name: "workspaceId", label: "Workspace ID" },
     ],
   },
+  {
+    slug: "cost-profile",
+    title: "Cost profile and cost-per-success search",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+    ],
+  },
+  {
+    slug: "github-repositories",
+    title: "GitHub repositories",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+    ],
+  },
+  {
+    slug: "candidate-selection",
+    title: "Candidate selection",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "connectionId", label: "Connection ID" },
+      { name: "snapshotId", label: "Snapshot ID" },
+    ],
+  },
+  {
+    slug: "manifest-review",
+    title: "Manifest review",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "manifestId", label: "Manifest ID" },
+    ],
+  },
+  {
+    slug: "mandate-editor",
+    title: "Mandate editor",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "manifestId", label: "Manifest ID" },
+    ],
+  },
+  {
+    slug: "dataset-issues",
+    title: "Dataset issue resolution",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "datasetId", label: "Dataset ID" },
+    ],
+  },
+  {
+    slug: "dataset-source",
+    title: "Dataset source and purpose authorization",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+    ],
+  },
+  {
+    slug: "evaluation-cases",
+    title: "Evaluation case editor and import",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "suiteId", label: "Suite ID" },
+    ],
+  },
 ];
