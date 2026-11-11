@@ -439,12 +439,18 @@ function parseConnections(v: unknown): ConnectionOpt[] | null {
   return out;
 }
 
+/** Signature of the job states, so "status updated" is announced only when something changed. */
+function jobSig(list: ImportJob[]): string {
+  return list.map((j) => `${j.id}:${j.state}:${j.failure_code ?? ""}`).join("|");
+}
+
 function parseCatalog(v: unknown): string[] | null {
   if (!isRec(v) || !Array.isArray(v.entries)) return null;
   const out: string[] = [];
   for (const e of v.entries) {
     if (!isRec(e) || !isStr(e.id) || !isStr(e.status)) return null;
-    out.push(e.id);
+    // stale / removed entries are not callable: never offered as a choice.
+    if (e.status === "callable") out.push(e.id);
   }
   return out;
 }
@@ -703,6 +709,10 @@ function Inner({
 
   // Bounded backoff polling (2 s -> 30 s) that stops when no job is non-terminal.
   const delayRef = useRef(POLL_START_MS);
+  const lastSig = useRef("");
+  useEffect(() => {
+    if (jobs !== null && lastSig.current === "") lastSig.current = jobSig(jobs);
+  }, [jobs]);
   const anyActive = jobs !== null && jobs.some((j) => !TERMINAL.has(j.state));
   useEffect(() => {
     if (!anyActive) {
@@ -713,7 +723,8 @@ function Inner({
       delayRef.current = Math.min(delayRef.current * 2, POLL_MAX_MS);
       void loadJobs().then((list) => {
         if (!alive.current) return;
-        if (list !== null) setAnnounce(tr("polled", locale));
+        if (list !== null && jobSig(list) !== lastSig.current) setAnnounce(tr("polled", locale));
+        if (list !== null) lastSig.current = jobSig(list);
         // A failed poll (error shown by loadJobs) must still re-arm the backoff.
         setPollTick((n) => n + 1);
       });
@@ -896,8 +907,17 @@ function Inner({
     setNotice(null);
     setOutcome(null);
     lastSent.current = body;
-    idsBeforeSubmit.current = new Set(jobs.map((j) => j.id));
     try {
+      // Fresh baseline taken immediately before the POST (a stale one could "find" another
+      // user's identical job after a lost reply). If it cannot be read, nothing is sent.
+      const fresh = await loadJobs();
+      if (!alive.current) return;
+      if (fresh === null) {
+        setSubmitError(uiError(tr("failedLoadJobs", locale), "retry"));
+        focusAlert();
+        return;
+      }
+      idsBeforeSubmit.current = new Set(fresh.map((j) => j.id));
       let response: Response;
       try {
         response = await fetch(modelImportsUrl(apiBaseUrl, organizationId, projectId), {
@@ -930,7 +950,7 @@ function Inner({
           bindsTo(parsed, body, organizationId, projectId)
         ) {
           const created = parsed;
-          setJobs((cur) => [created, ...(cur ?? []).filter((j) => j.id !== created.id)]);
+          setJobs((cur) => [...(cur ?? []).filter((j) => j.id !== created.id), created]);
           setNotice("jobCreated");
           resetWizard();
           return;
@@ -981,7 +1001,12 @@ function Inner({
 
   // ----- step renderers -------------------------------------------------------------------
   function renderOptions<T>(l: Loaded<T>, retry: () => void, body: (d: T) => ReactElement) {
-    if (l.state === "loading") return <p role="status">{tr("loading", locale)}</p>;
+    if (l.state === "loading")
+      return (
+        <p role="status" aria-busy="true">
+          {tr("loading", locale)}
+        </p>
+      );
     if (l.state === "error")
       return (
         <>
@@ -1129,10 +1154,17 @@ function Inner({
             },
           )}
           {connectionId !== "" && catalog.state === "loading" ? (
-            <p role="status">{tr("loading", locale)}</p>
+            <p role="status" aria-busy="true">
+              {tr("loading", locale)}
+            </p>
           ) : null}
           {connectionId !== "" && catalog.state === "error" ? (
-            <AlertMessage error={catalog.error} locale={locale} testId="import-catalog-error" />
+            <>
+              <AlertMessage error={catalog.error} locale={locale} testId="import-catalog-error" />
+              <Button onClick={() => chooseConnection(connectionId)}>
+                {tr("refresh", locale)}
+              </Button>
+            </>
           ) : null}
           {connectionId !== "" && catalog.state === "ok" && catalog.data.length > 0 ? (
             <div>
@@ -1184,6 +1216,17 @@ function Inner({
               bases,
               () => loadForOrigin("imported_adapter"),
               (all) => {
+                if (jobs === null || jobsError !== null)
+                  return (
+                    <>
+                      <AlertMessage
+                        error={jobsError ?? uiError(tr("failedLoadJobs", locale), "retry")}
+                        locale={locale}
+                        testId="import-bases-error"
+                      />
+                      <Button onClick={() => void loadJobs()}>{tr("refresh", locale)}</Button>
+                    </>
+                  );
                 const list = all.filter((b) => validatedBaseIds.has(b.id));
                 if (list.length === 0)
                   return (
@@ -1516,7 +1559,11 @@ function Inner({
 
       <section aria-labelledby={`${uid}-jobs`}>
         <h3 id={`${uid}-jobs`}>{tr("jobsHeading", locale)}</h3>
-        {jobsLoading ? <p role="status">{tr("loading", locale)}</p> : null}
+        {jobsLoading ? (
+          <p role="status" aria-busy="true">
+            {tr("loading", locale)}
+          </p>
+        ) : null}
         {jobsError ? (
           <>
             <AlertMessage error={jobsError} locale={locale} testId="import-list-error" />

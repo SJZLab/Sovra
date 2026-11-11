@@ -300,6 +300,15 @@ const STATES: UiState[] = [
     steps: [...toEndpointReview, { tid: "import-confirm" }, { tid: "import-submit" }],
     ready: '[data-testid="import-notice"]',
   },
+  {
+    id: "submit lost reply with a preexisting identical job",
+    routes: [
+      { method: "POST", path: IMPORTS, reject: true },
+      ...withList([job({ id: "99999999-9999-9999-9999-999999999999", state: "failed" })]),
+    ],
+    steps: [...toEndpointReview, { tid: "import-confirm" }, { tid: "import-submit" }],
+    ready: '[data-testid="import-notice"]',
+  },
 ];
 
 type Locale = "en" | "ar";
@@ -632,6 +641,28 @@ describe("[H010P5-BROWSER] focus, wrap and bilingual behaviour in a real browser
         undefined,
         { timeout: 5000 },
       );
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the import notice is a role=status live region", async () => {
+    const page = await openState(find("submit created"), "en", "light");
+    try {
+      expect(await page.getByTestId("import-notice").getAttribute("role")).toBe("status");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a job that existed before the submit is never taken as the created one after a lost reply", async () => {
+    const page = await openState(
+      find("submit lost reply with a preexisting identical job"),
+      "en",
+      "light",
+    );
+    try {
+      expect(await page.getByTestId("import-notice").innerText()).toMatch(/No import was created/);
     } finally {
       await page.close();
     }

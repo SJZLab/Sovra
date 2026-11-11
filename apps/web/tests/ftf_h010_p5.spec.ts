@@ -909,7 +909,8 @@ test("H010P5-R1-5: after a created import, and after a found-after-lost-reply, f
   let lists = 0;
   routes[`GET ${IMPORTS}`] = () => {
     lists += 1;
-    return { body: lists === 1 ? [] : [job({ id: "new2" })] };
+    // 1 = mount, 2 = fresh baseline before the POST, 3 = the verify re-list.
+    return { body: lists <= 2 ? [] : [job({ id: "new2" })] };
   };
   routes[`POST ${IMPORTS}`] = { reject: true };
   mount();
@@ -1010,4 +1011,169 @@ test("H010P5-R1-9: a failed poll keeps polling with backoff; the error is shown;
     await vi.advanceTimersByTimeAsync(5 * POLL_MAX_MS);
   });
   expect(listGets()).toHaveLength(settled);
+});
+
+// ---- H010P5-R2: pre-review round 2 --------------------------------------------------------
+test("H010P5-R2-1: the baseline is re-read right before the POST; another user's identical job never counts as 'created'", async () => {
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    // Mount: empty. Before the POST: another user's identical (failed) job has appeared.
+    return {
+      body: lists === 1 ? [] : [job({ id: "theirs", state: "failed", created_by: "user-2" })],
+    };
+  };
+  routes[`POST ${IMPORTS}`] = { reject: true };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(screen.getByTestId("import-notice").textContent).toMatch(/No import was created/);
+  expect(screen.queryByText(/^The import was created/)).toBeNull();
+  expect(posts()).toHaveLength(1);
+  expect(lists).toBe(3);
+});
+
+test("H010P5-R2-1b: if the fresh baseline cannot be read, nothing is POSTed and an alert is announced", async () => {
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    return lists === 1 ? { body: [] } : { reject: true };
+  };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(posts()).toHaveLength(0);
+  expect(screen.getByTestId("import-submit-error").getAttribute("role")).toBe("alert");
+});
+
+test("H010P5-R2-2: a job that already existed before the submit is never taken as the created one", async () => {
+  // The same job id is in the baseline (mount + fresh list) and in the verify re-list.
+  routes[`GET ${IMPORTS}`] = { body: [job({ id: "old1" })] };
+  routes[`POST ${IMPORTS}`] = { reject: true };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(screen.getByTestId("import-notice").textContent).toMatch(/No import was created/);
+});
+
+test("H010P5-R2-3: a failed job-list GET shows an error and retry for the base list, never the empty state", async () => {
+  routes[`GET ${IMPORTS}`] = { status: 500, body: { detail: "boom" } };
+  mount({ role: "ml_engineer" });
+  await pick(/Adapter and base/);
+  await settle();
+  expect(screen.getByTestId("import-bases-error").getAttribute("role")).toBe("alert");
+  expect(screen.queryByText(/No validated base versions/)).toBeNull();
+  expect(screen.getAllByRole("button", { name: /Reload jobs/ }).length).toBeGreaterThan(0);
+});
+
+test("H010P5-R2-4: stale/removed catalog entries are not offered; a catalog error has a retry", async () => {
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = {
+    body: {
+      entries: [
+        { id: "ft:a", status: "callable" },
+        { id: "ft:dead", status: "removed" },
+        { id: "ft:old", status: "stale" },
+      ],
+    },
+  };
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  const sel = screen.getByLabelText(/Model from the connection catalog/);
+  expect(sel.innerHTML).toContain("ft:a");
+  expect(sel.innerHTML).not.toContain("ft:dead");
+  expect(sel.innerHTML).not.toContain("ft:old");
+  cleanup();
+
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = { status: 500, body: {} };
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  expect(screen.getByTestId("import-catalog-error")).toBeTruthy();
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = {
+    body: { entries: [{ id: "ft:a", status: "callable" }] },
+  };
+  fireEvent.click(screen.getByRole("button", { name: /Reload jobs/ }));
+  await settle();
+  expect(screen.queryByTestId("import-catalog-error")).toBeNull();
+});
+
+test("H010P5-R2-5: the import notice is a role=status live region", async () => {
+  routes[`POST ${IMPORTS}`] = { status: 201, body: job({ id: "new1" }) };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(screen.getByTestId("import-notice").getAttribute("role")).toBe("status");
+});
+
+test("H010P5-R2-6: the endpoint branch offers no input other than connection / catalog / ref (aria-label-only digest fields included)", async () => {
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  const root = screen.getByTestId("import-model-wizard");
+  const controls = Array.from(root.querySelectorAll("input, textarea, select")).filter(
+    (el) =>
+      (el as HTMLInputElement).type !== "radio" && (el as HTMLInputElement).type !== "checkbox",
+  );
+  // connection select, catalog select, ref input - nothing else.
+  expect(controls).toHaveLength(3);
+  expect(root.querySelector("input[aria-label], textarea[aria-label]")).toBeNull();
+});
+
+test("H010P5-R2-8: the base select shows its inline error wired by aria-describedby", async () => {
+  routes[`GET ${IMPORTS}`] = { body: [baseJob()] };
+  mount({ role: "ml_engineer" });
+  await pick(/Adapter and base/);
+  fireEvent.change(screen.getByLabelText(/Adapter artifact/), { target: { value: ADAPTER } });
+  fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
+  await settle();
+  const base = screen.getByLabelText(/Base model version/);
+  expect(base.getAttribute("aria-invalid")).toBe("true");
+  expect(base.getAttribute("aria-describedby")).toBe(screen.getByTestId("base-error").id);
+  expect(screen.getByTestId("base-error").textContent).not.toBe("");
+});
+
+test("H010P5-R2-9: 'status updated' is announced only when a job changed; a created job is listed after the older ones", async () => {
+  vi.useFakeTimers();
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    return { body: [job({ id: "j1", state: lists >= 3 ? "validating" : "queued" })] };
+  };
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  // First poll: nothing changed -> no announcement.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(lists).toBe(2);
+  expect(screen.queryByTestId("import-announce")).toBeNull();
+  // Second poll: the state changed -> announced.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+  });
+  expect(screen.getByTestId("import-announce")).toBeTruthy();
+});
+
+test("H010P5-R2-9b: a newly created job is listed after the older ones (the server orders ascending by created_at)", async () => {
+  routes[`GET ${IMPORTS}`] = { body: [job({ id: "old1" })] };
+  routes[`POST ${IMPORTS}`] = { status: 201, body: job({ id: "new1" }) };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  const ids = screen
+    .getAllByTestId(/^job-/)
+    .map((e) => e.getAttribute("data-testid"))
+    .filter((t) => t === "job-old1" || t === "job-new1");
+  expect(ids).toEqual(["job-old1", "job-new1"]);
 });
