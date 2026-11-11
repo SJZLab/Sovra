@@ -72,11 +72,7 @@ OPTIMIZERS: Final = ("adamw_torch", "adamw_torch_fused", "paged_adamw_8bit")
 SCHEDULERS: Final = ("cosine", "linear", "constant_with_warmup")
 COMPUTE_DTYPES: Final = ("bf16", "fp16", "fp32")
 QUANTIZATIONS: Final = ("none", "nf4")
-TRAIN_ROLE: Final = "train"
-VALIDATION_ROLE: Final = "validation"
 HELDOUT_ROLES: Final = ("development_eval", "final_qualification", "heldout_test")
-TRAINABLE_CAPABILITY: Final = "trainable_open_weight"
-BUDGET_SCOPE: Final = "training"
 
 # (min, max) inclusive; Decimal limits are strings so the contract can mirror them byte for byte.
 LIMITS: Final[Mapping[str, Any]] = MappingProxyType(
@@ -319,16 +315,15 @@ def parse_training_config_request(body: object) -> TrainingConfigRequest:
     budget = _exact_keys(top["budget"], BUDGET_KEYS)
 
     # 2. Identity and envelope.
-    if top["schema_version"] != SCHEMA_VERSION or type(top["schema_version"]) is not str:
+    if top["schema_version"] != "training_config.v1" or type(top["schema_version"]) is not str:
         raise _fail("unsupported_schema_version")
-    mode = top["mode"]
-    if type(mode) is not str or mode not in MODES:
-        raise _fail("invalid_mode")
-    rule = top["auto_rule_version"]
-    if mode == "advanced":
-        if rule is not None:
-            raise _fail("invalid_mode")
-    elif type(rule) is not str or _AUTO_RULE.fullmatch(rule) is None:
+    mode, rule = top["mode"], top["auto_rule_version"]
+    # advanced carries no rule version; auto must name one. One lookup, so the mode is read once.
+    rule_ok = {
+        "advanced": rule is None,
+        "auto": type(rule) is str and _AUTO_RULE.fullmatch(rule) is not None,
+    }
+    if type(mode) is not str or not rule_ok.get(mode, False):
         raise _fail("invalid_mode")
     method = top["method"]
     if type(method) is not str or method not in METHODS:
@@ -599,7 +594,7 @@ def resolve_training_config(
     for slot in (train, validation):
         if slot["role"] in HELDOUT_ROLES:
             raise _fail("heldout_training_source_denied")
-    if train["role"] != TRAIN_ROLE or validation["role"] != VALIDATION_ROLE:
+    if train["role"] != "train" or validation["role"] != "validation":
         raise _fail("invalid_source_role")
     if train["split_manifest_id"] != validation["split_manifest_id"]:
         raise _fail("split_manifest_mismatch")
@@ -613,7 +608,7 @@ def resolve_training_config(
     if (
         art.artifact_id != base["trainable_artifact_id"]
         or art.status != "ready"
-        or art.capability != TRAINABLE_CAPABILITY
+        or art.capability != "trainable_open_weight"
     ):
         raise _fail("artifact_not_trainable")
     if art.license_accepted is not True:
@@ -647,7 +642,7 @@ def resolve_training_config(
     budget = facts.budget
     if budget is None:
         raise _fail("budget_policy_missing")
-    if BUDGET_SCOPE not in budget.scopes:
+    if "training" not in budget.scopes:
         raise _fail("budget_scope_not_authorized")
     if budget.currency != doc["budget"]["currency"]:
         raise _fail("budget_currency_mismatch")

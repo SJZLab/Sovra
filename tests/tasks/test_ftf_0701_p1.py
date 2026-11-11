@@ -1217,6 +1217,15 @@ def suite(m: Any) -> None:
             f"str subclass at {path_} refused",
             parse_code(m, set_path(base, path_, val)) is not None,
         )
+    for fam in ("advanced", "auto"):
+        for variant in variants(fam):
+            for rule_ in (None, "r1"):
+                body_m = set_path(set_path(base, "mode", variant), "auto_rule_version", rule_)
+                check(
+                    "B11",
+                    f"mode {variant!r} rule {rule_!r}",
+                    parse_code(m, body_m) == "invalid_mode",
+                )
     check(
         "B8",
         "str-subclass mode with a rule version refused",
@@ -1763,8 +1772,8 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "role-not-exact",
-        'if train["role"] != TRAIN_ROLE or validation["role"] != VALIDATION_ROLE:',
-        'if train["role"] != TRAIN_ROLE:',
+        'if train["role"] != "train" or validation["role"] != "validation":',
+        'if train["role"] != "train":',
     ),
     (
         "qlora-without-nf4",
@@ -1818,12 +1827,12 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "dict-subclass",
-        '    if type(obj) is not dict:\n        raise _fail("invalid_body")\n    for key in obj:',
-        '    if not isinstance(obj, dict):\n        raise _fail("invalid_body")\n    for key in obj:',
+        '    if type(obj) is not dict:\n        raise _fail("invalid_body")\n',
+        '    if not isinstance(obj, dict):\n        raise _fail("invalid_body")\n',
     ),
     (
         "decimal-unnormalized",
-        '    text = format(value.normalize(), "f")\n    return text',
+        '    return format(value.normalize(), "f")',
         "    return str(value)",
     ),
     (
@@ -1847,7 +1856,7 @@ FAULTS: list[tuple[str, str, str]] = [
         '    if art.license_accepted is not True:\n        raise _fail("license_not_accepted")\n',
         "",
     ),
-    ("capability-dropped", "        or art.capability != TRAINABLE_CAPABILITY\n", ""),
+    ("capability-dropped", '        or art.capability != "trainable_open_weight"\n', ""),
     ("status-dropped", '        or art.status != "ready"\n', ""),
     (
         "budget-equal-refused",
@@ -1857,7 +1866,7 @@ FAULTS: list[tuple[str, str, str]] = [
     ("budget-ignores-reserved", "budget.total - budget.reserved:", "budget.total:"),
     (
         "budget-scope-dropped",
-        '    if BUDGET_SCOPE not in budget.scopes:\n        raise _fail("budget_scope_not_authorized")\n',
+        '    if "training" not in budget.scopes:\n        raise _fail("budget_scope_not_authorized")\n',
         "",
     ),
     (
@@ -1963,11 +1972,8 @@ FAULTS: list[tuple[str, str, str]] = [
     ("modules-unique-dropped", "        or len(set(modules)) != len(modules)\n", ""),
     ("gc-bool-dropped", 'if type(hyper["gradient_checkpointing"]) is not bool:', "if False:"),
     ("cost-positive-dropped", "if cost is None or cost <= 0:", "if cost is None:"),
-    (
-        "advanced-rule-allowed",
-        '        if rule is not None:\n            raise _fail("invalid_mode")\n',
-        "        pass\n",
-    ),
+    ("advanced-rule-allowed", '"advanced": rule is None,', '"advanced": True,'),
+    ("auto-rule-unchecked", "type(rule) is str and _AUTO_RULE.fullmatch(rule) is not None", "True"),
     (
         "frozen-immutability",
         "return MappingProxyType({k: _freeze(v) for k, v in value.items()})",
