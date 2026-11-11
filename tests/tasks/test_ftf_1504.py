@@ -552,12 +552,28 @@ def test_comparator_units() -> None:
     suite.assert_digest_covers(["projects", "audit_events"], ["audit_events"])
 
 
+def test_allow_list_scan_ignores_response_view_fields() -> None:
+    view = 'import x\n_VIEW_FIELDS = ("id", "organization_id")\n'
+    body = 'import x\n_APPROVE_FIELDS = frozenset({"organization_id"})\n'
+    check(
+        "FTF-1504-F-VIEW",
+        "a response-view tuple is not a body allow-list",
+        suite.allow_list_id_names(view) == set(),
+    )
+    check(
+        "FTF-1504-F-VIEW-NEG",
+        "a real request allow-list is still scanned",
+        suite.allow_list_id_names(body) == {"organization_id"},
+    )
+
+
 def main() -> None:
     live = test_registry_covers_live_surface()
     test_completeness_gate_is_able_to_fail(live)
     test_registry_shape()
     test_comparator_units()
     test_comparators()
+    test_allow_list_scan_ignores_response_view_fields()
     if FAILURES:
         print("\n".join(FAILURES))
         sys.exit(1)

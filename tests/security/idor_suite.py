@@ -107,6 +107,8 @@ COLLECTION_KINDS: dict[str, str] = {
     "evidence": "manifest_evidence",
     "model-imports": "model_import_job",
     "model-versions": "model_version",
+    "dataset-splits": "dataset_split_manifest",
+    "roles": "model_role_assignment",
     "target-connections": "target_connection",
     "snapshots": "target_source_snapshot",
     "candidates": "discovered_agent_candidate",
@@ -133,6 +135,13 @@ BODY_SLOT_KINDS: dict[str, tuple[str, bool, str]] = {
     "reviewer_id": ("member_identity", True, ""),
     "parent_model_version_id": ("model_version", True, ""),
     "target_application_connection_id": ("target_connection", True, ""),
+    "litellm_connection_id": ("litellm_connection", True, ""),
+    "finding_id": (
+        "leakage_finding",
+        False,
+        "finding label inside the manifest's own leakage report, matched only within the "
+        "manifest the path already authorised; not a stored row",
+    ),
 }
 
 
@@ -313,12 +322,26 @@ _ROWS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
         _PP + "/model-imports",
         (),
         (),
-        ("parent_model_version_id", "trainable_artifact_id"),
+        ("litellm_connection_id", "parent_model_version_id", "trainable_artifact_id"),
     ),
     ("GET", _PP + "/model-imports/{model_import_job_id}", (), (), ()),
     ("GET", _PP + "/model-versions", (), (), ()),
     ("POST", _PP + "/model-versions", (), (), ("trainable_artifact_id",)),
     ("GET", _PP + "/model-versions/{model_version_id}", (), (), ()),
+    ("GET", _PP + "/model-versions/{model_version_id}/actions", (), (), ()),
+    ("GET", _PP + "/model-versions/{model_version_id}/roles", (), (), ()),
+    ("POST", _PP + "/model-versions/{model_version_id}/roles", (), (), ()),
+    ("POST", _PP + "/model-versions/{model_version_id}/roles/{role}/revoke", (), (), ()),
+    ("GET", _PP + "/dataset-splits", (), ("after",), ()),
+    ("GET", _PP + "/dataset-splits/{manifest_id}", (), (), ()),
+    (
+        "POST",
+        _PP + "/dataset-splits/{manifest_id}/approve",
+        (),
+        (),
+        ("leakage_reviews[].finding_id",),
+    ),
+    ("POST", _PP + "/dataset-splits/{manifest_id}/reject", (), (), ()),
     ("GET", _PP + "/requirements", (), (), ()),
     ("GET", _PP + "/target-connections", (), (), ()),
     ("POST", _PP + "/target-connections", (), (), ()),
@@ -546,6 +569,9 @@ def _const_ids(node: ast.AST) -> set[str]:
     }
 
 
+_RESPONSE_SET = re.compile(r"VIEW|UUID")
+
+
 def allow_list_id_names(source: str) -> set[str]:
     """`*_id`/`*_ids` names a route module reads from its request body,
     found structurally rather than by a hand-kept list: (a) string constants
@@ -561,6 +587,11 @@ def allow_list_id_names(source: str) -> set[str]:
         value: ast.AST | None = None
         if isinstance(statement, ast.Assign | ast.AnnAssign):
             value = statement.value
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            # `_VIEW_FIELDS`/`_UUID_FIELDS`-style sets name RESPONSE keys (the serialised row),
+            # never body inputs; request allow-lists are `_<ACTION>_FIELDS` sets.
+            if any(isinstance(t, ast.Name) and _RESPONSE_SET.search(t.id) for t in targets):
+                value = None
         if value is not None:
             names |= _const_ids(value)
     for walked in ast.walk(tree):
