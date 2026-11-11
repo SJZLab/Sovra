@@ -3260,6 +3260,32 @@ def part_s_return3() -> None:
         v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
         w.approve(w.propose(v1, doc))
         v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        w.propose(v2, doc)
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        check(
+            "R3-B9",
+            "a newer identical PROPOSED (undecided) mapping does not block reuse",
+            w.resolve(v3).reused is True,
+        )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        w.approve(w.propose(v3, doc))
+        check(
+            "R3-B10",
+            "a newer identical APPROVED mapping does not block reuse of the older approval",
+            w.resolve(v2).reused is True,
+        )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
         v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
         w.reject(w.propose(v3, doc))
         refuses(

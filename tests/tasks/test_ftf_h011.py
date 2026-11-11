@@ -4150,6 +4150,9 @@ def part_r_actor() -> None:
                     got == (403, {"detail": "actor_not_auditable"}),
                 )
             for path, key, raw in (
+                ("/mapping-probe", None, b"nope"),
+                ("/mapping-preview", None, b"nope"),
+                ("/mapping-preview", None, b'{"mapping": 5}'),
                 ("/mappings", None, b'{"mapping": {}}'),
                 ("/mappings", "actor-key-00009", b"nope"),
                 (f"/mappings/{mid}/approve", None, b"nope"),

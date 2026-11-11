@@ -1000,7 +1000,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer) or `actor_not_auditable`.'
+          description: '`role_not_authorized` (including ml_engineer).'
         '404':
           description: '`not_found`.'
         '409':
@@ -1060,7 +1060,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer) or `actor_not_auditable`.'
+          description: '`role_not_authorized` (including ml_engineer).'
         '404':
           description: '`not_found`.'
         '409':
