@@ -58,7 +58,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint, func, 
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
-from workers.data import csv_importer, json_importer, jsonl_importer
+from workers.data import csv_importer, json_importer, jsonl_importer, xlsx_importer
 from workers.data.dataset_mapping_review import (
     JSONL_PREVIEW_CONTENT_TYPES,
     MappingPreviewResult,
@@ -72,6 +72,7 @@ from workers.data.import_common import (
     resolve_pointer,
     strict_loads,
 )
+from workers.data.ooxml_safety import XLSX_CONTENT_TYPE
 
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.organization_workspace_schema import Base
@@ -124,6 +125,7 @@ _IMPORTER_VERSIONS: Final = {
     csv_importer.IMPORTER_NAME: csv_importer.IMPORTER_VERSION,
     json_importer.IMPORTER_NAME: json_importer.IMPORTER_VERSION,
     jsonl_importer.IMPORTER_NAME: jsonl_importer.IMPORTER_VERSION,
+    xlsx_importer.IMPORTER_NAME: xlsx_importer.IMPORTER_VERSION,
 }
 _REUSABLE_PAIRS: Final = frozenset({(csv_importer.IMPORTER_NAME, csv_importer.IMPORTER_NAME)})
 
@@ -272,6 +274,8 @@ def importer_for_content_type(verified_content_type: object) -> str:
         return json_importer.IMPORTER_NAME
     if verified_content_type == "text/csv":
         return csv_importer.IMPORTER_NAME
+    if verified_content_type == XLSX_CONTENT_TYPE:
+        return xlsx_importer.IMPORTER_NAME
     raise MappingStoreError("importer_unavailable")
 
 

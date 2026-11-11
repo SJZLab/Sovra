@@ -10,8 +10,9 @@ Criteria (each test names the clause it pins):
 
   TAP   `ImportMapping.row_observer`: additive, order-matched to events, a copy never the
         original, never set by `mapping_from_object`, no effect on `mapping_sha256`/equality
-  DISP  dispatch by verified content type; XLSX and anything unrecognised ->
-        `MappingPreviewUnavailableError`
+  DISP  dispatch by verified content type; anything unrecognised (legacy .xls included) ->
+        `MappingPreviewUnavailableError` (XLSX itself is dispatched since FTF-H011-P6; its
+        own tests are tests/tasks/test_ftf_h011_p6.py)
   MASK  masking: every value masked when not revealed, headers/keys never masked, nested
         structures, `reveal=True` returns the real values
   PAIR  every accepted/rejected row pairs with its own raw row, in order; a row that never
@@ -335,9 +336,10 @@ def test_tool_argument_validator_threaded_through_to_the_importer() -> None:
 # --- DISP ----------------------------------------------------------------------------------
 
 
-def test_dispatch_unavailable_for_xlsx_and_unknown() -> None:
+def test_dispatch_unavailable_for_unknown_content_types() -> None:
     for content_type in (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.SPREADSHEETML.SHEET",
         "application/octet-stream",
         "",
     ):

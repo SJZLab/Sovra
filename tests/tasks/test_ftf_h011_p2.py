@@ -153,6 +153,7 @@ def part_p() -> None:
         ("application/x-ndjson", "jsonl"),
         ("application/json", "json"),
         ("text/csv", "csv"),
+        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"),
     ):
         check(
             "IMPORTER-1",
@@ -160,7 +161,8 @@ def part_p() -> None:
             store.importer_for_content_type(content_type) == importer,
         )
     for bad in (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "APPLICATION/VND.OPENXMLFORMATS-OFFICEDOCUMENT.SPREADSHEETML.SHEET",
         "text/plain",
         "TEXT/CSV",
         "APPLICATION/JSONL",
@@ -1543,9 +1545,9 @@ def part_s_propose_refusals() -> None:
             "book",
             "training",
             conn,
-            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content_type="application/vnd.ms-excel",
         )
-        refuses(w, "an XLSX dataset", "importer_unavailable", pr(dataset=xlsx))
+        refuses(w, "a legacy .xls dataset", "importer_unavailable", pr(dataset=xlsx))
         nothing = w.dataset("nothing", "training", conn, content_type=None)
         refuses(
             w,
