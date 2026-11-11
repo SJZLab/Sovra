@@ -121,6 +121,38 @@ export const FAILURE_MESSAGES: Record<string, Msg> = {
     en: "The adapter does not match the chosen base model.",
     ar: "المحوّل لا يطابق النموذج الأساسي المختار.",
   },
+  unexpected_file: {
+    en: "The artifact contains a file that is not allowed.",
+    ar: "تحتوي القطعة على ملف غير مسموح به.",
+  },
+  unsafe_weight_format: {
+    en: "The weights use a format that is not safe to load.",
+    ar: "تستخدم الأوزان صيغة غير آمنة للتحميل.",
+  },
+  config_invalid: {
+    en: "The model configuration file is not valid.",
+    ar: "ملف إعدادات النموذج غير صالح.",
+  },
+  tokenizer_config_invalid: {
+    en: "The tokenizer configuration file is not valid.",
+    ar: "ملف إعدادات أداة الترميز غير صالح.",
+  },
+  adapter_config_invalid: {
+    en: "The adapter configuration file is not valid.",
+    ar: "ملف إعدادات المحوّل غير صالح.",
+  },
+  quantization_unverified: {
+    en: "The quantization of the weights could not be verified.",
+    ar: "تعذر التحقق من تكميم الأوزان.",
+  },
+  weights_header_invalid: {
+    en: "The weights file header is not valid.",
+    ar: "ترويسة ملف الأوزان غير صالحة.",
+  },
+  validator_input_invalid: {
+    en: "The validation input was not valid.",
+    ar: "مدخلات التحقق غير صالحة.",
+  },
   adapter_base_incompatible: {
     en: "The adapter does not match the chosen base model.",
     ar: "المحوّل لا يطابق النموذج الأساسي المختار.",
@@ -1067,7 +1099,11 @@ function Inner({
                 aria-describedby={`${uid}-ref-help`}
                 aria-invalid={fieldErrors.some((f) => f.fieldId === `${uid}-ref`) || undefined}
                 onChange={(e) => setRef(e.target.value)}
-                style={{ minBlockSize: "var(--target-min)", inlineSize: "100%" }}
+                style={{
+                  minBlockSize: "var(--target-min)",
+                  inlineSize: "100%",
+                  boxSizing: "border-box",
+                }}
               />
             </div>
           ) : null}
