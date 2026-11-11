@@ -11,7 +11,14 @@ const WEB = resolve(__dirname, "..");
 
 // Components that call the API but are not reachable from a page, each with its reason. Empty means
 // every API-calling component is wired.
-const UNWIRED: Record<string, string> = {};
+const UNWIRED: Record<string, string> = {
+  // FTF-H010-P5 (QUEUE.md, "UNWIRED until FTF-H029 mounts the screens"): the import wizard needs the
+  // caller's organization role from a real session, which no page supplies yet (the journey shell is
+  // FTF-H029). It is proven in jsdom, real Chromium and against the real routers, but not reachable
+  // from "/" yet; its UI proving_symbol stays blank until then (FTF-0309 / H011-P4 precedent).
+  "components/model-import/import_model_wizard_ui.tsx":
+    "UNWIRED until FTF-H029 mounts it with a real session role",
+};
 
 function walk(dir: string): string[] {
   const out: string[] = [];

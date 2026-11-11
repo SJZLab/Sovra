@@ -390,8 +390,9 @@ components:
           type: [string, 'null']
           format: uuid
           description: >-
-            The endpoint-only ModelVersion a `succeeded` job created (FTF-H010-P2); null in every
-            other state.
+            The ModelVersion a `succeeded` job created: the endpoint-only version for an
+            `external_endpoint` job (FTF-H010-P2) or the imported-weights / adapter version for the
+            other origins (FTF-H010-P3); null in every other state.
         state:
           $ref: '#/components/schemas/ModelImportJobState'
         failure_code:

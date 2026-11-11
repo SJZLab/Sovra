@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,call-arg"
+# ruff: noqa: E501
 """FTF-H010-P5 -- import wizard UI: contract-parity (presence) tests.
 
 The wizard itself is proven by `apps/web/tests/ftf_h010_p5.spec.ts` (jsdom),
@@ -133,12 +134,18 @@ def test_p5_codes() -> None:
     check(
         CID + "-CODES",
         "FAULT missing entry is detected",
-        bool(code_problems(re.sub(rf"^\s{{2}}{first}: \{{.*?\}},\s*$", "", src, flags=re.S | re.M, count=1))),
+        bool(
+            code_problems(
+                re.sub(rf"^\s{{2}}{first}: \{{.*?\}},\s*$", "", src, flags=re.S | re.M, count=1)
+            )
+        ),
     )
     check(
         CID + "-CODES",
         "FAULT missing ar is detected",
-        bool(code_problems(re.sub(rf'({first}: \{{ en: "[^"]+",) ar: "[^"]+"', r"\1", src, count=1))),
+        bool(
+            code_problems(re.sub(rf'({first}: \{{ en: "[^"]+",) ar: "[^"]+"', r"\1", src, count=1))
+        ),
     )
     check(
         CID + "-CODES",
@@ -149,7 +156,11 @@ def test_p5_codes() -> None:
 
 def test_p5_const() -> None:
     src = COMPONENT.read_text()
-    check(CID + "-CONST", f"constants equal the backend: {const_problems(src)}", not const_problems(src))
+    check(
+        CID + "-CONST",
+        f"constants equal the backend: {const_problems(src)}",
+        not const_problems(src),
+    )
     check(
         CID + "-CONST",
         "FAULT drifted origin list is detected",
@@ -163,15 +174,34 @@ def test_p5_const() -> None:
     check(
         CID + "-CONST",
         "FAULT drifted admin role is detected",
-        bool(const_problems(src.replace('ADMIN_ROLES: readonly string[] = ["organization_admin"]', 'ADMIN_ROLES: readonly string[] = ["ml_engineer"]'))),
+        bool(
+            const_problems(
+                src.replace(
+                    'ADMIN_ROLES: readonly string[] = ["organization_admin"]',
+                    'ADMIN_ROLES: readonly string[] = ["ml_engineer"]',
+                )
+            )
+        ),
     )
 
 
 def test_p5_negative() -> None:
     src = COMPONENT.read_text()
-    check(CID + "-NEG", f"no base_url / digest column read: {negative_problems(src)}", not negative_problems(src))
-    check(CID + "-NEG", "FAULT base_url read is detected", bool(negative_problems(src + "\nconst x = c.base_url;")))
-    check(CID + "-NEG", "FAULT artifact_sha256 read is detected", bool(negative_problems(src + "\nconst y = j.artifact_sha256;")))
+    check(
+        CID + "-NEG",
+        f"no base_url / digest column read: {negative_problems(src)}",
+        not negative_problems(src),
+    )
+    check(
+        CID + "-NEG",
+        "FAULT base_url read is detected",
+        bool(negative_problems(src + "\nconst x = c.base_url;")),
+    )
+    check(
+        CID + "-NEG",
+        "FAULT artifact_sha256 read is detected",
+        bool(negative_problems(src + "\nconst y = j.artifact_sha256;")),
+    )
 
 
 def main() -> int:
