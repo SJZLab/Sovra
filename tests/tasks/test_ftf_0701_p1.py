@@ -1174,7 +1174,7 @@ def suite(m: Any) -> None:
             == "invalid_budget",
         )
 
-    class L(list):  # type: ignore[type-arg]
+    class L(list):
         pass
 
     check(
