@@ -612,6 +612,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p3.py
       - name: FTF-H010-P4 negative-test proof (model action eligibility and continuation plans -- complete decision table, endpoint never trainable whatever its ref or roles say, new run vs exact resume property, strict facts, META-LEAK, fault-injected module copies; no DB or network required)
         run: uv run python3 tests/tasks/test_ftf_h010_p4.py
+      - name: FTF-0701-P1 negative-test proof (typed training config schema -- exact allow-lists, bounds, enum variants, enablement, held-out roles, facts table, check order, hash properties, contract parity, META-LEAK, fault-injected module copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_0701_p1.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check

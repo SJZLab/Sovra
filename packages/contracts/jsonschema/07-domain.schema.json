@@ -1,0 +1,891 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovra.internal/contracts/phase-07/domain.schema.json",
+  "title": "Sovra Phase 07 Domain Schemas (FTF-0701 - Training config schema)",
+  "description": "Frozen shared domain schema for the engine-neutral TrainingConfig v1 (Sections 6.15, 14.2, 15.1-15.5). Enums, bounds, allow-lists and error codes are byte-checked against workers/training/training_config_schema.py by tests/tasks/test_ftf_0701_p1.py. Resolved server facts are listed by key; the resolved document is {TrainingConfigV1 fields..., server: {...}} and config_sha256 covers all of it.",
+  "$defs": {
+    "TrainingMethod": {
+      "type": "string",
+      "enum": [
+        "lora",
+        "qlora",
+        "full_sft",
+        "seq_cls_lora"
+      ],
+      "x-reserved": {
+        "full_sft": "needs an administrator enablement and a separate cost-approval gate (Section 15.1 item 3); no task has built either",
+        "seq_cls_lora": "enabled only when FTF-0708A is CERTIFIED (ADR 0004)"
+      }
+    },
+    "EnabledTrainingMethod": {
+      "type": "string",
+      "enum": [
+        "lora",
+        "qlora"
+      ]
+    },
+    "TrainingMode": {
+      "type": "string",
+      "enum": [
+        "advanced",
+        "auto"
+      ]
+    },
+    "Optimizer": {
+      "type": "string",
+      "enum": [
+        "adamw_torch",
+        "adamw_torch_fused",
+        "paged_adamw_8bit"
+      ]
+    },
+    "Scheduler": {
+      "type": "string",
+      "enum": [
+        "cosine",
+        "linear",
+        "constant_with_warmup"
+      ]
+    },
+    "ComputeDtype": {
+      "type": "string",
+      "enum": [
+        "bf16",
+        "fp16",
+        "fp32"
+      ]
+    },
+    "Quantization": {
+      "type": "string",
+      "enum": [
+        "none",
+        "nf4"
+      ]
+    },
+    "SequenceLength": {
+      "type": "integer",
+      "enum": [
+        1024,
+        2048,
+        4096,
+        8192,
+        16384
+      ]
+    },
+    "TrainingConfigErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_body",
+        "unsupported_schema_version",
+        "invalid_mode",
+        "invalid_method",
+        "invalid_source_role",
+        "split_manifest_mismatch",
+        "invalid_tokenizer",
+        "invalid_template",
+        "packing_not_qualified",
+        "invalid_lora_rank",
+        "invalid_lora_alpha",
+        "invalid_lora_dropout",
+        "invalid_target_modules",
+        "invalid_learning_rate",
+        "invalid_epochs",
+        "invalid_warmup_ratio",
+        "invalid_max_seq_length",
+        "invalid_batch_size",
+        "invalid_gradient_accumulation",
+        "invalid_optimizer",
+        "invalid_scheduler",
+        "invalid_weight_decay",
+        "invalid_max_grad_norm",
+        "invalid_seed",
+        "invalid_checkpoint_policy",
+        "unsupported_dtype",
+        "invalid_quantization",
+        "method_quantization_mismatch",
+        "invalid_budget",
+        "invalid_currency",
+        "heldout_training_source_denied",
+        "dataset_grant_changed",
+        "method_not_enabled",
+        "auto_rule_version_unknown",
+        "split_manifest_not_locked",
+        "split_manifest_changed",
+        "split_manifest_tampered",
+        "quality_report_changed",
+        "train_split_empty",
+        "validation_split_empty",
+        "artifact_not_trainable",
+        "license_not_accepted",
+        "tokenizer_revision_mismatch",
+        "catalog_mapping_changed",
+        "catalog_artifact_mismatch",
+        "budget_policy_missing",
+        "budget_scope_not_authorized",
+        "budget_currency_mismatch",
+        "budget_limit_exceeds_policy",
+        "idempotency_key_reused"
+      ],
+      "x-http-status": {
+        "invalid_body": 400,
+        "unsupported_schema_version": 400,
+        "invalid_mode": 400,
+        "invalid_method": 400,
+        "invalid_source_role": 400,
+        "split_manifest_mismatch": 400,
+        "invalid_tokenizer": 400,
+        "invalid_template": 400,
+        "packing_not_qualified": 400,
+        "invalid_lora_rank": 400,
+        "invalid_lora_alpha": 400,
+        "invalid_lora_dropout": 400,
+        "invalid_target_modules": 400,
+        "invalid_learning_rate": 400,
+        "invalid_epochs": 400,
+        "invalid_warmup_ratio": 400,
+        "invalid_max_seq_length": 400,
+        "invalid_batch_size": 400,
+        "invalid_gradient_accumulation": 400,
+        "invalid_optimizer": 400,
+        "invalid_scheduler": 400,
+        "invalid_weight_decay": 400,
+        "invalid_max_grad_norm": 400,
+        "invalid_seed": 400,
+        "invalid_checkpoint_policy": 400,
+        "unsupported_dtype": 400,
+        "invalid_quantization": 400,
+        "method_quantization_mismatch": 400,
+        "invalid_budget": 400,
+        "invalid_currency": 400,
+        "heldout_training_source_denied": 403,
+        "dataset_grant_changed": 403,
+        "method_not_enabled": 409,
+        "auto_rule_version_unknown": 409,
+        "split_manifest_not_locked": 409,
+        "split_manifest_changed": 409,
+        "split_manifest_tampered": 409,
+        "quality_report_changed": 409,
+        "train_split_empty": 409,
+        "validation_split_empty": 409,
+        "artifact_not_trainable": 409,
+        "license_not_accepted": 409,
+        "tokenizer_revision_mismatch": 409,
+        "catalog_mapping_changed": 409,
+        "catalog_artifact_mismatch": 409,
+        "budget_policy_missing": 409,
+        "budget_scope_not_authorized": 409,
+        "budget_currency_mismatch": 409,
+        "budget_limit_exceeds_policy": 409,
+        "idempotency_key_reused": 409
+      }
+    },
+    "TrainingConfigV1": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "training_config.v1"
+        },
+        "mode": {
+          "$ref": "#/$defs/TrainingMode"
+        },
+        "auto_rule_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "method": {
+          "$ref": "#/$defs/TrainingMethod"
+        },
+        "base": {
+          "type": "object",
+          "properties": {
+            "trainable_artifact_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "model_catalog_entry_id": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "catalog_version": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "trainable_artifact_id",
+            "model_catalog_entry_id",
+            "catalog_version"
+          ],
+          "additionalProperties": false
+        },
+        "tokenizer": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "const": "base_artifact"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            }
+          },
+          "required": [
+            "source",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "const": "base_artifact"
+            },
+            "loss_policy": {
+              "const": "assistant_only"
+            },
+            "packing": {
+              "const": false
+            }
+          },
+          "required": [
+            "source",
+            "loss_policy",
+            "packing"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "train": {
+              "type": "object",
+              "properties": {
+                "split_manifest_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "split_manifest_id",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            "validation": {
+              "type": "object",
+              "properties": {
+                "split_manifest_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "split_manifest_id",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            "frozen_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "train",
+            "validation",
+            "frozen_manifest_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "precision": {
+          "type": "object",
+          "properties": {
+            "compute_dtype": {
+              "$ref": "#/$defs/ComputeDtype"
+            },
+            "quantization": {
+              "$ref": "#/$defs/Quantization"
+            }
+          },
+          "required": [
+            "compute_dtype",
+            "quantization"
+          ],
+          "additionalProperties": false
+        },
+        "hyperparameters": {
+          "type": "object",
+          "properties": {
+            "learning_rate": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0.0000001",
+              "x-decimal-maximum": "0.001"
+            },
+            "epochs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "warmup_ratio": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "0.5"
+            },
+            "scheduler": {
+              "$ref": "#/$defs/Scheduler"
+            },
+            "optimizer": {
+              "$ref": "#/$defs/Optimizer"
+            },
+            "weight_decay": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "1"
+            },
+            "max_grad_norm": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "100",
+              "x-decimal-exclusive-minimum": true
+            },
+            "max_seq_length": {
+              "$ref": "#/$defs/SequenceLength"
+            },
+            "micro_batch_size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "gradient_accumulation_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "gradient_checkpointing": {
+              "type": "boolean"
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "default": 3407
+            },
+            "checkpoint_interval_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "max_checkpoints": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "learning_rate",
+            "epochs",
+            "warmup_ratio",
+            "scheduler",
+            "optimizer",
+            "weight_decay",
+            "max_grad_norm",
+            "max_seq_length",
+            "micro_batch_size",
+            "gradient_accumulation_steps",
+            "gradient_checkpointing",
+            "checkpoint_interval_steps",
+            "max_checkpoints"
+          ],
+          "additionalProperties": false
+        },
+        "adapter": {
+          "type": "object",
+          "properties": {
+            "lora_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "lora_alpha": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "lora_dropout": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "0.5"
+            },
+            "target_modules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+              }
+            }
+          },
+          "required": [
+            "lora_rank",
+            "lora_alpha",
+            "lora_dropout",
+            "target_modules"
+          ],
+          "additionalProperties": false
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_cost": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-exclusive-minimum": "0",
+              "x-max-integer-digits": 14,
+              "x-max-fraction-digits": 4
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "max_wall_clock_seconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 2592000
+            }
+          },
+          "required": [
+            "max_cost",
+            "currency",
+            "max_wall_clock_seconds"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "mode",
+        "auto_rule_version",
+        "method",
+        "base",
+        "tokenizer",
+        "template",
+        "data",
+        "precision",
+        "hyperparameters",
+        "adapter",
+        "budget"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedTrainingConfig": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ResolvedConfigDocument"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "config",
+        "config_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "ResolvedConfigDocument": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "training_config.v1"
+        },
+        "mode": {
+          "$ref": "#/$defs/TrainingMode"
+        },
+        "auto_rule_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "method": {
+          "$ref": "#/$defs/TrainingMethod"
+        },
+        "base": {
+          "type": "object",
+          "properties": {
+            "trainable_artifact_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "model_catalog_entry_id": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "catalog_version": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "trainable_artifact_id",
+            "model_catalog_entry_id",
+            "catalog_version"
+          ],
+          "additionalProperties": false
+        },
+        "tokenizer": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "const": "base_artifact"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            }
+          },
+          "required": [
+            "source",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "template": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "const": "base_artifact"
+            },
+            "loss_policy": {
+              "const": "assistant_only"
+            },
+            "packing": {
+              "const": false
+            }
+          },
+          "required": [
+            "source",
+            "loss_policy",
+            "packing"
+          ],
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "train": {
+              "type": "object",
+              "properties": {
+                "split_manifest_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "split_manifest_id",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            "validation": {
+              "type": "object",
+              "properties": {
+                "split_manifest_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "role": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "split_manifest_id",
+                "role"
+              ],
+              "additionalProperties": false
+            },
+            "frozen_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "train",
+            "validation",
+            "frozen_manifest_sha256"
+          ],
+          "additionalProperties": false
+        },
+        "precision": {
+          "type": "object",
+          "properties": {
+            "compute_dtype": {
+              "$ref": "#/$defs/ComputeDtype"
+            },
+            "quantization": {
+              "$ref": "#/$defs/Quantization"
+            }
+          },
+          "required": [
+            "compute_dtype",
+            "quantization"
+          ],
+          "additionalProperties": false
+        },
+        "hyperparameters": {
+          "type": "object",
+          "properties": {
+            "learning_rate": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0.0000001",
+              "x-decimal-maximum": "0.001"
+            },
+            "epochs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "warmup_ratio": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "0.5"
+            },
+            "scheduler": {
+              "$ref": "#/$defs/Scheduler"
+            },
+            "optimizer": {
+              "$ref": "#/$defs/Optimizer"
+            },
+            "weight_decay": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "1"
+            },
+            "max_grad_norm": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "100",
+              "x-decimal-exclusive-minimum": true
+            },
+            "max_seq_length": {
+              "$ref": "#/$defs/SequenceLength"
+            },
+            "micro_batch_size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128
+            },
+            "gradient_accumulation_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "gradient_checkpointing": {
+              "type": "boolean"
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "default": 3407
+            },
+            "checkpoint_interval_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "max_checkpoints": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "learning_rate",
+            "epochs",
+            "warmup_ratio",
+            "scheduler",
+            "optimizer",
+            "weight_decay",
+            "max_grad_norm",
+            "max_seq_length",
+            "micro_batch_size",
+            "gradient_accumulation_steps",
+            "gradient_checkpointing",
+            "checkpoint_interval_steps",
+            "max_checkpoints"
+          ],
+          "additionalProperties": false
+        },
+        "adapter": {
+          "type": "object",
+          "properties": {
+            "lora_rank": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "lora_alpha": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "lora_dropout": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-minimum": "0",
+              "x-decimal-maximum": "0.5"
+            },
+            "target_modules": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+              }
+            }
+          },
+          "required": [
+            "lora_rank",
+            "lora_alpha",
+            "lora_dropout",
+            "target_modules"
+          ],
+          "additionalProperties": false
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_cost": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,39})(\\.[0-9]{1,40})?$",
+              "x-decimal-exclusive-minimum": "0",
+              "x-max-integer-digits": 14,
+              "x-max-fraction-digits": 4
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "max_wall_clock_seconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 2592000
+            }
+          },
+          "required": [
+            "max_cost",
+            "currency",
+            "max_wall_clock_seconds"
+          ],
+          "additionalProperties": false
+        },
+        "server": {
+          "type": "object",
+          "properties": {
+            "weights_digest": {},
+            "base_revision": {},
+            "split_manifest_version": {},
+            "frozen_manifest_sha256": {},
+            "train_role_sha256": {},
+            "validation_role_sha256": {},
+            "train_count": {},
+            "validation_count": {},
+            "budget_policy_id": {},
+            "budget_policy_row_version": {},
+            "security_profile": {}
+          },
+          "required": [
+            "weights_digest",
+            "base_revision",
+            "split_manifest_version",
+            "frozen_manifest_sha256",
+            "train_role_sha256",
+            "validation_role_sha256",
+            "train_count",
+            "validation_count",
+            "budget_policy_id",
+            "budget_policy_row_version",
+            "security_profile"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "mode",
+        "auto_rule_version",
+        "method",
+        "base",
+        "tokenizer",
+        "template",
+        "data",
+        "precision",
+        "hyperparameters",
+        "adapter",
+        "budget",
+        "server"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

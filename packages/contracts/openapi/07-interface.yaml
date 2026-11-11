@@ -1,0 +1,33 @@
+openapi: 3.1.0
+info:
+  title: Sovra Phase 07 Interface (TrainingConfig)
+  version: 0.1.0
+  description: >-
+    Frozen shared phase interface for Phase 7 (Training) at the declared owner
+    paths (`packages/contracts/openapi/07-interface.yaml` +
+    `packages/contracts/jsonschema/07-domain.schema.json`). FTF-0701 ("Training
+    config schema") is this phase's contract owner (`contract_owner: FTF-0701`).
+
+    This file deliberately declares **zero HTTP paths** in FTF-0701-P1, the
+    FTF-0902 precedent: P1 is the pure typed schema and its frozen domain
+    contract (`workers/training/training_config_schema.py`). The
+    `training/experiments` paths arrive with FTF-0701-P3 when the route is
+    implemented and wired in `apps/api/app/main.py`. Every other phase-07 route
+    (`/training/estimate`, `/training/runs/{id}`, `/metrics`, `/cancel`,
+    `/engine`) belongs to its own owner task (FTF-0703, FTF-0711/0717, FTF-0718,
+    FTF-R003), which extends this file under the same `contracts:07` lock.
+    Declaring any of them now would be a placeholder endpoint (Law 11).
+
+    `TrainingConfigV1` and its nested shapes in `07-domain.schema.json` are the
+    exact enums, bounds, allow-lists and error codes the module enforces; the
+    test `tests/tasks/test_ftf_0701_p1.py` byte-compares them with the module
+    constants so the two cannot drift.
+paths: {}
+components:
+  schemas:
+    TrainingConfigV1:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingConfigV1'
+    ResolvedTrainingConfig:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/ResolvedTrainingConfig'
+    TrainingConfigErrorCode:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingConfigErrorCode'
