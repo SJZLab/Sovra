@@ -27,7 +27,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Context, Decimal
 from types import MappingProxyType
 from typing import Any, Final
 
@@ -187,6 +187,7 @@ _DECIMAL = re.compile(r"(0|[1-9][0-9]{0,39})(\.[0-9]{1,40})?")
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 _REVISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _CURRENCY = re.compile(r"[A-Z]{3}")
+_EXACT = Context(prec=200, traps=[])
 _AUTO_RULE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 
 
@@ -651,7 +652,8 @@ def resolve_training_config(
         raise _fail("budget_scope_not_authorized")
     if budget.currency != doc["budget"]["currency"]:
         raise _fail("budget_currency_mismatch")
-    if Decimal(doc["budget"]["max_cost"]) > budget.total - budget.reserved:
+    # Exact arithmetic under an explicit context: the caller's thread-local one could round.
+    if _EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) > budget.total:
         raise _fail("budget_limit_exceeds_policy")
 
     resolved = {

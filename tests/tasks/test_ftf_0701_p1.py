@@ -259,6 +259,8 @@ WRONG_TYPES: list[Any] = [True, False, 1.0, "3", None, [], {}, [3]]
 
 
 def suite(m: Any) -> None:
+    rv: Any
+    truthy: Any
     path: Any
     code: Any
     low: Any
@@ -1188,6 +1190,82 @@ def suite(m: Any) -> None:
         "scope substring does not authorize",
         fcode(budget=replace(b, scopes=("pretraining",))) == "budget_scope_not_authorized",
     )
+    # budget arithmetic is exact under any caller context
+    tight = make_facts(m, budget=replace(b, total=Decimal("99999.9"), reserved=Decimal("0.0001")))
+    big = set_path(base, "budget.max_cost", "100000")
+    check(
+        "E16",
+        "baseline: over budget refused",
+        resolve_code(m, big, tight) == "budget_limit_exceeds_policy",
+    )
+    for prec in (1, 3, 5):
+        with decimal.localcontext() as ctx:
+            ctx.prec = prec
+            check(
+                "E16",
+                f"prec={prec}: still refused",
+                resolve_code(m, big, tight) == "budget_limit_exceeds_policy",
+            )
+            ctx.traps[decimal.Inexact] = True
+            ctx.traps[decimal.Rounded] = True
+            check(
+                "E16",
+                f"prec={prec} traps: coded refusal, no raw decimal error",
+                resolve_code(m, big, tight) == "budget_limit_exceeds_policy",
+            )
+            ok_tight = set_path(base, "budget.max_cost", "99999.8999")
+            check(
+                "E16",
+                f"prec={prec} traps: exact boundary accepted",
+                resolve_code(m, ok_tight, tight) is None,
+            )
+            over_tight = set_path(base, "budget.max_cost", "99999.9")
+            check(
+                "E16",
+                f"prec={prec} traps: +0.0001 refused",
+                resolve_code(m, over_tight, tight) == "budget_limit_exceeds_policy",
+            )
+    for rv in ("", " ", "r1", "advanced", 0, False, []):
+        check(
+            "C6",
+            f"advanced with rule {rv!r}",
+            parse_code(m, set_path(base, "auto_rule_version", rv)) == "invalid_mode",
+        )
+    for fld in ("hash_verified", "quality_report_current", "grants_current"):
+        want = {
+            "hash_verified": "split_manifest_tampered",
+            "quality_report_current": "quality_report_changed",
+            "grants_current": "dataset_grant_changed",
+        }[fld]
+        for truthy in (1, "yes", [1], 2):
+            check(
+                "E17", f"{fld}={truthy!r} refused", fcode(split=replace(s, **{fld: truthy})) == want
+            )
+    check(
+        "A22",
+        "40-digit fraction accepted",
+        parse_code(m, set_path(base, "hyperparameters.warmup_ratio", "0." + "0" * 39 + "1"))
+        is None,
+    )
+    check(
+        "A22",
+        "41-digit fraction refused",
+        parse_code(m, set_path(base, "hyperparameters.weight_decay", "0." + "0" * 40 + "1"))
+        == "invalid_weight_decay",
+    )
+    check(
+        "A22",
+        "41-digit integer part refused",
+        parse_code(m, set_path(base, "budget.max_cost", "1" * 41)) == "invalid_budget",
+    )
+    check(
+        "A22",
+        "uppercase hex uuid refused",
+        parse_code(
+            m, set_path(base, "base.trainable_artifact_id", "A1111111-1111-4111-8111-111111111111")
+        )
+        == "invalid_body",
+    )
     check("G5", "target_modules is frozen too", _modules_frozen(ok.doc))
     # case/whitespace-only differences between a request and a fact are real differences
     check(
@@ -1568,6 +1646,31 @@ def contract_suite(m: Any) -> None:
         "H3",
         "schema_version const",
         cfg["properties"]["schema_version"]["const"] == m.SCHEMA_VERSION,
+    )
+    schema_patterns: set[str] = set()
+
+    def collect(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("pattern"), str):
+                schema_patterns.add(node["pattern"])
+            for v in node.values():
+                collect(v)
+        elif isinstance(node, list):
+            for v in node:
+                collect(v)
+
+    collect(schema)
+    regex_names = ("_UUID", "_SHA256", "_DECIMAL", "_IDENT", "_REVISION", "_CURRENCY", "_AUTO_RULE")
+    for name in regex_names:
+        check(
+            "H8",
+            f"schema carries the module regex {name} verbatim",
+            "^" + getattr(m, name).pattern + "$" in schema_patterns,
+        )
+    check(
+        "H8",
+        "every schema pattern is a module regex",
+        schema_patterns == {"^" + getattr(m, n).pattern + "$" for n in regex_names},
     )
     check(
         "H4",
@@ -2116,14 +2219,24 @@ FAULTS: list[tuple[str, str, str]] = [
         'not any("training" in x for x in budget.scopes):',
     ),
     ("list-subclass", "type(modules) is not list", "not isinstance(modules, list)"),
+    ("regex-decimal-int", "(0|[1-9][0-9]{0,39})", "(0|[1-9][0-9]{0,40})"),
+    ("regex-decimal-frac", "(\\.[0-9]{1,40})?", "(\\.[0-9]{1,41})?"),
+    ("regex-uuid-upper", '_UUID = re.compile(r"[0-9a-f]{8}', '_UUID = re.compile(r"[0-9a-fA-F]{8}'),
+    ("advanced-empty-rule", '"advanced": rule is None,', '"advanced": rule is None or rule == "",'),
+    ("grants-truthy", "if split.grants_current is not True:", "if not split.grants_current:"),
     ("capability-dropped", '        or art.capability != "trainable_open_weight"\n', ""),
     ("status-dropped", '        or art.status != "ready"\n', ""),
     (
         "budget-equal-refused",
-        'if Decimal(doc["budget"]["max_cost"]) > budget.total - budget.reserved:',
-        'if Decimal(doc["budget"]["max_cost"]) >= budget.total - budget.reserved:',
+        '_EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) > budget.total:',
+        '_EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) >= budget.total:',
     ),
-    ("budget-ignores-reserved", "budget.total - budget.reserved:", "budget.total:"),
+    (
+        "budget-context-rounding",
+        '_EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) > budget.total:',
+        'Decimal(doc["budget"]["max_cost"]) + budget.reserved > budget.total:',
+    ),
+    ("budget-ignores-reserved", "budget.reserved) > budget.total:", "Decimal(0)) > budget.total:"),
     (
         "budget-scope-dropped",
         '    if "training" not in budget.scopes:\n        raise _fail("budget_scope_not_authorized")\n',
@@ -2213,11 +2326,6 @@ FAULTS: list[tuple[str, str, str]] = [
         '    if facts.artifact.status != "ready":\n        raise _fail("artifact_not_trainable")\n    data = doc["data"]',
     ),
     (
-        "reserved-reason-empty",
-        '"full_sft": "needs an administrator enablement',
-        '"full_sft": "needs an administrator enablement',
-    ),
-    (
         "error-code-status",
         '"method_not_enabled",\n                "auto_rule_version_unknown",',
         '"method_not_enabled",\n                "auto_rule_version_unknown_x",',
@@ -2271,8 +2379,6 @@ def main() -> int:
         source = MODULE_PATH.read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as tmp:
             for index, (fid, old, new) in enumerate(FAULTS):
-                if fid == "reserved-reason-empty":
-                    continue
                 if source.count(old) != 1:
                     print(
                         f"FAIL [J] {fid}: patch text occurs {source.count(old)} time(s), expected 1"
