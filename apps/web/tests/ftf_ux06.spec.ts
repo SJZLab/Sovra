@@ -69,6 +69,12 @@ function enqueue(method: string, url: string, ...queued: Reply[]) {
 const ok = (body: unknown): Reply => ({ ok: true, status: 200, body });
 const fail = (status: number, body: unknown): Reply => ({ ok: false, status, body });
 
+/** FTF-UX06 round 3 (STATIC-IDS): ids are `useId`-prefixed, so a node is found by its stable
+ * suffix, never by a hard-coded global id. */
+function byIdSuffix(suffix: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[id$="-${suffix}"]`);
+}
+
 /** A deferred fetch: the caller controls exactly when the request "arrives", so the in-flight
  * (aria-busy) window can be observed deterministically, the same technique
  * `ftf_ux03_selectors.spec.ts`'s own `inFlight()` uses. */
@@ -253,7 +259,7 @@ describe("[UX06-X3] error <-> field association", () => {
     const select = screen.getByTestId("field-severity");
     const describedBy = select.getAttribute("aria-describedby") ?? "";
     expect(describedBy).toContain("field-severity-error");
-    const errorNode = document.getElementById("field-severity-error");
+    const errorNode = byIdSuffix("field-severity-error");
     expect(errorNode?.getAttribute("role")).toBe("alert");
     expect(errorNode?.textContent).toContain("invalid_value");
   });
@@ -264,7 +270,7 @@ describe("[UX06-X3] error <-> field association", () => {
     await openEditor(CASE_A);
     const select = screen.getByTestId("field-severity");
     expect(select.getAttribute("aria-describedby") ?? "").not.toContain("field-severity-error");
-    expect(document.getElementById("field-severity-error")).toBeNull();
+    expect(byIdSuffix("field-severity-error")).toBeNull();
   });
 
   test("a category field error does not leak onto the unrelated weight field", async () => {
@@ -282,7 +288,7 @@ describe("[UX06-X3] error <-> field association", () => {
     );
     setField("field-category", "x".repeat(300));
     fireEvent.click(screen.getByTestId("save-case-button"));
-    await waitFor(() => expect(document.getElementById("field-category-error")).toBeTruthy());
+    await waitFor(() => expect(byIdSuffix("field-category-error")).toBeTruthy());
     const weight = screen.getByTestId("field-weight");
     expect(weight.getAttribute("aria-describedby") ?? "").not.toContain("error");
   });
@@ -310,7 +316,7 @@ describe("[UX06-X3] error <-> field association", () => {
 
     const input = screen.getByTestId("field-language");
     expect(input.getAttribute("aria-describedby") ?? "").toContain("field-language-error");
-    const errorNode = document.getElementById("field-language-error");
+    const errorNode = byIdSuffix("field-language-error");
     expect(errorNode?.getAttribute("role")).toBe("alert");
     expect(errorNode?.textContent).toContain("unsupported");
   });
@@ -334,7 +340,7 @@ describe("[UX06-X3] error <-> field association", () => {
 
     const checkbox = screen.getByTestId("field-critical");
     expect(checkbox.getAttribute("aria-describedby") ?? "").toContain("field-critical-error");
-    const errorNode = document.getElementById("field-critical-error");
+    const errorNode = byIdSuffix("field-critical-error");
     expect(errorNode?.getAttribute("role")).toBe("alert");
     expect(errorNode?.textContent).toContain("requires_independent_grader");
   });
@@ -353,8 +359,8 @@ describe("[UX06-X3] error <-> field association", () => {
         "error",
       ),
     ).toBe(false);
-    expect(document.getElementById("field-language-error")).toBeNull();
-    expect(document.getElementById("field-critical-error")).toBeNull();
+    expect(byIdSuffix("field-language-error")).toBeNull();
+    expect(byIdSuffix("field-critical-error")).toBeNull();
   });
 });
 
@@ -606,7 +612,7 @@ describe("[UX06-R2 ERRORS-NO-RECOVERY] every top-level alert names a concrete re
   });
 
   test("the import alert tells the user to fix the file and import again", async () => {
-    enqueue("POST", LIST_URL, fail(503, {}));
+    enqueue("POST", LIST_URL, fail(422, { detail: "validation_failed" }));
     renderUI();
     fireEvent.change(screen.getByTestId("import-text"), {
       target: { value: JSON.stringify([importRow("c1")]) },
@@ -620,7 +626,7 @@ describe("[UX06-R2 ERRORS-NO-RECOVERY] every top-level alert names a concrete re
     renderUI();
     await loadCases([evalCase(CASE_A, "a-case")]);
     await openEditor(CASE_A);
-    enqueue("PATCH", `${LIST_URL}/${CASE_A}`, fail(503, {}));
+    enqueue("PATCH", `${LIST_URL}/${CASE_A}`, fail(422, { detail: "validation_failed" }));
     setField("field-language", "fr");
     fireEvent.click(screen.getByTestId("save-case-button"));
     await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
@@ -758,7 +764,7 @@ describe("[UX06-R2 NOT-BILINGUAL] a server-returned field name and validation co
     );
   });
 
-  test("an unmapped field/code combination falls back to the raw value under 'ar' too (disclosed, not hidden)", async () => {
+  test("an unmapped field/code combination is a localized generic phrase under 'ar', never the raw value", async () => {
     renderUI("ar");
     const rows = [importRow("alpha")];
     enqueue(
@@ -775,8 +781,11 @@ describe("[UX06-R2 NOT-BILINGUAL] a server-returned field name and validation co
     fireEvent.click(screen.getByTestId("import-button"));
     await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
     const text = screen.getByTestId("import-field-errors").textContent ?? "";
-    expect(text).toContain("a_future_field");
-    expect(text).toContain("a_future_code");
+    // Round 3 (NOT-BILINGUAL): the raw-fallback pin is removed -- an unmapped field/code under
+    // 'ar' is a localized generic phrase, never the raw identifier.
+    expect(text).not.toContain("a_future_field");
+    expect(text).not.toContain("a_future_code");
+    expect(text).toContain("غير مقبول");
   });
 });
 
@@ -795,7 +804,7 @@ describe("[UX06-R2 NOT-ON-UX01] category/language/group_key/weight are built on 
     );
     setField("field-category", "x".repeat(300));
     fireEvent.click(screen.getByTestId("save-case-button"));
-    await waitFor(() => expect(document.getElementById("field-category-error")).toBeTruthy());
+    await waitFor(() => expect(byIdSuffix("field-category-error")).toBeTruthy());
     expect(screen.getByTestId("field-category").getAttribute("aria-describedby") ?? "").toContain(
       "field-category-error",
     );
@@ -860,8 +869,8 @@ describe("[UX06-R2b UNPINNED] faults the second L2 review reproduced as GREEN", 
     );
     setField("field-input-json", '{"a":1}');
     fireEvent.click(screen.getByTestId("save-case-button"));
-    await waitFor(() => expect(document.getElementById("field-input-json-error")).toBeTruthy());
-    expect(document.getElementById("field-input-json-error")?.getAttribute("role")).toBe("alert");
+    await waitFor(() => expect(byIdSuffix("field-input-json-error")).toBeTruthy());
+    expect(byIdSuffix("field-input-json-error")?.getAttribute("role")).toBe("alert");
   });
 
   test("F11: a grader_config_json server field error carries role=alert", async () => {
@@ -878,12 +887,8 @@ describe("[UX06-R2b UNPINNED] faults the second L2 review reproduced as GREEN", 
     );
     setField("field-grader-config-json", '{"a":1}');
     fireEvent.click(screen.getByTestId("save-case-button"));
-    await waitFor(() =>
-      expect(document.getElementById("field-grader-config-json-error")).toBeTruthy(),
-    );
-    expect(document.getElementById("field-grader-config-json-error")?.getAttribute("role")).toBe(
-      "alert",
-    );
+    await waitFor(() => expect(byIdSuffix("field-grader-config-json-error")).toBeTruthy());
+    expect(byIdSuffix("field-grader-config-json-error")?.getAttribute("role")).toBe("alert");
   });
 
   test("F12: the load-more button is disabled while a further page is loading", async () => {
@@ -1157,5 +1162,268 @@ describe("[UX06-R2b WRONG-RECOVERY-STEPS] the recovery step fits what actually f
     expect(screen.getByTestId("edit-error").textContent).toContain(
       "Fix the field shown above, then save again.",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX06 round 3 (QUEUE 0f, points 2-6)
+// ---------------------------------------------------------------------------------------------
+async function openEditorWithSave(reply: Reply, change = true) {
+  renderUI();
+  await loadCases([evalCase(CASE_A, "a-case")]);
+  await openEditor(CASE_A);
+  enqueue("PATCH", `${LIST_URL}/${CASE_A}`, reply);
+  if (change) setField("field-language", "fr");
+  fireEvent.click(screen.getByTestId("save-case-button"));
+}
+
+describe("[UX06-R3 FAILED-SAVE-403-SILENT] a 403 on save is announced outside the form", () => {
+  test("the form closes, an alert outside it is announced and holds focus", async () => {
+    await openEditorWithSave(fail(403, { detail: "final_suite_content_restricted" }));
+    await waitFor(() => expect(screen.getByTestId("restricted-save-error")).toBeTruthy());
+    const alert = screen.getByTestId("restricted-save-error");
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(document.activeElement).toBe(alert);
+    expect(screen.queryByTestId("case-form")).toBeNull();
+    expect(alert.closest("form")).toBeNull();
+    expect(alert.textContent).toContain("Ask an evaluator or administrator for access.");
+  });
+
+  test("NEGATIVE: an ordinary 422 keeps the form and raises no restricted alert", async () => {
+    await openEditorWithSave(fail(422, { detail: "validation_failed" }));
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    expect(screen.queryByTestId("restricted-save-error")).toBeNull();
+    expect(screen.getByTestId("case-form")).toBeTruthy();
+  });
+});
+
+describe("[UX06-R3 ERROR-SUMMARY] save field errors are a focusable summary of field links", () => {
+  test("each named field becomes a link that focuses its own input", async () => {
+    await openEditorWithSave(
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "language", code: "invalid_value" }],
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Fix these fields")).toBeTruthy());
+    const link = screen.getByRole("link", { name: /language: invalid_value/ });
+    expect(link.closest("[role=alert]")?.contains(document.activeElement)).toBe(true);
+    fireEvent.click(link);
+    expect(document.activeElement).toBe(screen.getByTestId("field-language"));
+  });
+
+  test("NEGATIVE: a request-level error (no field) makes no summary link", async () => {
+    await openEditorWithSave(
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: null, code: "body_malformed" }],
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+});
+
+describe("[UX06-R3 STATIC-IDS] ids come from useId, so two mounted editors never collide", () => {
+  test("two editors on one page give every form control a distinct id", async () => {
+    const { container } = render(
+      createElement("div", null, [
+        createElement(EvaluationCaseEditorImport, {
+          key: "a",
+          apiBaseUrl: API_BASE,
+          organizationId: ORG,
+          projectId: PROJECT,
+          suiteId: SUITE,
+        }),
+        createElement(EvaluationCaseEditorImport, {
+          key: "b",
+          apiBaseUrl: API_BASE,
+          organizationId: ORG,
+          projectId: PROJECT,
+          suiteId: SUITE,
+        }),
+      ]),
+    );
+    const ids = Array.from(container.querySelectorAll("[id]")).map((n) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.some((id) => id === "field-category")).toBe(false);
+  });
+});
+
+describe("[UX06-R3 NOT-BILINGUAL] every store code is localized and no Latin survives under ar", () => {
+  // Every code the store/route emits, with the catalogue key that must render it (a code that
+  // merely falls back to the generic phrase is NOT enough: that is the unmapped-code path).
+  const STORE_CODES: [string, CaseStringKey][] = [
+    ["invalid_type", "codeInvalidType"],
+    ["unknown_field", "codeUnknownField"],
+    ["empty_object", "codeEmptyObject"],
+    ["too_large", "codeTooLarge"],
+    ["immutable", "codeImmutable"],
+    ["empty_patch", "codeEmptyPatch"],
+    ["invalid_json", "codeInvalidJson"],
+    ["required", "codeRequired"],
+    ["too_long", "codeTooLong"],
+    ["invalid_value", "codeInvalidValue"],
+    ["unsupported", "codeUnsupported"],
+    ["critical_oracle_not_independent", "codeCriticalOracleNotIndependent"],
+    ["duplicate_case_key", "codeDuplicateCaseKeyField"],
+  ];
+  test.each(STORE_CODES)("code %s is shown localized under ar, never raw", async (code, key) => {
+    renderUI("ar");
+    enqueue(
+      "POST",
+      LIST_URL,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: 0, field: "category", code }],
+      }),
+    );
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("alpha")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
+    const text = screen.getByTestId("import-field-errors").textContent ?? "";
+    expect(text).not.toContain(code);
+    expect(text).toContain(CASE_STRINGS[key].ar);
+  });
+
+  test("N22: no Arabic catalogue string contains Latin text except an allow-list", () => {
+    const ALLOWED = ["JSON Lines", "JSON"];
+    const offenders: string[] = [];
+    for (const key of CASE_STRING_KEYS) {
+      let text = CASE_STRINGS[key as CaseStringKey].ar.replace(/\{\w+\}/g, "");
+      for (const word of ALLOWED) text = text.split(word).join("");
+      if (/[A-Za-z]/.test(text)) offenders.push(key);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("the saved notice, the row hint and the edit heading isolate the key in a <bdi>", async () => {
+    renderUI("ar");
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    expect(screen.getByTestId("edit-case-key").querySelector("bdi")?.textContent).toBe("a-case");
+    enqueue("PATCH", `${LIST_URL}/${CASE_A}`, ok(evalCase(CASE_A, "a-case", { language: "fr" })));
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByTestId("notice")).toBeTruthy());
+    expect(screen.getByTestId("notice").querySelector("bdi")?.textContent).toBe("a-case");
+  });
+
+  test("the row hint isolates the case_key in a <bdi>", async () => {
+    renderUI();
+    enqueue(
+      "POST",
+      LIST_URL,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: 0, field: "category", code: "required" }],
+      }),
+    );
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("alpha")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-field-errors")).toBeTruthy());
+    expect(screen.getByTestId("import-field-errors").querySelector("bdi")?.textContent).toBe(
+      "alpha",
+    );
+  });
+});
+
+describe("[UX06-R3 WRONG-RECOVERY] recovery steps fit what actually failed", () => {
+  test("a 403 role_not_authorized on save names an access step, not a field", async () => {
+    await openEditorWithSave(fail(403, { detail: "role_not_authorized" }));
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    const text = screen.getByTestId("edit-error").textContent ?? "";
+    expect(text).toContain("Ask an administrator to change your role");
+    expect(text).not.toContain("Fix the field");
+  });
+
+  test("a 403 role_not_authorized on import names an access step, not the file", async () => {
+    renderUI();
+    enqueue("POST", LIST_URL, fail(403, { detail: "role_not_authorized" }));
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    const text = screen.getByTestId("import-error").textContent ?? "";
+    expect(text).toContain("Ask an administrator to change your role");
+    expect(text).not.toContain("Fix the file");
+  });
+
+  test("N24: an import network failure and an import 503 say retry, never 'fix the file'", async () => {
+    renderUI();
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    enqueue("POST", LIST_URL, fail(503, {}));
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(screen.getByTestId("import-error").textContent).toContain("Try again.");
+    expect(screen.getByTestId("import-error").textContent).not.toContain("Fix the file");
+    // no reply queued -> the mocked fetch throws, which is a transport failure
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("import-error").textContent).toContain("network error"),
+    );
+    expect(screen.getByTestId("import-error").textContent).toContain("Try again.");
+    expect(screen.getByTestId("import-error").textContent).not.toContain("Fix the file");
+  });
+});
+
+describe("[UX06-R3 UNPINNED] each alert is announced (role=alert) in its own right", () => {
+  test("F1: the list-load error is a role=alert that holds focus", async () => {
+    renderUI();
+    enqueue("GET", LIST_URL, fail(503, {}));
+    fireEvent.click(screen.getByTestId("load-cases-button"));
+    await waitFor(() => expect(screen.getByTestId("list-error")).toBeTruthy());
+    expect(screen.getByTestId("list-error").getAttribute("role")).toBe("alert");
+    expect(document.activeElement).toBe(screen.getByTestId("list-error"));
+  });
+
+  test("F12: the import error is a role=alert that holds focus", async () => {
+    renderUI();
+    fireEvent.change(screen.getByTestId("import-text"), { target: { value: "not json" } });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(screen.getByTestId("import-error").getAttribute("role")).toBe("alert");
+    expect(document.activeElement).toBe(screen.getByTestId("import-error"));
+  });
+
+  test("F13: the edit error is a role=alert that holds focus", async () => {
+    await openEditorWithSave(fail(503, {}), false);
+    await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+    expect(screen.getByTestId("edit-error").getAttribute("role")).toBe("alert");
+  });
+
+  test("F18: a weight field error is a role=alert linked from the weight input", async () => {
+    await openEditorWithSave(
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "weight", code: "invalid_value" }],
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId("edit-field-errors")).toBeTruthy());
+    const input = screen.getByTestId("field-weight");
+    const ids = (input.getAttribute("aria-describedby") ?? "").split(" ");
+    const node = ids.map((id) => document.getElementById(id)).find((n) => n?.id.endsWith("-error"));
+    expect(node?.getAttribute("role")).toBe("alert");
+    expect(node?.textContent).toContain("invalid_value");
+  });
+
+  test("F23: a grader_config blur error is a role=alert, checked synchronously (no timers)", async () => {
+    renderUI();
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    setField("field-grader-config-json", "{broken");
+    blur("field-grader-config-json");
+    const node = screen.getByTestId("field-grader-config-json-blur-error");
+    expect(node.getAttribute("role")).toBe("alert");
+    expect(
+      screen.getByTestId("field-grader-config-json").getAttribute("aria-describedby"),
+    ).toContain(node.id);
   });
 });
