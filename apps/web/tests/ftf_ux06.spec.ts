@@ -1616,3 +1616,45 @@ describe("[UX06-R3 PRE-REVIEW 2] duplicate key, 401, summary lang", () => {
     expect(box.getAttribute("dir")).toBe("rtl");
   });
 });
+
+describe("[UX06-R3 PRE-REVIEW 3] summary link text and malformed-200 import recovery", () => {
+  test("ErrorSummary link text is Arabic under ar, never field: code", async () => {
+    renderUI("ar");
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue(
+      "PATCH",
+      `${LIST_URL}/${CASE_A}`,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "language", code: "invalid_value" }],
+      }),
+    );
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "اللغة: قيمة غير صالحة" })).toBeTruthy(),
+    );
+    expect(screen.getByRole("link").textContent).not.toContain("invalid_value");
+  });
+
+  test("a non-JSON 200 on import says Try again, not fix the file", async () => {
+    renderUI();
+    replies[`POST ${LIST_URL}`] = [{ ok: true, status: 200, body: undefined }];
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError("Unexpected token");
+      },
+    }));
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    const text = screen.getByTestId("import-error").textContent ?? "";
+    expect(text).toContain("Try again.");
+    expect(text).not.toContain("Fix the file");
+  });
+});

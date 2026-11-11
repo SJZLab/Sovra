@@ -86,7 +86,7 @@ const STRINGS = {
     en: "A case with that case_key already exists; nothing was imported.",
     ar: "توجد حالة بهذا المفتاح مسبقًا؛ لم يتم استيراد أي شيء.",
   },
-  errRoleNotAuthorized: { en: "Your role may not do this.", ar: "قد لا يسمح دورك بهذا." },
+  errRoleNotAuthorized: { en: "Your role may not do this.", ar: "لا يسمح دورك بهذا الإجراء." },
   errFinalRestricted: {
     en: "This is a final suite; its case content is restricted to evaluators and administrators.",
     ar: "هذه مجموعة نهائية؛ محتوى حالاتها مقيَّد بالمقيِّمين والمسؤولين.",
