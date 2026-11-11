@@ -62,9 +62,9 @@ def load_module(path: Path, name: str) -> Any:
     return module
 
 
-ART = "11111111-1111-4111-8111-111111111111"
-MAN = "22222222-2222-4222-8222-222222222222"
-CAT = "33333333-3333-4333-8333-333333333333"
+ART = "a1111111-1111-4111-8111-111111111111"
+MAN = "b2222222-2222-4222-8222-222222222222"
+CAT = "c3333333-3333-4333-8333-333333333333"
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 SHA_C = "c" * 64
@@ -1109,7 +1109,149 @@ def suite(m: Any) -> None:
         "target_modules order matters",
         sha_with(set_path(base, "adapter.target_modules", ["v_proj", "q_proj"])) != sha0,
     )
+    check("G5", "target_modules is frozen too", _modules_frozen(ok.doc))
+    # case/whitespace-only differences between a request and a fact are real differences
+    check(
+        "E13",
+        "frozen sha upper-case fact",
+        fcode(split=replace(s, frozen_sha256=SHA_A.upper())) == "split_manifest_changed",
+    )
+    check(
+        "E13",
+        "catalog entry id upper-case fact",
+        fcode(cat_ok, catalog=replace(cat_facts, entry_id=CAT.upper()))
+        == "catalog_mapping_changed",
+    )
+    check(
+        "E13",
+        "catalog mapped artifact upper-case",
+        fcode(cat_ok, catalog=replace(cat_facts, mapped_artifact_id=ART.upper()))
+        == "catalog_artifact_mismatch",
+    )
+    check(
+        "E13",
+        "artifact id upper-case fact",
+        fcode(artifact=replace(a, artifact_id=ART.upper())) == "artifact_not_trainable",
+    )
+    check(
+        "E13",
+        "manifest id upper-case fact",
+        fcode(split=replace(s, manifest_id=MAN.upper())) == "split_manifest_not_locked",
+    )
+    check(
+        "E13",
+        "capability with trailing space",
+        fcode(artifact=replace(a, capability="trainable_open_weight\n"))
+        == "artifact_not_trainable",
+    )
+    check(
+        "E13",
+        "currency case fact",
+        fcode(budget=replace(b, currency="usd")) == "budget_currency_mismatch",
+    )
+    check(
+        "E13",
+        "scope case fact",
+        fcode(budget=replace(b, scopes=("TRAINING",))) == "budget_scope_not_authorized",
+    )
+    check(
+        "E13",
+        "non-ascii security profile still hashes",
+        len(sha_with(security_profile="\u00e9\u0645")) == 64,
+    )
+    upper_hash = m.ResolvedTrainingConfig(doc=ok.doc, config_sha256=sha0.upper())
+    check("G0", "verify rejects an upper-case hash", not m.verify_config_sha256(upper_hash))
+    check(
+        "G0",
+        "verify rejects a padded hash",
+        not m.verify_config_sha256(m.ResolvedTrainingConfig(doc=ok.doc, config_sha256=sha0 + " ")),
+    )
+    # a request that did not come from the parser fails closed in resolve
+    handmade = m.TrainingConfigRequest(
+        doc=json.loads(m.canonical_config_json(m.parse_training_config_request(base).doc))
+    )
+    check(
+        "E14",
+        "hand-built valid doc resolves",
+        code_of(m, m.resolve_training_config, handmade, facts) is None,
+    )
+    for path_, val in (
+        ("precision.quantization", "NF4"),
+        ("method", "LoRA"),
+        ("mode", "manual"),
+        ("data.validation.role", "validation "),
+        ("hyperparameters.epochs", True),
+        ("adapter.target_modules", ("q_proj",)),
+        ("template.packing", True),
+    ):
+        doc_h = set_path(json.loads(m.canonical_config_json(handmade.doc)), path_, val)
+        check(
+            "E14",
+            f"hand-built {path_}={val!r} refused",
+            code_of(m, m.resolve_training_config, m.TrainingConfigRequest(doc=doc_h), facts)
+            is not None,
+        )
+
+    # str subclasses are not exact str
+    class S(str):
+        pass
+
+    for path_, val in (
+        ("mode", S("advanced")),
+        ("method", S("lora")),
+        ("precision.quantization", S("none")),
+        ("precision.compute_dtype", S("bf16")),
+        ("hyperparameters.scheduler", S("cosine")),
+        ("hyperparameters.optimizer", S("adamw_torch")),
+        ("schema_version", S("training_config.v1")),
+        ("budget.currency", S("USD")),
+        ("tokenizer.source", S("base_artifact")),
+        ("template.loss_policy", S("assistant_only")),
+        ("hyperparameters.learning_rate", S("0.0002")),
+        ("budget.max_cost", S("1")),
+        ("base.trainable_artifact_id", S(ART)),
+        ("data.frozen_manifest_sha256", S(SHA_A)),
+        ("tokenizer.revision", S("rev1")),
+    ):
+        check(
+            "B8",
+            f"str subclass at {path_} refused",
+            parse_code(m, set_path(base, path_, val)) is not None,
+        )
+    check(
+        "B8",
+        "str-subclass mode with a rule version refused",
+        parse_code(m, set_path(set_path(base, "mode", S("auto")), "auto_rule_version", "r1"))
+        == "invalid_mode",
+    )
+    check(
+        "B9",
+        "unknown mode with a valid rule string refused",
+        parse_code(m, set_path(set_path(base, "mode", "manual"), "auto_rule_version", "r1"))
+        == "invalid_mode",
+    )
+    check(
+        "B9",
+        "list mode with a rule string refused",
+        parse_code(m, set_path(set_path(base, "mode", ["auto"]), "auto_rule_version", "r1"))
+        == "invalid_mode",
+    )
+    check(
+        "B10",
+        "error code is exact",
+        _raises_value_error(m, "INVALID_BODY")
+        and _raises_value_error(m, " invalid_body")
+        and _raises_value_error(m, "invalid_body\n"),
+    )
     check("G5", "resolved doc is immutable", _immutable(ok.doc))
+
+
+def _modules_frozen(doc: Any) -> bool:
+    try:
+        doc["adapter"]["target_modules"].append("x")
+    except (AttributeError, TypeError):
+        return True
+    return False
 
 
 def _immutable(doc: Any) -> bool:
@@ -1481,9 +1623,9 @@ def leak_suite(m: Any) -> None:
     check("I2", "unknown code cannot be constructed", _raises_value_error(m))
 
 
-def _raises_value_error(m: Any) -> bool:
+def _raises_value_error(m: Any, code: str = "not_a_code") -> bool:
     try:
-        m.TrainingConfigError("not_a_code")
+        m.TrainingConfigError(code)
     except ValueError:
         return True
     return False

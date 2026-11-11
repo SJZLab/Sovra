@@ -207,10 +207,7 @@ def _parse_decimal(value: object) -> Decimal | None:
 
 def _normalize(value: Decimal) -> str:
     """Canonical decimal text: no exponent, no trailing zeros ("0.00020" == "0.0002")."""
-    if value == 0:
-        return "0"
-    text = format(value.normalize(), "f")
-    return text
+    return format(value.normalize(), "f")
 
 
 def _exact_keys(
@@ -218,9 +215,6 @@ def _exact_keys(
 ) -> dict[str, Any]:
     if type(obj) is not dict:
         raise _fail("invalid_body")
-    for key in obj:
-        if type(key) is not str:
-            raise _fail("invalid_body")
     present = set(obj)
     if not (set(keys) <= present <= set(keys) | set(optional)):
         raise _fail("invalid_body")
@@ -273,14 +267,6 @@ class TrainingConfigRequest:
 
     doc: Mapping[str, Any]
 
-    @property
-    def method(self) -> str:
-        return str(self.doc["method"])
-
-    @property
-    def mode(self) -> str:
-        return str(self.doc["mode"])
-
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, dict):
@@ -298,12 +284,10 @@ def _thaw(value: Any) -> Any:
     return value
 
 
-def _bounded_int(value: object, name: str, code: str) -> int:
+def _bounded_int(value: Any, name: str, code: str) -> int:
     low, high = LIMITS[name]
-    assert type(low) is int and type(high) is int
     if not _int_in(value, low, high):
         raise _fail(code)
-    assert type(value) is int
     return value
 
 
@@ -600,7 +584,8 @@ def verify_config_sha256(resolved: ResolvedTrainingConfig) -> bool:
 def resolve_training_config(
     request: TrainingConfigRequest, facts: TrainingConfigFacts
 ) -> ResolvedTrainingConfig:
-    doc = request.doc
+    # A hand-built request is re-parsed, so a doc that did not come from the parser fails closed.
+    doc = parse_training_config_request(_thaw(request.doc)).doc
 
     # 2. Enablement (409).
     if doc["method"] not in ENABLED_METHODS:
