@@ -806,3 +806,33 @@ test("UX05 round 2: an unrecognized error detail is data (shown verbatim, no mis
   await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
   expect(screen.getByRole("alert").textContent).toBe("role_not_authorized");
 });
+
+// -- UX05 round 2 (second L2 return, PR #972) -----------------------------------------------
+
+test("UX05 r2 (L2 return): Check-compatibility and Train render through the shared Button component at the minimum target size", async () => {
+  await load(ok(capabilities()));
+  for (const name of ["Check compatibility", "Train"]) {
+    const el = screen.getByRole("button", { name }) as HTMLElement;
+    expect(el.style.minBlockSize).toBe("var(--target-min)");
+    expect(el.style.minInlineSize).toBe("var(--target-min)");
+  }
+});
+
+test("UX05 r2 (L2 return): a long weights digest is wrapped, not left to overflow", async () => {
+  await load(ok(capabilities()));
+  const digestEl = screen.getByText(/^sha256:a+$/) as HTMLElement;
+  expect(digestEl.style.overflowWrap).toBe("anywhere");
+});
+
+test("UX05 r2 (L2 return): a long declared-GPU-profile JSON blob is wrapped, not left to overflow", async () => {
+  await load(
+    ok(
+      capabilities({
+        min_gpu_vram_gb: unknown("not tested"),
+      }),
+    ),
+  );
+  // Default fixture's declared profile renders through the declared-vram paragraph regardless of
+  // its own content; what matters is the wrap style on the paragraph itself.
+  expect((screen.getByTestId("declared-vram") as HTMLElement).style.overflowWrap).toBe("anywhere");
+});

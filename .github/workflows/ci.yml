@@ -78,6 +78,56 @@ jobs:
           REPO: ${{ github.repository }}
         run: python3 "$RUNNER_TEMP/ci_policy.py" relay-policy --base "origin/${BASE_REF}" --title "$PR_TITLE" --number "$PR_NUMBER" --repo "$REPO"
 
+  ftf0904-fault-matrix:
+    # FTF-0904 fault matrix: every fault in tests/tasks/test_ftf_0904.py FAULTS is applied to a
+    # copy of packages/security/log_redaction.py and must turn the behavioural suite RED (each copy
+    # runs fail-fast: it stops at its first failing check). It runs whenever the redactor or its
+    # test file changes -- its only inputs: the redactor is stdlib-only, so ci.yml, pyproject.toml
+    # and uv.lock cannot change its result (owner-approved 2026-10-23) -- split into 8 shards that
+    # together run every fault exactly once
+    # (test_fault_shards_partition_the_matrix). Inputs unchanged: each shard exits at once, so the
+    # job is never skipped and ci-verdict needs no exemption for it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Did an FTF-0904 input change?
+        id: inputs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          if printf '%s\n' "$changed" | grep -qE '^(packages/security/|tests/tasks/test_ftf_0904\.py$)'; then
+            echo "FTF-0904 inputs changed: running fault shard ${{ matrix.shard }}/8"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "FTF-0904 inputs unchanged: no fault matrix needed (behavioural checks run in gate)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: steps.inputs.outputs.run == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        if: steps.inputs.outputs.run == 'true'
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies
+        if: steps.inputs.outputs.run == 'true'
+        run: uv sync --all-packages
+      - name: FTF-0904 fault shard
+        if: steps.inputs.outputs.run == 'true'
+        env:
+          FTF0904_FAULT_SHARD: ${{ matrix.shard }}/8
+          FTF0904_FAULT_WORKERS: '2'
+        run: uv run python3 tests/tasks/test_ftf_0904.py
+
   gate:
     runs-on: ubuntu-latest
     steps:
@@ -469,6 +519,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0616.py
       - name: FTF-0616-F1 negative-test proof (judge deployment fingerprint + cache bypass, no DB required; real local gateway over HTTPS)
         run: uv run python3 tests/tasks/test_ftf_0616_f1.py
+      - name: FTF-0617 negative-test proof (zero-egress judge policy, no DB required; real local gateway over HTTPS)
+        run: uv run python3 tests/tasks/test_ftf_0617.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
         run: uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
@@ -538,21 +590,10 @@ jobs:
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          # The full fault matrix (121 fault-injected copies, ~2.5 h) proves this suite can fail.
-          # Its result depends only on these inputs, so it runs in full whenever one of them
-          # changes and the behavioural checks alone run otherwise (owner-approved 2026-10-21).
-          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
-          if printf '%s\n' "$changed" | grep -qE '^(packages/security/|tests/tasks/test_ftf_0904\.py$|\.github/workflows/ci\.yml$|pyproject\.toml$|uv\.lock$)'; then
-            echo "FTF-0904 inputs changed: full fault matrix"
-            uv run python3 tests/tasks/test_ftf_0904.py
-          else
-            echo "FTF-0904 inputs unchanged: behavioural checks only (the full matrix runs when they change)"
-            FTF0904_BEHAVIOUR_ONLY=1 uv run python3 tests/tasks/test_ftf_0904.py
-          fi
+        # Behavioural checks here; the fault matrix (every fault-injected copy of the module) runs
+        # in the sharded ftf0904-fault-matrix job whenever its inputs change (owner-approved
+        # 2026-10-21 scope rule; sharded 2026-10-23 so a ~2.5 h serial run takes minutes).
+        run: FTF0904_BEHAVIOUR_ONLY=1 uv run python3 tests/tasks/test_ftf_0904.py
       - name: FTF-0904-W1 live log redaction (real uvicorn factory + default log config over a socket -- secret query params never printed, access lines kept redacted, sinks installed, fault-injected copies of apps/api/app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
@@ -569,6 +610,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p2.py
       - name: FTF-H010-P3a negative-test proof (pure import-artifact validators -- file allow-list, strict JSON, safetensors header, adapter/base shapes, fault-injected module copies, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_h010_p3a.py
+      - name: FTF-H010-P3 negative-test proof (full-weight and adapter import validation -- step-by-step failure codes, exact parent base, TOCTOU re-reads, terminal-transaction artifact re-check, claim fencing, META-LEAK, fault-injected module copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p3.py
+      - name: FTF-H010-P4 negative-test proof (model action eligibility and continuation plans -- complete decision table, endpoint never trainable whatever its ref or roles say, new run vs exact resume property, strict facts, META-LEAK, fault-injected module copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p4.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -2074,6 +2119,100 @@ jobs:
           bao version
       - name: Prove the real Argilla review-scope/reviewer-identity/workspace-membership evidence against the live database and live OpenBao
         run: uv run python3 tests/integration/test_argilla_identity_scope.py
+
+  argilla-real-server-integration:
+    # FTF-R006-P1b round 2 (PR #968's L2 return): "the fake server never checks the API key ...
+    # the real-Argilla CI job is required in this slice; there is no P1c split." Boots the real,
+    # pinned argilla-server v2.8.0 binary (not tests/tasks/argilla_test_support.py's own fake
+    # test double) plus the real Elasticsearch and Redis it needs at startup, and proves two
+    # things a fake test double cannot prove either way by construction: (1) the real server
+    # genuinely rejects a wrong/missing X-Argilla-Api-Key on an authenticated route; (2)
+    # FTF-R002's own generic, already-certified compute_health/validate_component_binding (the
+    # "/validate" health contract every component binding shares) genuinely detects this real
+    # server's own health -- tests/integration/test_argilla_real_server.py. GitHub Actions
+    # service containers for one job share a single Docker network and resolve each other by
+    # service name (argilla-elasticsearch, argilla-redis, argilla-postgres); only this job's own
+    # steps, which run on the bare runner rather than in a container, use localhost + the
+    # published port. argilla-server has no `services:`-level healthcheck of its own (its image
+    # may not carry curl/wget; verifying that is this job's own first real-world finding, not an
+    # assumption) -- `--restart on-failure:10` gives it several real chances to come up once its
+    # dependencies are ready, and the test step's own bounded polling loop is the actual readiness
+    # gate, the same discipline this task's OpenBao dev-server wait already uses one job up.
+    # Root cause of this job's first two real runs' 422s, now confirmed (not the version-skew
+    # guess this comment used to carry): the real server's own `/status` route always returns
+    # 422 once a real Elasticsearch is wired up -- a genuine upstream pydantic v2
+    # response-model-validation bug, independent of Elasticsearch's own version (reproduced
+    # locally against a real `pip install argilla-server==2.8.0`, and confirmed still present on
+    # argilla-io/argilla's own `develop` branch). Full root cause in
+    # packages/integrations/argilla/client.py::ArgillaClient.get_status()'s own docstring.
+    # tests/integration/test_argilla_real_server.py now probes `/version` instead, which this bug
+    # cannot reach -- the elasticsearch:8.8.2 pin below (vs. 8.17.0) stays only because it still
+    # matches argilla-io/argilla's own CI-tested client-library version, not because it was ever
+    # the actual fix.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-real-server-integration ')
+    runs-on: ubuntu-latest
+    services:
+      argilla-elasticsearch:
+        image: elasticsearch@sha256:d45ef71c0f2680bc38b1427f53ca294ebaef4a4ea88cb243cdefc96c3e44dbab # elasticsearch:8.8.2 (amd64) -- the exact version argilla-io/argilla's own CI (.github/workflows/argilla-server.yml) tests the pinned `elasticsearch8[async] ~= 8.7.0` client library against.
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+      argilla-redis:
+        image: redis@sha256:8be847644e195abc4c10c8d9936cfa45332eccc6b714fa7b186ff43f1f4d5579 # redis:7-alpine (amd64) -- Argilla's own background-job queue backend
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      argilla-postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest this workflow already pins elsewhere; Argilla's own backing store, unrelated to Sovra's own sovra_app database
+        env:
+          POSTGRES_USER: argilla
+          POSTGRES_PASSWORD: argilla_ci_only
+          POSTGRES_DB: argilla
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U argilla -d argilla"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      argilla-server:
+        image: argilla/argilla-server@sha256:f1adc9cad9db5b01aa4e0cf413dca68e8b611565d51aead267fd165b4d01f3d0 # argilla/argilla-server:v2.8.0 (amd64) -- the same pinned version packages/integrations/argilla/client.py (FTF-R006-P1a) targets
+        env:
+          ARGILLA_ELASTICSEARCH: http://argilla-elasticsearch:9200
+          ARGILLA_DATABASE_URL: postgresql://argilla:argilla_ci_only@argilla-postgres:5432/argilla
+          ARGILLA_REDIS_URL: redis://argilla-redis:6379/0
+          ARGILLA_AUTH_SECRET_KEY: sovra-ci-only-argilla-secret-key-not-for-production-use
+          USERNAME: sovra-ci-owner
+          PASSWORD: sovra-ci-owner-password-not-real
+          API_KEY: sovra-ci-owner-api-key-not-real
+          WORKSPACE: sovra-ci-default
+        ports:
+          - 6900:6900
+        options: --restart on-failure:10
+    env:
+      ARGILLA_BASE_URL: http://127.0.0.1:6900
+      ARGILLA_OWNER_API_KEY: sovra-ci-owner-api-key-not-real
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real Argilla server's own API-key enforcement and FTF-R002's generic health check against it
+        run: uv run python3 tests/integration/test_argilla_real_server.py
 
   target-source-snapshot-integration:
     # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
@@ -3687,7 +3826,7 @@ jobs:
 
   dataset-mapping-routes-integration:
     # FTF-H011-P3: the dataset mapping routes (apps/api/app/datasets/dataset_mapping_routes.py,
-    # migration 0036 dataset_mapping_requests) on a real uvicorn server over PostgreSQL 16 as the
+    # migration 0038 dataset_mapping_requests) on a real uvicorn server over PostgreSQL 16 as the
     # restricted sovra_app role and the live SeaweedFS S3 API, with datasets uploaded through the
     # real FTF-0501 routes: upgrade/downgrade/upgrade with one head; ENABLE+FORCE RLS and a
     # non-allow-all tenant policy; SELECT/INSERT only; raw sovra_app SQL refused; probe, preview,
@@ -3810,6 +3949,80 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real import-validation activity against the live database and a local TLS gateway
         run: uv run python3 tests/integration/test_ftf_h010_p2_import_validation.py
+
+  model-weights-import-integration:
+    # FTF-H010-P3: real Postgres for the full-weight and adapter import validation activities over
+    # a real approved-root directory of tiny safetensors fixtures: the real P1 job CRUD and P2
+    # claim, a weights job and an adapter job on that exact parent (every ModelVersion CHECK as
+    # sovra_app), each failure code, fencing on the real trigger, the terminal artifact re-read,
+    # no transaction or job lock held while files are read, tenant isolation and the META-LEAK
+    # markers -- tests/integration/test_ftf_h010_p3_weights_import.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-weights-import-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p3
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the real weights and adapter import validation against the live database
+        run: uv run python3 tests/integration/test_ftf_h010_p3_weights_import.py
+
+  model-role-assignment-integration:
+    # FTF-H010-P4: real Postgres for model role assignments (migration 0036) and the roles and
+    # actions routes as the restricted sovra_app role: the 5 roles x 4 version kinds x 6
+    # organization roles truth table, the strict body table, idempotent replay, concurrent
+    # current_production / same-role / judge-vs-candidate posts, the self-judging trigger in both
+    # orders, revoke and the column-limited UPDATE grant, cross-tenant 404 and RLS, the META-LEAK
+    # markers, the actions decisions over real rows (revoked license, adapter base failures,
+    # endpoint ref variants) and rolled-back database faults --
+    # tests/integration/test_ftf_h010_p4_model_roles.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-role-assignment-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p4
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p4"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p4
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove model role assignments, the roles and actions routes and the database guards against the live database
+        run: uv run python3 tests/integration/test_ftf_h010_p4_model_roles.py
 
   csv-import-integration:
     # FTF-0504: the CSV importer (workers/data/csv_importer.py) over PostgreSQL 16 as the
@@ -4035,6 +4248,45 @@ jobs:
       - name: Prove the development suite import against the live database
         run: uv run python3 tests/integration/test_ftf_1704_development_suite_import.py
 
+  zero-egress-judge-integration:
+    # FTF-0617: real Postgres proof of the zero-egress judge policy's database half --
+    # the profile in force read through execute_tenant_scoped (org x project x job truth
+    # table, a raw-SQL-weakened project row, foreign project identical to missing), the
+    # tenant's own connection row (revoked / foreign refused), and the real FTF-0103A
+    # lookup_org_role for the approver and reviewer role tables (all six roles, revoked,
+    # foreign-org and workspace-scoped memberships), plus a private-judge plan and a
+    # verdict end to end against the local TLS gateway -- and no row written by the policy --
+    # tests/integration/test_ftf_0617_zero_egress_judge.py.
+    # Same real `services: postgres` pattern as external-provider-denial-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' zero-egress-judge-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0617
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0617"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0617
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the zero-egress judge policy against the live database and a real local gateway
+        run: uv run python3 tests/integration/test_ftf_0617_zero_egress_judge.py
+
   ci-verdict:
     # THE result to read for "CI is green" (merge-on-green, certification, Control plane).
     # Fails on any failed or cancelled job, on any skipped job without a documented exemption
@@ -4051,6 +4303,7 @@ jobs:
       - classify
       - relay-policy
       - gate
+      - ftf0904-fault-matrix
       - secret-scanning
       - mutation-gate
       - docker-local-stack-integration
@@ -4085,6 +4338,7 @@ jobs:
       - api-load-test-integration
       - dataset-source-connection-integration
       - argilla-identity-scope-integration
+      - argilla-real-server-integration
       - target-application-connection-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration
@@ -4103,6 +4357,7 @@ jobs:
       - evaluation-suite-integration
       - organization-gateway-policy-integration
       - external-provider-denial-integration
+      - zero-egress-judge-integration
       - model-catalog-mapping-integration
       - model-capabilities-integration
       - capability-contract-integration
@@ -4119,6 +4374,8 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - model-import-validation-integration
+      - model-weights-import-integration
+      - model-role-assignment-integration
       - candidate-selection-integration
       - dataset-import-source-integration
       - dataset-mapping-preview-integration

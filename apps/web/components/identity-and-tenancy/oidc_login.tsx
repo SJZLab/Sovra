@@ -20,6 +20,7 @@
 import type { CSSProperties } from "react";
 
 import { dirFor, resolveLocale } from "../ui/phrases";
+import { cleanText } from "../ui/text";
 import { loginString } from "./strings_0101";
 
 export interface OidcLoginButtonProps {
@@ -27,7 +28,8 @@ export interface OidcLoginButtonProps {
   label?: string;
   /** "ar" renders Arabic copy with `dir="rtl"`; any other value renders English. */
   locale?: string;
-  /** Id of the hint paragraph the link points at via aria-describedby. */
+  /** Id of the hint paragraph the link points at via aria-describedby. Fixed default: one login entry
+   * per page; a second instance on the same page must pass its own id. */
   hintId?: string;
 }
 
@@ -66,7 +68,7 @@ export function OidcLoginButton({
         aria-describedby={hintId}
         style={LINK_STYLE}
       >
-        {label ?? loginString("signIn", lang)}
+        {cleanText(label) || loginString("signIn", lang)}
       </a>
       {/* H10: say where the click leads and that the user comes back. */}
       <p id={hintId} data-testid="oidc-login-hint">

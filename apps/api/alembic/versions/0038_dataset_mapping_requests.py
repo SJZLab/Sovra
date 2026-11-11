@@ -16,8 +16,8 @@ rationale, in the same transaction as the proposal, approval or rejection it rec
   is granted SELECT and INSERT only (no UPDATE, no DELETE), so a stored digest or rationale cannot
   be rewritten.
 
-Revision ID: 0036_dataset_mapping_requests
-Revises: 0035_dataset_mappings
+Revision ID: 0038_dataset_mapping_requests
+Revises: 0037_model_role_assignments
 Create Date: 2026-10-22
 """
 
@@ -28,8 +28,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0036_dataset_mapping_requests"
-down_revision = "0035_dataset_mappings"
+revision = "0038_dataset_mapping_requests"
+down_revision = "0037_model_role_assignments"
 branch_labels = None
 depends_on = None
 

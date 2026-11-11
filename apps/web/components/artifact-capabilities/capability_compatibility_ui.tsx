@@ -55,10 +55,33 @@
  * internal identifier, not visible copy) while its *visible* heading text is now translated.
  * Default `locale="en"` rendering, every `getByRole`/`getByText` query in the certified suite, and
  * every existing `data-testid` are byte-identical to round 1.
+ *
+ * FTF-UX05 round 2 (2026-10-22, second L2 return, PR #972): the independent review of this area
+ * found no new defect specific to this component (its response is already strictly validated by
+ * `isCapabilities`, and every authored string already routes through `phrase()`), but flagged the
+ * same two cross-cutting issues every sibling component in this area had: no minimum target size
+ * on its two buttons (WCAG 2.2 §2.5.8 -- both now render through the shared `Button` component,
+ * the §72.1-fixed component, not a new style) and two long raw values with no wrap
+ * (`weights_digest`, the declared-GPU-profile JSON blob -- both now carry
+ * `style={{ overflowWrap: "anywhere" }}`).
+ *
+ * FTF-UX05 round 3 (2026-10-23, QUEUE 0e): the error is an `AlertMessage` (announced, localized,
+ * with a recovery step), `networkErrorMessage` is the shared localized helper, and the section and
+ * the dimension table wrap (fixed layout at full width) so a 320 px viewport has no horizontal scroll.
  */
 
 import { useEffect, useRef, useState } from "react";
 
+import {
+  AlertMessage,
+  Button,
+  Pending,
+  kindForStatus,
+  networkError,
+  uiError,
+  useRefocusAfter,
+  type UiError,
+} from "../ui";
 import { dirFor, phrase, PHRASES, resolveLocale, type Locale } from "../ui/phrases";
 
 /** The frozen `ModelCapabilityUnknown`: `unknown` is the only state the contract allows today. */
@@ -131,29 +154,28 @@ export function capabilitiesUrl(
   );
 }
 
-async function readErrorDetail(response: Response, locale: Locale): Promise<string> {
+async function readErrorDetail(response: Response, locale: Locale): Promise<UiError> {
+  const kind = kindForStatus(response.status);
   try {
     const body = await response.json();
     if (body && typeof body.detail === "string") {
-      if (body.detail === "not_found") return phrase("compatNotFoundMessage", locale);
+      if (body.detail === "not_found")
+        return uiError(phrase("compatNotFoundMessage", locale), kind);
       if (body.detail === "gateway_unavailable") {
-        return phrase("compatGatewayUnavailableMessage", locale);
+        return uiError(phrase("compatGatewayUnavailableMessage", locale), kind);
       }
       // An unrecognized code is raw backend data (its language is the backend's choice, not this
       // component's) and is returned verbatim, never mistranslated.
-      return body.detail;
+      return uiError(body.detail, kind);
     }
   } catch {
     // fall through to the generic message below
   }
-  if (response.status === 503) return phrase("compatGatewayUnavailableMessage", locale);
-  if (response.status === 404) return phrase("compatNotFoundMessage", locale);
-  return phrase("requestFailedTemplate", locale, { status: response.status });
-}
-
-function networkErrorMessage(caught: unknown, locale: Locale): string {
-  const reason = caught instanceof Error && caught.message ? caught.message : "unknown error";
-  return `${phrase("networkErrorPrefix", locale)} ${reason}`;
+  if (response.status === 503) {
+    return uiError(phrase("compatGatewayUnavailableMessage", locale), kind);
+  }
+  if (response.status === 404) return uiError(phrase("compatNotFoundMessage", locale), kind);
+  return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
 function shown(value: unknown, locale: Locale): string {
@@ -337,7 +359,7 @@ export function CapabilityCompatibilityUI({
 }: CapabilityCompatibilityUIProps) {
   const identity = JSON.stringify([apiBaseUrl, organizationId, connectionId, projectId, modelName]);
   const [result, setResult] = useState<ModelCapabilities | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
   const latestRequest = useRef(0);
@@ -358,7 +380,10 @@ export function CapabilityCompatibilityUI({
 
   const capabilities = result;
 
+  const armFocus = useRefocusAfter(loading);
+
   async function handleLoad() {
+    armFocus();
     const request = ++latestRequest.current;
     const stale = () => request !== latestRequest.current;
     setLoading(true);
@@ -378,7 +403,7 @@ export function CapabilityCompatibilityUI({
       const body: unknown = await response.json();
       if (stale()) return;
       if (!isCapabilities(body)) {
-        setError(phrase("compatMalformedResponse", locale));
+        setError(uiError(phrase("compatMalformedResponse", locale)));
         return;
       }
       if (
@@ -386,12 +411,12 @@ export function CapabilityCompatibilityUI({
         body.project_id !== projectId ||
         body.litellm_connection_id !== connectionId
       ) {
-        setError(phrase("compatResponseMismatch", locale));
+        setError(uiError(phrase("compatResponseMismatch", locale)));
         return;
       }
       setResult(body);
     } catch (caught) {
-      if (!stale()) setError(networkErrorMessage(caught, locale));
+      if (!stale()) setError(networkError(caught, locale));
     } finally {
       if (!stale()) setLoading(false);
     }
@@ -408,18 +433,16 @@ export function CapabilityCompatibilityUI({
       aria-label="Capability compatibility"
       lang={resolveLocale(locale)}
       dir={dirFor(locale)}
+      style={{ overflowWrap: "anywhere" }}
     >
       <h2>
         {phrase("compatibilityHeadingPrefix", locale)} <bdi>{modelName}</bdi>
       </h2>
-      <button type="button" onClick={handleLoad} disabled={loading} aria-busy={loading}>
+      <Button onClick={handleLoad} disabled={loading} aria-busy={loading}>
         {loading ? phrase("checkingCompatibility", locale) : phrase("checkCompatibility", locale)}
-      </button>
-      {error ? (
-        <p role="alert" dir={dirFor(locale)}>
-          <bdi>{error}</bdi>
-        </p>
-      ) : null}
+      </Button>
+      {loading ? <Pending label={phrase("checkingCompatibility", locale)} locale={locale} /> : null}
+      {error ? <AlertMessage error={error} locale={locale} testId="compat-error" /> : null}
       {capabilities ? (
         <div>
           <dl>
@@ -446,7 +469,9 @@ export function CapabilityCompatibilityUI({
                 ? phrase("compatApproved", locale)
                 : phrase("compatNotApproved", locale)}
               ; {phrase("compatWeightsPrefix", locale)}{" "}
-              <bdi>{shown(capabilities.artifact.weights_digest, locale)}</bdi>
+              <bdi style={{ overflowWrap: "anywhere" }}>
+                {shown(capabilities.artifact.weights_digest, locale)}
+              </bdi>
             </dd>
             <dt>{phrase("compatDiscoveryChecked", locale)}</dt>
             {/* Not wrapped in <bdi> (unlike other data values in this component): a certified
@@ -466,7 +491,7 @@ export function CapabilityCompatibilityUI({
               )}
             </dd>
           </dl>
-          <table>
+          <table style={{ inlineSize: "100%", tableLayout: "fixed", overflowWrap: "anywhere" }}>
             <tbody>
               {DIMENSIONS.map(({ key, dim, labelKey }) => (
                 <DimensionRow
@@ -479,7 +504,7 @@ export function CapabilityCompatibilityUI({
               ))}
             </tbody>
           </table>
-          <p data-testid="declared-vram">
+          <p data-testid="declared-vram" style={{ overflowWrap: "anywhere" }}>
             {phrase("compatDeclaredVramPrefix", locale)}{" "}
             {capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile ? (
               <bdi>{JSON.stringify(capabilities.min_gpu_vram_gb.declared_minimum_gpu_profile)}</bdi>
@@ -494,8 +519,7 @@ export function CapabilityCompatibilityUI({
               ))}
             </ul>
           ) : null}
-          <button
-            type="button"
+          <Button
             disabled={!trainEnabled}
             onClick={() => {
               if (!trainEnabled || !onTrain) return;
@@ -504,7 +528,7 @@ export function CapabilityCompatibilityUI({
             }}
           >
             {phrase("compatTrainButton", locale)}
-          </button>
+          </Button>
           {started ? (
             <p role="status">
               {phrase("compatTrainingRequestedPrefix", locale)} <bdi>{modelName}</bdi>.

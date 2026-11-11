@@ -25218,3 +25218,109 @@ different session.
 - **Returned:** FTF-UX05 r1 -> r2 (0e): rebuild on UX01, catch + shape-check (no unmount, no fabricated empty), wrap long data, 0308 confirm focus, empty/loading states, phrase() residue, 7 pins, browser harness in CI + §4 evidence.
 - **Returned:** FTF-UX06 r1 -> r2 (0f): browser harness in CI, wrap long names, ErrorSummary focus, full Arabic, recovery steps + empty action, Field/useId, 16 pins, §4 evidence.
 - **Returned:** FTF-H011-P2 r1 -> r2 (0g): an explicit rejection blocks reuse; reuse requires the prior approval's connection to be live.
+- **Returned:** FTF-UX07 r2 -> r3 (0d): evidence only - 39-item checklist item by item, real skill output, severity per H1-H10 cell, two claims corrected.
+- **Returned:** FTF-UX05 r2 -> r3 (0e): 1301 catch + announce, wrap long names, empty/loading states, phrase() residue, 16 pins, browser spec in CI, §4 evidence, corrected claims.
+- **Returned:** FTF-H010-P3 r1 -> r2 (0h): re-read the base artifact FOR SHARE at the terminal write; pin every-shard, share-lock and adapter-header binding.
+- **Certified:** FTF-UX07 (#982, merge 2aa77912), round 3; FTF-0101 requalified.
+- **Certified:** FTF-UX05 (#983, merge 5d793fb8), round 3; parents and FTF-UX01 requalified; follow-ups FTF-UX01-F1, FTF-1301-F1 queued.
+- **Certified:** FTF-H010-P3 (#989, merge e5474526), round 2; P3a/P2 requalified.
+
+## 2026-10-23T1420Z — PROVISIONAL: FTF-UX02 round 2 merged (#947); regression found and fixed in shared Field
+- **Submitted:** closes out the 2026-10-23T10:52Z unparking note (owner approval of
+  `@radix-ui/react-dialog@1.3.1`, PR #995). Round 3's own two remaining items closed: 4 exact-string
+  assertions for the Arabic retry-family phrases (`retry`, `networkErrorRetryable`,
+  `requestFailedRetryable`, `responseMalformedRetryable`), each confirmed RED on a mutated string and
+  GREEN restored; and the submission's stale FTF-0500A H1/H9 heuristic cells corrected to record
+  round 2's own fixes, not just round 1's. Merging current `main` (every UX00–UX07 area merged since
+  this branch's original base) and re-running the full `apps/web` suite — not just this item's own
+  three parent suites, per l2-review-brief item 6's Law 15 regression check — surfaced a real
+  cross-area regression: round 1's `Field.tsx` fix (`display: "block"` on the shared `<label>`) left
+  `Field`'s `<input>` without the `--target-min` (24px) floor every other raw input/select in this
+  repo already applies by hand, so it fell under the WCAG 2.2 2.5.8 (AA) 24×24 CSS px minimum;
+  `ftf_ux06_browser.spec.ts`'s real-Chromium axe check caught it on FTF-UX06's `#field-category`
+  (6/52 failing, certified before this PR's `Field.tsx` change existed on `main`). Independently
+  confirmed real (reproduces on the merged head, not on a clean, unmodified `main` checkout in the
+  same sandbox, 3/3 runs) before fixing: `Field`'s `<input>` now carries
+  `minBlockSize: "var(--target-min)"` (caller `style` wins), with two new regression tests in the
+  shared-component suite `ftf_ux01_r4.spec.ts`, each confirmed RED on the pre-fix code and GREEN
+  restored. `ftf_ux06_browser.spec.ts`: 52/52 again. Full repo `pnpm exec vitest run` on the merged
+  head: 32 test files, 3069/3069 tests passing (the only 2 "failed suites",
+  `ftf_ux01.spec.ts`/`ftf_ux01_r3.spec.ts`, 0 tests each, are the pre-existing `tokens.css?raw`
+  CSS-parse issue, independently reproduced on a clean `main` checkout in this same sandbox, not
+  introduced by this PR). Real CI on the final pushed head: `ci-verdict` green, all 83 jobs
+  (`gate` 1510 steps, `mutation-gate`, `secret-scanning`, 76 integration jobs) passed; merged as
+  `b264be1`. Not self-certified (Law 4) — awaiting Control-plane L2 review, which should also
+  requalify the new UX01 Dialog (focus trap, focus return, Escape, aria-modal) per the unparking
+  note. Full clause-to-test mapping, fault→RED tables, every round's verbatim reviewer report and
+  this update's regression writeup: `docs/certifications/submissions/2026-10-22T0119Z-FTF-UX02-r2.md`.
+  Shift log: `docs/progress/2026-10-23T1318Z-relay.md`.
+- **Returned:** FTF-1301-F1 r1 -> r2 (0d): browser out-of-order test, clear the old result on switch, pin F3/F4/F5, evidence.
+- **Returned:** FTF-UX02 r2 -> r3 (0k): Dialog RTL position + aria-modal + own tests FIRST, 0500A malformed replies, long names, rebuild 0516 and the rest of 0501-UI, full browser spec, A9 pin, evidence.
+
+## 2026-10-23T1800Z — PROVISIONAL: FTF-UX01-F1 round 1 merged (#994)
+- **Submitted:** follow-up on CERTIFIED FTF-UX01/FTF-UX05 (found by the FTF-UX05 r3 verifier, #983).
+  `apps/web/components/ui/AlertMessage.tsx`'s recovery-sentence lookup is now `Object.hasOwn`-safe,
+  so a `kind` outside the union (`"toString"`, `"__proto__"`, `"bogus"`, `""`) renders the retry
+  step instead of throwing during render; `errors.ts`'s `networkError` no longer passes another
+  `Error`'s English message through under `locale !== "en"`. New spec
+  `apps/web/tests/ftf_ux01_f1.spec.ts` (16 tests, jsdom) plus direct coverage for `focus.ts`,
+  `singleflight.ts` and `kindForStatus`, all RED on the pre-fix code and GREEN restored; fault→RED
+  table for all 41 injected faults in the submission (38 RED, 3 disclosed equivalent mutants —
+  `arm` recording `<body>`/an unmounted SVG target and the fallback-not-consumed case — none
+  observable). Two pre-review rounds by a fresh reviewer subagent (strongest model, did not write
+  the code; evidence only, never certification — Law 4): round 1 returned 3 findings (two stayed-
+  GREEN faults, one stale same-class-sweep sentence), all fixed; round 2's own verdict is
+  "FTF-UX01-F1 CERTIFY" (not a Control-plane action). Law 15: 13 jsdom spec files covering
+  UX01/UX03/UX05/UX06/UX07/0214/0308/0309/1301, 997/997 passing; eslint/prettier/`tsc --build`
+  clean; `validate_spec --strict`, `status.py` (157/304), `product_truth_check --fail-on-unwired`
+  (49/49) and `data_exposure_check` all pass. No Python changed (mutation gate has nothing to
+  mutate); no `ci.yml` change. Real CI on the final head (after one fresh-base merge, main had
+  advanced past the PR's originally-tested base with zero file overlap): `ci-verdict` green;
+  merged as `21e0b3a`. Not self-certified (Law 4) — `certification_state` stays PROVISIONAL,
+  awaiting Control-plane L2 review. Full submission: `docs/certifications/submissions/
+  2026-10-23T1040Z-FTF-UX01-F1.md`. Shift logs: `docs/progress/2026-10-23T1040Z-laneB.md` (lane B,
+  authored the fix) and `docs/progress/2026-10-23T1652Z-relay.md` (this session's fresh-base merge
+  and final push to green).
+- **Returned:** FTF-R006-P1b r2 -> r3 (0c): revoke-first or row lock (R11b/R11c), pin F14/F16, real-Argilla CI that exercises the store, OpenSearch + Redis 7.2 per the licence rulings, gate step, [GOVERNANCE] title.
+- **Returned:** FTF-UX06 r2 -> r3 (0f): wrap at the root, 403 save announced with focus, Arabic codes/catalogue/bdi, pin F1/F12/F13/F18/F23/N24, access recovery, useId, evidence.
+- **Certified:** FTF-H011-P2 (#978, merge df2218ef), round 2; FTF-H011-P1 requalified; P3 rulings recorded.
+- **Returned:** FTF-H010-P4 r1 -> r2 (0p): archived or digest-drifted weights artifact must stop continue_tuning (derive via the lineage manifest, fail closed, add rows to the decision table and integration suite), pin the advisory lock with a deterministic two-session interleaving test, pin the revocation all-NULL-or-all-set CHECK by name; PR #998 merge 43512af4; P5 and P6 remain.
+- **Certified:** FTF-UX01-F1 (#994 merge 21e0b3a8 + #1008 merge bb940d33), round 2; FTF-UX01 and FTF-UX05 requalified.
+- **Certified:** FTF-0617 (#1011, merge 816f0fb3), round 2; 158/304; UNWIRED.
+- **Returned:** FTF-1301-F1 r2 -> r3 (0q): tests only - pin setNotice(null) and organization-in-identityKey in jsdom and Chromium, Chromium tests for stale 500 / network error / pending reply (F3/F4/F5), fix the stale docstring.
+- **Ruled:** draft #1020 (FTF-1504 r2) is a dead claim; next lane claims relay/FTF-1504-r3 on top of relay/FTF-1504-r2.
+
+## 2026-11-10T11:38Z — PROVISIONAL: FTF-1301-F1 round 2 merged (#1005)
+- **Submitted:** round 2 on QUEUE.md item 0d (Control-plane return on #996, `dab64d2`). Four
+  findings closed, each with its own fault → RED table (full detail in the submission doc):
+  (1) MISSING-BROWSER-TEST — `ux05_entry.tsx` now reuses one `Root` per page and supports
+  held/individually-released fetch responses, so a new real-Chromium test reproduces the
+  out-of-order project-switch race, RED on `dab64d2^1` (pre-round-1), GREEN from round 1 onward;
+  (2) STALE-WHILE-LOADING (severity 3) — a `seenIdentity` render-time reset (same pattern as the
+  certified `capability_compatibility_ui.tsx`/FTF-0309) clears `search`/`error`/`notice` and sets
+  `loading` synchronously on any identity change, so no committed frame shows the old project's
+  rate under the new project's own loading indicator; new tests in both jsdom and Chromium;
+  (3) UNPINNED-STALE-ERROR (F3/F4/F5) — three `stale()` guards round 1 already had but no test
+  exercised, each now independently fault-injected; (4) EVIDENCE — the round-1 "in jsdom" wording
+  is superseded by the new Chromium coverage. P8 advisory (severity 2) also fixed in both
+  `handleCreate`/`handleVerify` (a write's own error no longer surfaces once the user has switched
+  project/organization), including a second commit closing a Create-side gap the pre-review's own
+  probe found. Independent pre-review (same reviewer who certified round 1, fresh continuation):
+  ran the full fault matrix across pre-round-1/round-1-only/this-round code in both jsdom and
+  Chromium, its own adversarial probe, full regression, and returned **`FTF-1301-F1-r2 CERTIFY`**
+  (evidence only, never a self-certification — Law 4). Regression: full web suite (31 files, 3119
+  jsdom tests) and the real-Chromium UX05 harness (253 tests) all pass; `tsc --build`/eslint/
+  prettier clean; no new runtime dependency, migration, route, or datastore surface.
+- **CI history note (for the record):** this PR's `ci-verdict` was red 2026-10-23T22:49Z–
+  2026-11-10T09:48Z solely from a systemic GitHub Actions runner-provisioning outage affecting
+  every open PR in the repo, not this item's own code (full evidence and resolution:
+  `BLOCKER.md`'s `RESOLVED 2026-11-10T09:50Z` entry, `docs/progress/2026-10-27T1252Z-relay.md`).
+  Once Actions recovered, a fresh-base merge and re-run went green on the real head.
+- Merged fresh `main` repeatedly to stay on a tested base as other PRs landed concurrently (most
+  recently #998 FTF-H010-P4); final real CI on the merged head: `ci-verdict` green, 93/93 check
+  runs passing (including the `ftf0904-fault-matrix` shards and every `*-integration` job).
+  Merged as `5e0d91b4`. Not self-certified (Law 4) — `certification_state` stays PROVISIONAL,
+  awaiting Control-plane L2 review. Full submission:
+  `docs/certifications/submissions/2026-10-23T1742Z-FTF-1301-F1-r2.md`. Shift logs:
+  `docs/progress/2026-10-27T1252Z-relay.md` (outage discovery) and this session's own PR-activity
+  follow-up (no separate dated shift-log file — recorded in `PROGRESS.md` directly).

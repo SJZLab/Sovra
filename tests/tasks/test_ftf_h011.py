@@ -16,7 +16,7 @@ R  roles and authentication on all seven routes, the body-validation table, the 
    that took effect under another key), the approver and the rationale taken as the contract says
 U  direct checks of the module's private helpers
 S  the request store (`dataset_mapping_request_store`) and the store's new read-only functions
-M  migration `0036_dataset_mapping_requests.py`
+M  migration `0038_dataset_mapping_requests.py`
 C  the interface contract (05-interface.yaml): every path, status code and header; the schema drift
    table (schema-valid <=> `mapping_from_object` accepts) and the app wiring
 F  (not in this file) fault evidence: the uncapped scripts/mutation_gate.py over the changed modules, run by
@@ -83,7 +83,7 @@ HERE = Path(__file__).resolve().parent
 ROUTES_PATH = ROOT / "apps" / "api" / "app" / "datasets" / "dataset_mapping_routes.py"
 REQUEST_STORE_PATH = ROOT / "apps" / "api" / "app" / "datasets" / "dataset_mapping_request_store.py"
 STORE_PATH = ROOT / "apps" / "api" / "app" / "datasets" / "dataset_mapping_store.py"
-MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0036_dataset_mapping_requests.py"
+MIGRATION_PATH = ROOT / "apps" / "api" / "alembic" / "versions" / "0038_dataset_mapping_requests.py"
 INTERFACE_PATH = ROOT / "packages" / "contracts" / "openapi" / "05-interface.yaml"
 MAIN_PATH = ROOT / "apps" / "api" / "app" / "main.py"
 
@@ -2700,7 +2700,7 @@ def part_s_store_reads() -> None:
 
 
 # ======================================================================================
-# M -- migration 0036
+# M -- migration 0038
 # ======================================================================================
 
 
@@ -2713,9 +2713,9 @@ def migration_findings(src: str) -> list[str]:
             broken.append(label)
 
     table = "dataset_mapping_requests"
-    need("revision id", 'revision = "0036_dataset_mapping_requests"' in src)
-    need("chained onto 0035", 'down_revision = "0035_dataset_mappings"' in src)
-    need("revision id fits alembic_version (<=32)", len("0036_dataset_mapping_requests") <= 32)
+    need("revision id", 'revision = "0038_dataset_mapping_requests"' in src)
+    need("chained onto 0037", 'down_revision = "0037_model_role_assignments"' in src)
+    need("revision id fits alembic_version (<=32)", len("0038_dataset_mapping_requests") <= 32)
     need(
         "the table name is a literal (data_exposure_check reads it)",
         f'op.create_table(\n        "{table}",' in src and "_TABLE" not in src,
@@ -2828,7 +2828,7 @@ MIGRATION_FAULTS = (
     ),
     (
         "chain broken",
-        'down_revision = "0035_dataset_mappings"',
+        'down_revision = "0037_model_role_assignments"',
         'down_revision = "0034_argilla_review_identity"',
     ),
 )
@@ -2864,7 +2864,7 @@ def part_m() -> None:
             f"the fault {label!r} is caught by the shape rules",
             bool(migration_findings(src.replace(old, new, 1))),
         )
-    up = offline_sql("upgrade", "0035_dataset_mappings:0036_dataset_mapping_requests")
+    up = offline_sql("upgrade", "0037_model_role_assignments:0038_dataset_mapping_requests")
     for needle in (
         "CREATE TABLE dataset_mapping_requests",
         "ALTER TABLE dataset_mapping_requests ENABLE ROW LEVEL SECURITY",
@@ -2873,7 +2873,7 @@ def part_m() -> None:
         'GRANT SELECT, INSERT ON dataset_mapping_requests TO "sovra_app"',
         "CONSTRAINT uq_dataset_mapping_requests_key UNIQUE (organization_id, project_id, idempotency_key)",
         "CONSTRAINT fk_dataset_mapping_requests_mapping FOREIGN KEY(organization_id, mapping_id) REFERENCES dataset_mappings (organization_id, id) ON DELETE RESTRICT",
-        "UPDATE alembic_version SET version_num='0036_dataset_mapping_requests'",
+        "UPDATE alembic_version SET version_num='0038_dataset_mapping_requests'",
     ):
         check("M-SQL", f"the upgrade SQL contains: {needle[:100]}", needle in up)
     check(
@@ -2881,12 +2881,12 @@ def part_m() -> None:
         "the upgrade SQL never grants UPDATE or DELETE",
         "GRANT UPDATE" not in up and "DELETE ON" not in up.replace("ON DELETE", ""),
     )
-    down = offline_sql("downgrade", "0036_dataset_mapping_requests:0035_dataset_mappings")
+    down = offline_sql("downgrade", "0038_dataset_mapping_requests:0037_model_role_assignments")
     for needle in (
         "DROP POLICY IF EXISTS tenant_isolation ON dataset_mapping_requests",
         'REVOKE ALL ON dataset_mapping_requests FROM "sovra_app"',
         "DROP TABLE dataset_mapping_requests",
-        "UPDATE alembic_version SET version_num='0035_dataset_mappings'",
+        "UPDATE alembic_version SET version_num='0037_model_role_assignments'",
     ):
         check("M-SQL", f"the downgrade SQL contains: {needle[:100]}", needle in down)
     import os

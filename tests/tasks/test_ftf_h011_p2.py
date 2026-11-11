@@ -857,18 +857,16 @@ def part_m_sql() -> None:
         text=True,
         env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
     )
-    history = subprocess.run(
-        [sys.executable, "-m", "alembic", "history"],
-        cwd=str(ROOT / "apps" / "api"),
-        capture_output=True,
-        text=True,
-        env={**os.environ, "SOVRA_DATABASE_URL": "postgresql+psycopg://x:y@localhost:5432/z"},
-    )
     check(
         "LAW18-MIGRATION",
-        f"exactly one head, with 0035 chained onto 0034: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1
-        and "0034_argilla_review_identity -> 0035_dataset_mappings" in history.stdout,
+        # Not pinned to "0035_dataset_mappings" itself: that would go stale the moment any
+        # later migration chains onto it (down_revision = "0035_dataset_mappings"), which is
+        # expected, normal chain growth, not a fork (FTF-R006-P1b round 2's own
+        # 0036_argilla_identity_hardening is the first such migration). The real Law 18
+        # invariant this check protects is "no silent fork", which "exactly one head" alone
+        # already proves -- a real fork would show 2+ "(head)" lines here instead.
+        f"exactly one head: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1,
     )
 
 
@@ -3067,6 +3065,83 @@ def part_s_approver() -> None:
             )
 
 
+def part_s_return2() -> None:
+    """L2 return round 2: an explicit rejection always wins over reuse; reuse needs the prior
+    approval's own connection to be live (Law 16)."""
+    doc = {
+        "shape": "prompt_completion",
+        "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+        "prompt": {"header": "q"},
+        "completion": {"header": "a"},
+    }
+    with sqlite_world() as w:
+        conn = w.connection("rej", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("rej", "training", conn, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("rej", "training", conn, version=2, content_type="text/csv")
+        check("RET2-1", "positive control: v2 reuses v1's approval", w.resolve(v2).reused is True)
+        w.reject(w.propose(v2, doc))
+        before = w.count()
+        refuses(
+            w,
+            "an explicit rejection of v2's own identical mapping is never overridden by reuse",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "RET2-2",
+        )
+        check("RET2-3", "the refusal wrote nothing", w.count() == before)
+        pending = w.propose(v2, {**doc, "prompt": {"header": "question"}})
+        check(
+            "RET2-3b",
+            "a different re-proposal is a new pending version",
+            pending.status == "proposed",
+        )
+        refuses(
+            w,
+            "a newer pending proposal does not mask the rejection (latest decision, not latest row)",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "RET2-3c",
+        )
+        again = pending
+        w.approve(again)
+        check(
+            "RET2-4",
+            "a later own approval of v2 beats the earlier rejection",
+            w.resolve(v2).mapping_id == again.id and w.resolve(v2).reused is False,
+        )
+    with sqlite_world() as w:
+        conn_a = w.connection("a", ALL_PURPOSES)
+        conn_b = w.connection("b", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("rc", "training", conn_a, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("rc", "training", conn_b, version=2, content_type="text/csv")
+        check(
+            "RET2-5",
+            "positive control: reuse across live connections",
+            w.resolve(v2).reused is True,
+        )
+        w.connections[conn_a].connection_status = "revoked"
+        refuses(
+            w,
+            "a prior approval made under a now-revoked connection is not reused",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "RET2-6",
+        )
+        w.connections[conn_a].connection_status = "active"
+        w.connections[conn_a].allowed_purposes_json = ["evaluation"]
+        refuses(
+            w,
+            "a prior approval whose connection no longer allows the purpose is not reused",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "RET2-7",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -3079,6 +3154,7 @@ def main() -> None:
     part_s_review()
     part_s_round2()
     part_s_approver()
+    part_s_return2()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)

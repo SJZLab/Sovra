@@ -22,6 +22,7 @@ export function Field({
   requirement,
   locale = "en",
   "aria-describedby": callerDescribedBy,
+  style: callerStyle,
   ...rest
 }: FieldProps) {
   const trimmedError = cleanText(error);
@@ -30,7 +31,10 @@ export function Field({
   const describedBy = [callerDescribedBy, helperId, errorId].filter(Boolean).join(" ") || undefined;
   return (
     <div lang={resolveLocale(locale)} dir={dirFor(locale)}>
-      <label htmlFor={id}>
+      {/* FTF-UX02 round-2 pre-review round 1 (LABELS-ABOVE-FIELDS): a block label forces the
+          control onto its own line below it in real layout (NN/g forms) -- DOM order alone is
+          not visual layout, since two inline-level elements still sit side by side. */}
+      <label htmlFor={id} style={{ display: "block", marginBlockEnd: "var(--space-1)" }}>
         {label}{" "}
         <span>
           {phrase(requirement === "required" ? "fieldRequired" : "fieldOptional", locale)}
@@ -43,6 +47,11 @@ export function Field({
         aria-required={requirement === "required" ? true : undefined}
         aria-invalid={trimmedError ? true : undefined}
         aria-describedby={describedBy}
+        // WCAG 2.2 2.5.8 (target size, AA): a bare `<input>` with no caller padding/height is
+        // smaller than 24x24 CSS px in every browser's UA stylesheet (round-2 pre-review's own
+        // block-label fix made this fail-RED on FTF-UX06's real-Chromium axe check, which this
+        // Field is also used by — same `--target-min` already applied to Button).
+        style={{ minBlockSize: "var(--target-min)", ...callerStyle }}
       />
       {trimmedError ? (
         <div id={errorId} role="alert" style={{ overflowWrap: "anywhere" }}>

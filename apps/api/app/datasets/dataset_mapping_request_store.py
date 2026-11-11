@@ -4,7 +4,7 @@ Section 8.1, Section 9, Section 67.1-67.4; AF-15).
 The routes in `dataset_mapping_routes.py` need two things the P2 store (`dataset_mapping_store.py`)
 has no column for: the `Idempotency-Key` of a propose / approve / reject request together with a
 digest of that request, and the reviewer's rationale for an approval or a rejection. Both live in
-`dataset_mapping_requests` (migration `0036_dataset_mapping_requests.py`), written in the same
+`dataset_mapping_requests` (migration `0038_dataset_mapping_requests.py`), written in the same
 transaction as the proposal, approval or rejection they record, so a key exists exactly when its
 request took effect.
 

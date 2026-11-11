@@ -704,3 +704,205 @@ test("UX05 round 2: the dialog's aria-labelledby points at a real, visible title
   expect(title!.tagName).toBe("H2");
   expect(title!.textContent).toBe("Run a real probe?");
 });
+
+// -- UX05 round 2 (second L2 return, PR #972) -----------------------------------------------
+
+test("UX05 r2 (L2 return): a non-JSON/no-detail failure on project load is shown in Arabic, not the hardcoded English fallback", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: false,
+    status: 503,
+    json: async () => {
+      throw new Error("not json");
+    },
+  });
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+  const text = screen.getByTestId("projects-error").textContent ?? "";
+  expect(text).toContain("503");
+  expect(text).not.toContain("request failed");
+});
+
+test("UX05 r2 (L2 return): the same no-detail failure on catalog load under locale='ar' is also translated, not just project load", async () => {
+  mockProjectList();
+  render(
+    createElement(ModelCatalogUI, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG_ID,
+      connectionId: CONNECTION_ID,
+      locale: "ar",
+    }),
+  );
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId(`project-row-${PROJECT_ID}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`project-select-button-${PROJECT_ID}`));
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: false,
+    status: 500,
+    json: async () => {
+      throw new Error("not json");
+    },
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+  const text = screen.getByTestId("catalog-error").textContent ?? "";
+  expect(text).toContain("500");
+  expect(text).not.toContain("request failed");
+});
+
+test("UX05 r2 (L2 return): an empty {} 200 catalog response is a typed error, never a silently-accepted empty result (Law 17)", async () => {
+  await loadAndSelectProject();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+  // Never silently accepted as "zero entries, healthy, no model groups":
+  expect(screen.queryByTestId("catalog-results")).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a model_groups.entries that is not an object does not crash the render (it is rejected as malformed)", async () => {
+  await loadAndSelectProject();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      connection_status: "active",
+      access_state: "healthy",
+      last_successful_check_at: null,
+      last_checked_at: null,
+      alert: null,
+      anomaly: null,
+      model_groups: { state: "enriched", entries: null },
+      entries: [],
+    }),
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+  // The component itself is still mounted (no crash/unmount) -- the trigger is still there.
+  expect(screen.getByTestId("load-catalog-button")).toBeTruthy();
+});
+
+test("UX05 r2 (L2 return): a malformed catalog entry (missing required field) is rejected, not rendered", async () => {
+  await loadAndSelectProject();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      connection_status: "active",
+      access_state: "healthy",
+      last_successful_check_at: null,
+      last_checked_at: null,
+      alert: null,
+      anomaly: null,
+      model_groups: null,
+      entries: [{ id: MODEL_A, status: "callable" }], // missing metadata_status/first_seen_at/fields
+    }),
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-error")).toBeTruthy());
+  expect(screen.queryByTestId(`catalog-entry-${MODEL_A}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a malformed project-listing item (status is a number, not a string) is rejected", async () => {
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => [{ id: PROJECT_ID, name: "Acme", status: 1 }],
+  });
+  renderCatalogUI();
+  fireEvent.click(screen.getByTestId("load-projects-button"));
+  await waitFor(() => expect(screen.getByTestId("projects-error")).toBeTruthy());
+  expect(screen.queryByTestId(`project-row-${PROJECT_ID}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): a probe response whose usage is malformed (not an object with numeric fields) is rejected, never rendered as a result", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      probe_type: "chat",
+      state: "succeeded",
+      route_identity_state: "verified",
+      resolved_model: MODEL_A,
+      usage: "not-an-object",
+      latency_ms: 120,
+      detail: "ok",
+      probed_at: "2026-10-22T00:00:00+00:00",
+    }),
+  });
+  fireEvent.click(screen.getByTestId(`probe-button-${MODEL_A}`));
+  const confirmButton = await screen.findByTestId(`confirm-probe-button-${MODEL_A}`);
+  fireEvent.click(confirmButton);
+  await waitFor(() => expect(screen.getByTestId("probe-error")).toBeTruthy());
+  expect(screen.queryByTestId(`probe-result-${MODEL_A}`)).toBeNull();
+});
+
+test("UX05 r2 (L2 return): every real button renders through the shared Button component at the minimum target size", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  for (const testId of [
+    "load-projects-button",
+    `project-select-button-${PROJECT_ID}`,
+    "load-catalog-button",
+    `probe-button-${MODEL_A}`,
+  ]) {
+    const el = screen.getByTestId(testId) as HTMLElement;
+    expect(el.style.minBlockSize).toBe("var(--target-min)");
+    expect(el.style.minInlineSize).toBe("var(--target-min)");
+  }
+});
+
+test("UX05 r2 (L2 return): the status/metadata/probe-kind <select>s meet the minimum target size", async () => {
+  await loadAndSelectProject();
+  for (const testId of ["status-filter", "metadata-filter"]) {
+    expect((screen.getByTestId(testId) as HTMLElement).style.minBlockSize).toBe(
+      "var(--target-min)",
+    );
+  }
+});
+
+test("UX05 r2 (L2 return): a successful load with zero entries shows an EmptyState, not a bare empty list", async () => {
+  await loadAndSelectProject();
+  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      connection_status: "active",
+      access_state: "healthy",
+      last_successful_check_at: null,
+      last_checked_at: null,
+      alert: null,
+      anomaly: null,
+      model_groups: null,
+      entries: [],
+    }),
+  });
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId("catalog-reload-button")).toBeTruthy());
+  expect(screen.getByText("No catalog entries")).toBeTruthy();
+});
+
+test("UX05 r2 (L2 return): a long raw fields/model-group JSON blob is wrapped, not left to overflow", async () => {
+  await loadAndSelectProject();
+  mockCatalog();
+  fireEvent.click(screen.getByTestId("load-catalog-button"));
+  await waitFor(() => expect(screen.getByTestId(`catalog-entry-${MODEL_A}`)).toBeTruthy());
+  expect((screen.getByTestId(`entry-fields-${MODEL_A}`) as HTMLElement).style.overflowWrap).toBe(
+    "anywhere",
+  );
+});

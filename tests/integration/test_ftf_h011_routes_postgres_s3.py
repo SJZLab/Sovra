@@ -3,12 +3,12 @@
 # ruff: noqa: E501
 """FTF-H011-P3 -- the dataset mapping routes (`apps/api/app/datasets/dataset_mapping_routes.py`) on
 a real uvicorn server, over PostgreSQL 16 as the restricted `sovra_app` role (the full migration
-chain, 0036 included) and the live S3 API, with datasets uploaded through the real FTF-0501 routes.
+chain, 0038 included) and the live S3 API, with datasets uploaded through the real FTF-0501 routes.
 
 `tests/tasks/test_ftf_h011.py` proves the routes, the contract and the wiring without a database. This
 suite proves what only the real services can:
 
-I0   migration 0036 upgrade / downgrade / upgrade with one head; ENABLE + FORCE row-level security
+I0   migration 0038 upgrade / downgrade / upgrade with one head; ENABLE + FORCE row-level security
      and a non-allow-all policy; SELECT/INSERT only for `sovra_app`; raw `sovra_app` SQL refused for an
      overwrite, a delete, a cross-tenant row, a malformed digest / action / key, a rationale on a
      proposal, no rationale on a decision and a repeated key
@@ -146,8 +146,8 @@ def main() -> None:
             return _finish()
     heads = p1._alembic(["heads"], migration_url)
     check(
-        f"I0 exactly one alembic head, 0036 ({heads.stdout!r})",
-        heads.stdout.count("(head)") == 1 and "0036_dataset_mapping_requests" in heads.stdout,
+        f"I0 exactly one alembic head, 0038 ({heads.stdout!r})",
+        heads.stdout.count("(head)") == 1 and "0038_dataset_mapping_requests" in heads.stdout,
     )
 
     endpoint, credentials = s3lab._load_endpoint_and_credentials()

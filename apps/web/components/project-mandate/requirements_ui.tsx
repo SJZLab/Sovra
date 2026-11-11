@@ -53,6 +53,8 @@
 
 import { useEffect, useState } from "react";
 
+import { networkError } from "../ui/errors";
+
 export interface CriticalBehaviorRequirementView {
   tool_definition_id: string;
   name: string;
@@ -152,36 +154,45 @@ export function RequirementsPanel({
 
   async function refreshRequirements() {
     setRequirementsError(null);
-    const response = await fetch(requirementsUrl(apiBaseUrl, organizationId, projectId), {
-      credentials: "include",
-    });
-    if (!response.ok) {
-      setRequirementsError(await readErrorDetail(response));
-      return;
+    try {
+      const response = await fetch(requirementsUrl(apiBaseUrl, organizationId, projectId), {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        setRequirementsError(await readErrorDetail(response));
+        return;
+      }
+      setRequirements(await response.json());
+    } catch (caught) {
+      // A failed request is shown to the user, never left as an unhandled rejection (Law 17).
+      setRequirementsError(networkError(caught, "en").message);
     }
-    setRequirements(await response.json());
   }
 
   async function refreshBudgetPolicy() {
     setBudgetError(null);
-    const response = await fetch(budgetPolicyUrl(apiBaseUrl, organizationId, projectId), {
-      credentials: "include",
-    });
-    if (response.status === 404) {
-      setBudgetPolicyMissing(true);
-      setBudgetPolicy(null);
-      return;
+    try {
+      const response = await fetch(budgetPolicyUrl(apiBaseUrl, organizationId, projectId), {
+        credentials: "include",
+      });
+      if (response.status === 404) {
+        setBudgetPolicyMissing(true);
+        setBudgetPolicy(null);
+        return;
+      }
+      if (!response.ok) {
+        setBudgetError(await readErrorDetail(response));
+        return;
+      }
+      const policy: BudgetPolicyRecord = await response.json();
+      setBudgetPolicyMissing(false);
+      setBudgetPolicy(policy);
+      setTotalAmount(policy.total_amount);
+      setCurrency(policy.currency);
+      setScopes(new Set(policy.scopes as BudgetScope[]));
+    } catch (caught) {
+      setBudgetError(networkError(caught, "en").message);
     }
-    if (!response.ok) {
-      setBudgetError(await readErrorDetail(response));
-      return;
-    }
-    const policy: BudgetPolicyRecord = await response.json();
-    setBudgetPolicyMissing(false);
-    setBudgetPolicy(policy);
-    setTotalAmount(policy.total_amount);
-    setCurrency(policy.currency);
-    setScopes(new Set(policy.scopes as BudgetScope[]));
   }
 
   // Deliberately runs once per identity triple, not on every render --
@@ -245,6 +256,8 @@ export function RequirementsPanel({
         const revised: BudgetPolicyRecord = await response.json();
         setBudgetPolicy(revised);
       }
+    } catch (caught) {
+      setBudgetError(networkError(caught, "en", { write: true }).message);
     } finally {
       setSaving(false);
     }

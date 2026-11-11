@@ -63,15 +63,50 @@
  * `model_to_artifact_mapping_ui.tsx`): this repository has no Next.js
  * `app/` page tree yet (FTF-H029), so this component is DOM-tested with
  * Vitest + React Testing Library + jsdom and a mocked `fetch`; it is
- * UNWIRED to a page until that mount exists. The real-browser §72.5
- * viewport/keyboard/200%-zoom and automated-accessibility-scan evidence is
- * deferred the same way FTF-UX03 round 1 deferred it ("needs a rendered
- * page"; not claimed this round).
+ * UNWIRED to a page until that mount exists.
+ *
+ * FTF-UX06 round 2 (QUEUE.md Active item 0f, PR #975's return of #964):
+ * `apps/web/tests/ftf_ux06_browser.spec.ts` now gives the real-Chromium
+ * §72.5 evidence round 1 deferred -- viewports 1280/768/390/320, 200% zoom,
+ * keyboard-only Tab order with a visible focus outline, and an axe scan in
+ * light AND dark, over load/populated/empty/error/edit states, en and ar.
+ * Long values (`category`, a 100+ char `case_key`/`group_key`) no longer
+ * overflow (`overflowWrap: "anywhere"` on every row/heading/list-item that
+ * renders one). A failed load, import or save now takes focus on its own
+ * alert (`FocusableAlert`) instead of leaving it on `<body>`, and each alert
+ * names a concrete recovery step. The case list's empty state now has a
+ * real action (focuses the import textarea). `category`/`language`/
+ * `group_key`/`weight` -- the four plain `<input>` fields `Field` can
+ * render -- are now built on the shared `ui/Field` component instead of
+ * the hand-rolled label/error wrapper (round 1's disclosed deferral);
+ * `severity`/`critical`/`grader_type` stay hand-rolled (`<select>`/
+ * checkbox, which `Field` does not support) and the three JSON textareas
+ * keep their own schema-hint/on-blur wiring, both still disclosed. A
+ * server-returned field name and validation code (`group_key`/`required`,
+ * etc.) is now translated for `locale="ar"` (`fieldDisplay`/`codeDisplay`);
+ * the default English locale keeps the exact byte-identical text the
+ * certified `ftf_0602.spec.ts` suite asserts. A non-JSON 200 response and
+ * an unreachable-server `fetch()` rejection no longer leak the browser's
+ * own untranslated parser/network message into an Arabic render (mapped to
+ * the existing localized "malformed"/"unreachable" phrases; an unrecognized
+ * network reason still falls back to the existing `errUnknownReason`
+ * phrase rather than showing raw English, same fallback discipline as
+ * `ERROR_DETAIL_KEY`).
+ *
+ * FTF-UX06 round 3 (QUEUE.md Active item 0f): the overflow wrap is declared once at the component
+ * root so every descendant (the saved/imported notice, every alert) inherits it; a save answered 403
+ * `final_suite_content_restricted` is announced by an alert OUTSIDE the closing form that takes
+ * focus; save field errors also render through the UX01 `ErrorSummary` (field links); every store
+ * code is mapped and an unmapped code is a localized generic phrase under Arabic; the saved notice,
+ * row hint and edit heading isolate the case_key in a `<bdi>`; a 403 `role_not_authorized` names an
+ * access step and a 5xx / transport failure names a retry (never "fix the field/file"); form ids
+ * come from `useId`. The earlier "no severity 3-4 remains" and "certified parent spec could not
+ * change" claims are withdrawn (see the round-3 submission).
  */
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { Button, EmptyState, Pending } from "../ui";
+import { Button, EmptyState, ErrorSummary, Field, Pending } from "../ui";
 import { dirFor, resolveLocale, t0602, type Locale } from "./strings_0602";
 
 export const GRADER_TYPES = [
@@ -156,6 +191,7 @@ export function caseUrl(
 /** Maps a backend `detail` code to its catalogue key; an unknown code falls through to `errGeneric`. */
 const ERROR_DETAIL_KEY: Record<string, Parameters<typeof t0602>[0]> = {
   not_found: "errNotFound",
+  not_authenticated: "errNotAuthenticated",
   suite_locked: "errSuiteLocked",
   duplicate_case_key: "errDuplicateCaseKey",
   role_not_authorized: "errRoleNotAuthorized",
@@ -172,10 +208,136 @@ interface FieldError {
   code: string;
 }
 
+/** Which recovery sentence a top-level alert names (WRONG-RECOVERY-STEPS, round 2): the
+ * operation's own default, or an override for a 403 (never retryable) or a transport/shape
+ * failure (never a field problem). */
+type RecoveryKey =
+  | "recoverList"
+  | "recoverImport"
+  | "recoverSave"
+  | "recoverRestricted"
+  | "recoverRetry"
+  | "recoverAccess"
+  | "recoverNoFix"
+  | "recoverSignIn";
+
 interface Failure {
   message: string;
   fieldErrors: FieldError[];
   restricted: boolean;
+  /** Round 3 (WRONG-RECOVERY): set when the default "fix the field/file" step would be wrong. */
+  recovery: RecoveryKey | null;
+}
+
+/** Overrides the operation's own recovery step: a 403 is fixed by access, a 5xx by retrying. */
+function recoveryFor(detail: string | null, status: number): RecoveryKey | null {
+  if (detail === "final_suite_content_restricted") return "recoverRestricted";
+  if (detail === "role_not_authorized" || status === 403) return "recoverAccess";
+  if (detail === "duplicate_case_key") return null; // the file is what needs fixing
+  if (detail === "not_authenticated" || status === 401) return "recoverSignIn";
+  if (status === 404 || status === 409) return "recoverNoFix";
+  if (status >= 500) return "recoverRetry";
+  return null;
+}
+
+/** Splits a localized template around one `{name}` so the value can sit in its own `<bdi>`. */
+const SLOT = "\u0000";
+function withBdi(
+  key: Parameters<typeof t0602>[0],
+  locale: Locale | string,
+  name: string,
+  value: string,
+  vars: Record<string, string | number> = {},
+): ReactNode {
+  const [before, after] = t0602(key, locale, { ...vars, [name]: SLOT }).split(SLOT);
+  return (
+    <>
+      {before}
+      <bdi>{value}</bdi>
+      {after}
+    </>
+  );
+}
+
+/** FTF-UX06 round 2 (NOT-BILINGUAL): a server-returned field name or validation code is translated
+ * for Arabic only; the default English locale keeps the exact raw text round 1 shipped (certified
+ * `ftf_0602.spec.ts` asserts the literal code/field substrings at the default locale). An unmapped
+ * field or code falls back to the raw value under Arabic too -- disclosed, not hidden, same as
+ * `ERROR_DETAIL_KEY`'s own fallback below. */
+const FIELD_LABEL_KEY: Record<string, Parameters<typeof t0602>[0]> = {
+  category: "fieldCategory",
+  severity: "fieldSeverity",
+  critical: "fieldCritical",
+  language: "fieldLanguage",
+  group_key: "fieldGroupKey",
+  grader_type: "fieldGrader",
+  input_json: "fieldInputJson",
+  expected_json: "fieldExpectedJson",
+  grader_config_json: "fieldGraderConfigJson",
+  weight: "fieldWeight",
+  case_key: "fieldCaseKey",
+};
+
+const SEVERITY_KEY: Record<(typeof SEVERITIES)[number], Parameters<typeof t0602>[0]> = {
+  low: "severityLow",
+  medium: "severityMedium",
+  high: "severityHigh",
+  critical: "severityCritical",
+};
+
+/** The visible option/row text is translated; the submitted `value` (SEVERITIES) never changes. */
+function severityDisplay(severity: string, locale: Locale | string): string {
+  if (resolveLocale(locale) === "en") return severity;
+  const key = SEVERITY_KEY[severity as (typeof SEVERITIES)[number]];
+  return key ? t0602(key, locale) : severity;
+}
+
+const FIELD_CODE_KEY: Record<string, Parameters<typeof t0602>[0]> = {
+  required: "codeRequired",
+  too_long: "codeTooLong",
+  invalid_value: "codeInvalidValue",
+  unsupported: "codeUnsupported",
+  requires_independent_grader: "codeRequiresIndependentGrader",
+  critical_oracle_not_independent: "codeCriticalOracleNotIndependent",
+  body_malformed: "codeBodyMalformed",
+  duplicate_case_key: "codeDuplicateCaseKeyField",
+  invalid_type: "codeInvalidType",
+  unknown_field: "codeUnknownField",
+  empty_object: "codeEmptyObject",
+  too_large: "codeTooLarge",
+  immutable: "codeImmutable",
+  empty_patch: "codeEmptyPatch",
+  invalid_json: "codeInvalidJson",
+};
+
+function fieldDisplay(field: string | null, locale: Locale | string): string | null {
+  if (field === null) return null;
+  if (resolveLocale(locale) === "en") return field;
+  const key = FIELD_LABEL_KEY[field];
+  return key ? t0602(key, locale) : t0602("fieldUnknown", locale);
+}
+
+function codeDisplay(code: string, locale: Locale | string): string {
+  if (resolveLocale(locale) === "en") return code;
+  const key = FIELD_CODE_KEY[code];
+  // FTF-UX06 round 3: an unmapped code is never shown raw under Arabic.
+  return key ? t0602(key, locale) : t0602("codeUnknown", locale);
+}
+
+/** Only these three well-known fetch()-level messages (Chrome/Firefox/Safari, for an unreachable
+ * server or a blocked CORS request) are translated; anything else falls back to the generic
+ * `errUnknownReason` phrase under Arabic rather than leaking raw, untranslated browser text. */
+const KNOWN_NETWORK_REASONS = new Set([
+  "Failed to fetch",
+  "Load failed",
+  "NetworkError when attempting to fetch resource.",
+]);
+
+function networkReasonDisplay(reason: string, locale: Locale | string): string {
+  if (resolveLocale(locale) === "en") return reason;
+  return KNOWN_NETWORK_REASONS.has(reason)
+    ? t0602("networkReasonUnreachable", locale)
+    : t0602("errUnknownReason", locale);
 }
 
 async function readFailure(response: Response, locale: Locale | string = "en"): Promise<Failure> {
@@ -200,22 +362,32 @@ async function readFailure(response: Response, locale: Locale | string = "en"): 
     // fall through to the generic message below
   }
   const key = detail ? ERROR_DETAIL_KEY[detail] : undefined;
+  // FTF-UX06 round 2 (NOT-BILINGUAL): an unmapped server `detail` code keeps the exact raw text
+  // round 1 shipped at the default English locale, but is never shown raw under Arabic -- a code
+  // this build does not recognize degrades to the generic, already-localized `errGeneric` message.
   const message = key
     ? t0602(key, locale)
-    : detail
+    : detail && resolveLocale(locale) === "en"
       ? detail
       : t0602("errGeneric", locale, { status: response.status });
   return {
     message,
     fieldErrors,
     restricted: detail === "final_suite_content_restricted",
+    recovery: recoveryFor(detail, response.status),
   };
 }
 
 function networkFailure(caught: unknown, locale: Locale | string = "en"): Failure {
-  const reason =
+  const raw =
     caught instanceof Error && caught.message ? caught.message : t0602("errUnknownReason", locale);
-  return { message: t0602("errNetwork", locale, { reason }), fieldErrors: [], restricted: false };
+  const reason = networkReasonDisplay(raw, locale);
+  return {
+    message: t0602("errNetwork", locale, { reason }),
+    fieldErrors: [],
+    restricted: false,
+    recovery: "recoverRetry",
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -334,7 +506,11 @@ function buildPatch(
   if (draft.critical !== original.critical) patch.critical = draft.critical;
   for (const key of ["input_json", "expected_json", "grader_config_json"] as const) {
     const parsed = parseObjectField(draft[key]);
-    if (parsed === null) return { error: t0602("jsonFieldMustBeObject", locale, { field: key }) };
+    if (parsed === null) {
+      return {
+        error: t0602("jsonFieldMustBeObject", locale, { field: fieldDisplay(key, locale) ?? key }),
+      };
+    }
     if (key === "expected_json" && Object.keys(parsed).length === 0) {
       return { error: t0602("expectedMustNotBeEmpty", locale) };
     }
@@ -353,6 +529,35 @@ function rowOrRequest(index: number | null, locale: Locale | string): string {
   return index === null ? t0602("requestWord", locale) : `${t0602("rowWord", locale)} ${index + 1}`;
 }
 
+/** FTF-UX06 round 2 (FOCUS-LOST-TO-BODY): a top-level error alert that takes keyboard focus the
+ * moment it mounts, so focus never lands on `<body>` after a failed load/import/save -- the same
+ * discipline `ui/ErrorSummary` already applies to field-level forms. Every call site (`loadPage`/
+ * `handleImport`/`handleSave`) clears its own error to `null` as its very first statement before
+ * its request even starts, so a SECOND failure -- even with the identical message -- always
+ * un-mounts this component first (the conditional render below sees `null`) and mounts a fresh
+ * instance for the new message; mounting itself is the only signal this needs, verified directly
+ * (`ftf_ux06.spec.ts`'s "a second failure with the identical message re-focuses the alert" test
+ * fails if this `useEffect` depended on `message` and the two failures compared unequal by
+ * reference instead of by mount, and passes here precisely because remounting is what the real
+ * control flow actually does, not an assumption). */
+function FocusableAlert({ message, testId }: { message: string; testId: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      role="alert"
+      data-testid={testId}
+      style={{ overflowWrap: "anywhere" }}
+    >
+      {message}
+    </p>
+  );
+}
+
 export function EvaluationCaseEditorImport({
   apiBaseUrl,
   organizationId,
@@ -368,26 +573,51 @@ export function EvaluationCaseEditorImport({
   const [nextAfter, setNextAfter] = useState<string | null>(null);
   const [restricted, setRestricted] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
+  const [listRecovery, setListRecovery] = useState<RecoveryKey>("recoverList");
   const [listLoading, setListLoading] = useState(false);
+  const importTextRef = useRef<HTMLTextAreaElement>(null);
 
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importRecovery, setImportRecovery] = useState<RecoveryKey>("recoverImport");
   const [importFieldErrors, setImportFieldErrors] = useState<FieldError[]>([]);
   /** The exact rows last sent, kept so a returned field error can name that row's own case_key
    * (per-component H9: a visual link back to the pasted row, not just an index). */
   const [importRows, setImportRows] = useState<Record<string, unknown>[]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ReactNode>(null);
 
   const [editing, setEditing] = useState<EvaluationCase | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  /** A save answered 403 final_suite_content_restricted: the form is gone, this alert stays. */
+  const [restrictedSave, setRestrictedSave] = useState<string | null>(null);
+  const [saveSubmitCount, setSaveSubmitCount] = useState(0);
+  const [editRecovery, setEditRecovery] = useState<RecoveryKey>("recoverSave");
   const [editFieldErrors, setEditFieldErrors] = useState<FieldError[]>([]);
   /** on-blur validation for the three JSON fields, independent of (and before) submit-time checks. */
   const [jsonBlurErrors, setJsonBlurErrors] = useState<Record<string, string>>({});
 
   const listUrl = casesUrl(apiBaseUrl, organizationId, projectId, suiteId);
+
+  /** FTF-UX06 round 2 (WRONG-RECOVERY-STEPS, L2 return): the recovery step named alongside each
+   * error must fit what actually failed -- a 403 is never fixed by repeating the request, and a
+   * transport/shape failure (a non-JSON response, or the request never reaching the server) is
+   * never a field problem. Each call site names its own `recoveryKey`; the default is the
+   * operation's own normal "fix and retry" phrasing. */
+  function raiseListError(message: string, recoveryKey: RecoveryKey = "recoverList") {
+    setListError(message);
+    setListRecovery(recoveryKey);
+  }
+  function raiseImportError(message: string, recoveryKey: RecoveryKey = "recoverImport") {
+    setImportError(message);
+    setImportRecovery(recoveryKey);
+  }
+  function raiseEditError(message: string, recoveryKey: RecoveryKey = "recoverSave") {
+    setEditError(message);
+    setEditRecovery(recoveryKey);
+  }
 
   function restrictContent() {
     setRestricted(true);
@@ -398,6 +628,7 @@ export function EvaluationCaseEditorImport({
 
   async function loadPage(after: string | null) {
     setListError(null);
+    setRestrictedSave(null);
     setListLoading(true);
     const query = after === null ? "" : `?after=${encodeURIComponent(after)}`;
     try {
@@ -408,17 +639,31 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        setListError(failure.message);
+        // A list retry is "Press Load cases again" even for a 5xx; only access failures differ.
+        raiseListError(
+          failure.message,
+          failure.recovery === null || failure.recovery === "recoverRetry"
+            ? "recoverList"
+            : failure.recovery,
+        );
         return;
       }
-      const body: unknown = await response.json();
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        // FTF-UX06 round 2 (NOT-BILINGUAL): a non-JSON 200 must never surface the browser's own
+        // untranslated JSON-parser message; it is the same "malformed" case as a wrong shape.
+        raiseListError(t0602("errMalformedListing", locale));
+        return;
+      }
       if (
         !isRecord(body) ||
         !Array.isArray(body.items) ||
         !body.items.every(isCase) ||
         !(body.next_after === null || typeof body.next_after === "string")
       ) {
-        setListError(t0602("errMalformedListing", locale));
+        raiseListError(t0602("errMalformedListing", locale));
         return;
       }
       setRestricted(false);
@@ -429,7 +674,7 @@ export function EvaluationCaseEditorImport({
       );
       setNextAfter(body.next_after as string | null);
     } catch (caught) {
-      setListError(networkFailure(caught, locale).message);
+      raiseListError(networkFailure(caught, locale).message);
     } finally {
       setListLoading(false);
     }
@@ -439,7 +684,7 @@ export function EvaluationCaseEditorImport({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => setImportText(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => setImportError(t0602("fileReadError", locale));
+    reader.onerror = () => raiseImportError(t0602("fileReadError", locale));
     reader.readAsText(file);
   }
 
@@ -449,12 +694,12 @@ export function EvaluationCaseEditorImport({
     setNotice(null);
     const parsed = parseImportText(importText, locale);
     if ("error" in parsed) {
-      setImportError(parsed.error);
+      raiseImportError(parsed.error);
       return;
     }
     const unsafe = nonIndependentCriticalRows(parsed.cases);
     if (unsafe.length > 0) {
-      setImportError(
+      raiseImportError(
         t0602("criticalBlockedImport", locale, {
           rows: unsafe.map((index) => index + 1).join(", "),
         }),
@@ -473,13 +718,20 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        setImportError(failure.message);
+        raiseImportError(failure.message, failure.recovery ?? "recoverImport");
         setImportFieldErrors(failure.fieldErrors);
         return;
       }
-      const body: unknown = await response.json();
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        // A malformed SERVER response is never fixed by editing the pasted file/text.
+        raiseImportError(t0602("errMalformedImport", locale), "recoverRetry");
+        return;
+      }
       if (!isRecord(body) || !Array.isArray(body.items) || !body.items.every(isCase)) {
-        setImportError(t0602("errMalformedImport", locale));
+        raiseImportError(t0602("errMalformedImport", locale), "recoverRetry");
         return;
       }
       const createdItems = body.items as EvaluationCase[];
@@ -496,8 +748,9 @@ export function EvaluationCaseEditorImport({
           : [...previous, ...createdItems].sort((a, b) => (a.case_key < b.case_key ? -1 : 1)),
       );
     } catch (caught) {
-      // Nothing is shown as imported unless the route genuinely answered 201.
-      setImportError(networkFailure(caught, locale).message);
+      // Nothing is shown as imported unless the route genuinely answered 201. A transport
+      // failure is never fixed by editing the pasted file/text.
+      raiseImportError(networkFailure(caught, locale).message, "recoverRetry");
     } finally {
       setImporting(false);
     }
@@ -536,20 +789,21 @@ export function EvaluationCaseEditorImport({
   async function handleSave() {
     if (editing === null || draft === null) return;
     setEditError(null);
+    setRestrictedSave(null);
     setEditFieldErrors([]);
     const built = buildPatch(editing, draft, locale);
     if ("error" in built) {
-      setEditError(built.error);
+      raiseEditError(built.error);
       return;
     }
     if (Object.keys(built.patch).length === 0) {
-      setEditError(t0602("nothingChanged", locale));
+      raiseEditError(t0602("nothingChanged", locale));
       return;
     }
     const effectiveCritical = (built.patch.critical ?? editing.critical) === true;
     const effectiveGrader = String(built.patch.grader_type ?? editing.grader_type);
     if (effectiveCritical && !INDEPENDENT_CRITICAL_GRADERS.includes(effectiveGrader)) {
-      setEditError(t0602("criticalBlockedEdit", locale));
+      raiseEditError(t0602("criticalBlockedEdit", locale));
       return;
     }
     setSaving(true);
@@ -566,13 +820,29 @@ export function EvaluationCaseEditorImport({
       if (!response.ok) {
         const failure = await readFailure(response, locale);
         if (failure.restricted) restrictContent();
-        setEditError(failure.message);
+        if (failure.restricted) {
+          // The form unmounts with the content (restrictContent), so the error is announced
+          // outside it, on a stable element that takes focus.
+          setRestrictedSave(
+            `${failure.message} ${t0602("restrictedSaveNotice", locale)} ${t0602("recoverRestricted", locale)}`,
+          );
+        } else {
+          raiseEditError(failure.message, failure.recovery ?? "recoverSave");
+        }
         setEditFieldErrors(failure.fieldErrors);
+        setSaveSubmitCount((n) => n + 1);
         return;
       }
-      const body: unknown = await response.json();
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        // A malformed SERVER response is never a problem with a field the user filled in.
+        raiseEditError(t0602("errMalformedSave", locale), "recoverRetry");
+        return;
+      }
       if (!isCase(body)) {
-        setEditError(t0602("errMalformedSave", locale));
+        raiseEditError(t0602("errMalformedSave", locale), "recoverRetry");
         return;
       }
       setCases((previous) =>
@@ -580,9 +850,10 @@ export function EvaluationCaseEditorImport({
       );
       setEditing(body);
       setDraft(draftFrom(body));
-      setNotice(t0602("noticeSaved", locale, { key: body.case_key }));
+      setNotice(withBdi("noticeSaved", locale, "key", body.case_key));
     } catch (caught) {
-      setEditError(networkFailure(caught, locale).message);
+      // A transport failure (the request never reached the server) is never a field problem.
+      raiseEditError(networkFailure(caught, locale).message, "recoverRetry");
     } finally {
       setSaving(false);
     }
@@ -595,17 +866,22 @@ export function EvaluationCaseEditorImport({
   ) {
     if (errors.length === 0) return null;
     return (
-      <ul data-testid={testId} id={testId}>
+      <ul data-testid={testId} id={`${idPrefix}-${testId}`}>
         {errors.map((entry, position) => {
           const caseKey =
             entry.index !== null && typeof rows[entry.index]?.case_key === "string"
               ? (rows[entry.index]!.case_key as string)
               : null;
           return (
-            <li key={position} id={`${testId}-item-${position}`}>
+            <li
+              key={position}
+              id={`${idPrefix}-${testId}-item-${position}`}
+              style={{ overflowWrap: "anywhere" }}
+            >
               {rowOrRequest(entry.index, locale)}
-              {entry.field === null ? "" : ` / ${entry.field}`}: {entry.code}
-              {caseKey ? t0602("rowHint", locale, { key: caseKey }) : null}
+              {entry.field === null ? "" : ` / ${fieldDisplay(entry.field, locale)}`}:{" "}
+              {codeDisplay(entry.code, locale)}
+              {caseKey ? withBdi("rowHint", locale, "key", caseKey) : null}
             </li>
           );
         })}
@@ -621,9 +897,35 @@ export function EvaluationCaseEditorImport({
     (editErrorsByField[key] ??= []).push(e.code);
   }
 
+  const SUMMARY_FIELD_ID: Record<string, string> = {
+    category: "field-category",
+    severity: "field-severity",
+    critical: "field-critical",
+    language: "field-language",
+    group_key: "field-group-key",
+    grader_type: "field-grader-type",
+    input_json: "field-input-json",
+    expected_json: "field-expected-json",
+    grader_config_json: "field-grader-config-json",
+    weight: "field-weight",
+  };
+  /** Field errors that name a field on this form become ErrorSummary links (NN/g H9). */
+  const summaryItems = editFieldErrors.flatMap((e) =>
+    e.field !== null && SUMMARY_FIELD_ID[e.field]
+      ? [
+          {
+            fieldId: `${idPrefix}-${SUMMARY_FIELD_ID[e.field]}`,
+            message: `${fieldDisplay(e.field, locale)}: ${codeDisplay(e.code, locale)}`,
+          },
+        ]
+      : [],
+  );
+
   function fieldError(name: string): string | undefined {
     const codes = editErrorsByField[name];
-    return codes && codes.length > 0 ? codes.join(", ") : undefined;
+    return codes && codes.length > 0
+      ? codes.map((code) => codeDisplay(code, locale)).join(", ")
+      : undefined;
   }
 
   /** Label + input wrapper replicating `ui/Field`'s own id/helper/error/aria-describedby
@@ -634,7 +936,12 @@ export function EvaluationCaseEditorImport({
   }
 
   return (
-    <section aria-label={t0602("heading", locale)} lang={lang} dir={dir}>
+    <section
+      aria-label={t0602("heading", locale)}
+      lang={lang}
+      dir={dir}
+      style={{ overflowWrap: "anywhere" }}
+    >
       <h2>{t0602("heading", locale)}</h2>
 
       <div aria-busy={listLoading}>
@@ -647,12 +954,16 @@ export function EvaluationCaseEditorImport({
         </Button>
         {listLoading ? <Pending label={t0602("loadingCases", locale)} locale={lang} /> : null}
         {listError ? (
-          <p role="alert" data-testid="list-error">
-            {listError}
-          </p>
+          <FocusableAlert
+            message={`${listError} ${t0602(listRecovery, locale)}`}
+            testId="list-error"
+          />
         ) : null}
         {restricted ? (
           <p data-testid="restricted-notice">{t0602("restrictedNotice", locale)}</p>
+        ) : null}
+        {restrictedSave ? (
+          <FocusableAlert message={restrictedSave} testId="restricted-save-error" />
         ) : null}
         {cases !== null ? (
           cases.length === 0 ? (
@@ -660,19 +971,35 @@ export function EvaluationCaseEditorImport({
               <EmptyState
                 title={t0602("emptyTitle", locale)}
                 why={t0602("emptyWhy", locale)}
-                action={null}
+                action={
+                  <Button
+                    data-testid="empty-state-import-action"
+                    onClick={() => importTextRef.current?.focus()}
+                  >
+                    {t0602("emptyAction", locale)}
+                  </Button>
+                }
               />
             </div>
           ) : (
             <ul data-testid="case-list">
               {cases.map((item) => (
-                <li key={item.id} data-testid={`case-row-${item.id}`}>
-                  <span data-testid={`case-key-${item.id}`}>{item.case_key}</span>{" "}
-                  <span>{item.category}</span> <span>{item.severity}</span>
+                <li
+                  key={item.id}
+                  data-testid={`case-row-${item.id}`}
+                  style={{ overflowWrap: "anywhere" }}
+                >
+                  <span data-testid={`case-key-${item.id}`}>
+                    <bdi>{item.case_key}</bdi>
+                  </span>{" "}
+                  <span>
+                    <bdi>{item.category}</bdi>
+                  </span>{" "}
+                  <span>{severityDisplay(item.severity, locale)}</span>
                   {item.critical ? <strong> {t0602("criticalTag", locale)}</strong> : null}{" "}
                   <span>{item.language}</span>{" "}
                   <span>
-                    {t0602("groupPrefix", locale)} {item.group_key}
+                    {t0602("groupPrefix", locale)} <bdi>{item.group_key}</bdi>
                   </span>{" "}
                   <span>{item.grader_type}</span>{" "}
                   <Button data-testid={`edit-case-${item.id}`} onClick={() => startEdit(item)}>
@@ -699,9 +1026,10 @@ export function EvaluationCaseEditorImport({
         <p id={`${idPrefix}-import-help`}>
           {t0602("importHelp", locale, { max: MAX_IMPORT_CASES })}
         </p>
-        <label>
+        <label style={{ display: "block", maxInlineSize: "100%" }}>
           {t0602("importFileLabel", locale)}
           <input
+            style={{ maxInlineSize: "100%" }}
             type="file"
             accept=".json,.jsonl,application/json"
             data-testid="import-file"
@@ -711,11 +1039,12 @@ export function EvaluationCaseEditorImport({
         <label>
           {t0602("importTextLabel", locale)}
           <textarea
+            ref={importTextRef}
             data-testid="import-text"
             aria-label={t0602("importTextLabel", locale)}
             aria-describedby={describedBy(
               `${idPrefix}-import-help`,
-              importFieldErrors.length > 0 ? "import-field-errors" : undefined,
+              importFieldErrors.length > 0 ? `${idPrefix}-import-field-errors` : undefined,
             )}
             value={importText}
             onChange={(event) => setImportText(event.target.value)}
@@ -726,9 +1055,10 @@ export function EvaluationCaseEditorImport({
         </Button>
         {importing ? <Pending label={t0602("importingCases", locale)} locale={lang} /> : null}
         {importError ? (
-          <p role="alert" data-testid="import-error">
-            {importError}
-          </p>
+          <FocusableAlert
+            message={`${importError} ${t0602(importRecovery, locale)}`}
+            testId="import-error"
+          />
         ) : null}
         {renderFieldErrors(importFieldErrors, "import-field-errors", importRows)}
         {notice ? (
@@ -747,111 +1077,92 @@ export function EvaluationCaseEditorImport({
             handleSave();
           }}
         >
-          <h3>
+          <h3 style={{ overflowWrap: "anywhere" }}>
             {t0602("editHeading", locale)}{" "}
-            <span data-testid="edit-case-key">{editing.case_key}</span>
+            <span data-testid="edit-case-key">
+              <bdi>{editing.case_key}</bdi>
+            </span>
           </h3>
-          <label htmlFor="field-category">
-            {t0602("fieldCategory", locale)}
-            <input
-              id="field-category"
-              data-testid="field-category"
-              value={draft.category}
-              onChange={(event) => updateDraft({ category: event.target.value })}
-              aria-describedby={describedBy(
-                fieldError("category") ? "field-category-error" : undefined,
-              )}
-            />
-          </label>
-          {fieldError("category") ? (
-            <div id="field-category-error" role="alert">
-              {fieldError("category")}
-            </div>
-          ) : null}
-          <label htmlFor="field-severity">
+          <Field
+            id={`${idPrefix}-field-category`}
+            data-testid="field-category"
+            label={t0602("fieldCategory", locale)}
+            requirement="required"
+            locale={lang}
+            value={draft.category}
+            onChange={(event) => updateDraft({ category: event.target.value })}
+            error={fieldError("category")}
+          />
+          <label htmlFor={`${idPrefix}-field-severity`}>
             {t0602("fieldSeverity", locale)}
             <select
-              id="field-severity"
+              id={`${idPrefix}-field-severity`}
               data-testid="field-severity"
               value={draft.severity}
               onChange={(event) => updateDraft({ severity: event.target.value })}
               aria-describedby={describedBy(
-                fieldError("severity") ? "field-severity-error" : undefined,
+                fieldError("severity") ? `${idPrefix}-field-severity-error` : undefined,
               )}
             >
               {SEVERITIES.map((severity) => (
                 <option key={severity} value={severity}>
-                  {severity}
+                  {severityDisplay(severity, locale)}
                 </option>
               ))}
             </select>
           </label>
           {fieldError("severity") ? (
-            <div id="field-severity-error" role="alert">
+            <div id={`${idPrefix}-field-severity-error`} role="alert">
               {fieldError("severity")}
             </div>
           ) : null}
-          <label htmlFor="field-critical">
+          <label htmlFor={`${idPrefix}-field-critical`}>
             {t0602("fieldCritical", locale)}
             <input
               type="checkbox"
-              id="field-critical"
+              id={`${idPrefix}-field-critical`}
               data-testid="field-critical"
               checked={draft.critical}
               onChange={(event) => updateDraft({ critical: event.target.checked })}
               aria-describedby={describedBy(
-                fieldError("critical") ? "field-critical-error" : undefined,
+                fieldError("critical") ? `${idPrefix}-field-critical-error` : undefined,
               )}
             />
           </label>
           {fieldError("critical") ? (
-            <div id="field-critical-error" role="alert">
+            <div id={`${idPrefix}-field-critical-error`} role="alert">
               {fieldError("critical")}
             </div>
           ) : null}
-          <label htmlFor="field-language">
-            {t0602("fieldLanguage", locale)}
-            <input
-              id="field-language"
-              data-testid="field-language"
-              value={draft.language}
-              onChange={(event) => updateDraft({ language: event.target.value })}
-              aria-describedby={describedBy(
-                fieldError("language") ? "field-language-error" : undefined,
-              )}
-            />
-          </label>
-          {fieldError("language") ? (
-            <div id="field-language-error" role="alert">
-              {fieldError("language")}
-            </div>
-          ) : null}
-          <label htmlFor="field-group-key">
-            {t0602("fieldGroupKey", locale)}
-            <input
-              id="field-group-key"
-              data-testid="field-group-key"
-              value={draft.group_key}
-              onChange={(event) => updateDraft({ group_key: event.target.value })}
-              aria-describedby={describedBy(
-                fieldError("group_key") ? "field-group-key-error" : undefined,
-              )}
-            />
-          </label>
-          {fieldError("group_key") ? (
-            <div id="field-group-key-error" role="alert">
-              {fieldError("group_key")}
-            </div>
-          ) : null}
-          <label htmlFor="field-grader-type">
+          <Field
+            id={`${idPrefix}-field-language`}
+            data-testid="field-language"
+            label={t0602("fieldLanguage", locale)}
+            requirement="required"
+            locale={lang}
+            value={draft.language}
+            onChange={(event) => updateDraft({ language: event.target.value })}
+            error={fieldError("language")}
+          />
+          <Field
+            id={`${idPrefix}-field-group-key`}
+            data-testid="field-group-key"
+            label={t0602("fieldGroupKey", locale)}
+            requirement="required"
+            locale={lang}
+            value={draft.group_key}
+            onChange={(event) => updateDraft({ group_key: event.target.value })}
+            error={fieldError("group_key")}
+          />
+          <label htmlFor={`${idPrefix}-field-grader-type`}>
             {t0602("fieldGrader", locale)}
             <select
-              id="field-grader-type"
+              id={`${idPrefix}-field-grader-type`}
               data-testid="field-grader-type"
               value={draft.grader_type}
               onChange={(event) => updateDraft({ grader_type: event.target.value })}
               aria-describedby={describedBy(
-                fieldError("grader_type") ? "field-grader-type-error" : undefined,
+                fieldError("grader_type") ? `${idPrefix}-field-grader-type-error` : undefined,
               )}
             >
               {GRADER_TYPES.map((grader) => (
@@ -862,31 +1173,31 @@ export function EvaluationCaseEditorImport({
             </select>
           </label>
           {fieldError("grader_type") ? (
-            <div id="field-grader-type-error" role="alert">
+            <div id={`${idPrefix}-field-grader-type-error`} role="alert">
               {fieldError("grader_type")}
             </div>
           ) : null}
-          <label htmlFor="field-input-json">
+          <label htmlFor={`${idPrefix}-field-input-json`}>
             {t0602("fieldInputJson", locale)}
             <textarea
-              id="field-input-json"
+              id={`${idPrefix}-field-input-json`}
               data-testid="field-input-json"
               value={draft.input_json}
               onChange={(event) => updateDraft({ input_json: event.target.value })}
               onBlur={(event) => blurJsonField("input_json", event.target.value)}
               aria-describedby={describedBy(
-                "field-input-json-hint",
-                jsonBlurErrors.input_json ? "field-input-json-blur-error" : undefined,
-                fieldError("input_json") ? "field-input-json-error" : undefined,
+                `${idPrefix}-field-input-json-hint`,
+                jsonBlurErrors.input_json ? `${idPrefix}-field-input-json-blur-error` : undefined,
+                fieldError("input_json") ? `${idPrefix}-field-input-json-error` : undefined,
               )}
             />
           </label>
-          <div id="field-input-json-hint" data-testid="field-input-json-hint">
+          <div id={`${idPrefix}-field-input-json-hint`} data-testid="field-input-json-hint">
             {t0602("jsonHint", locale)}
           </div>
           {jsonBlurErrors.input_json ? (
             <div
-              id="field-input-json-blur-error"
+              id={`${idPrefix}-field-input-json-blur-error`}
               role="alert"
               data-testid="field-input-json-blur-error"
             >
@@ -894,31 +1205,33 @@ export function EvaluationCaseEditorImport({
             </div>
           ) : null}
           {fieldError("input_json") ? (
-            <div id="field-input-json-error" role="alert">
+            <div id={`${idPrefix}-field-input-json-error`} role="alert">
               {fieldError("input_json")}
             </div>
           ) : null}
-          <label htmlFor="field-expected-json">
+          <label htmlFor={`${idPrefix}-field-expected-json`}>
             {t0602("fieldExpectedJson", locale)}
             <textarea
-              id="field-expected-json"
+              id={`${idPrefix}-field-expected-json`}
               data-testid="field-expected-json"
               value={draft.expected_json}
               onChange={(event) => updateDraft({ expected_json: event.target.value })}
               onBlur={(event) => blurJsonField("expected_json", event.target.value)}
               aria-describedby={describedBy(
-                "field-expected-json-hint",
-                jsonBlurErrors.expected_json ? "field-expected-json-blur-error" : undefined,
-                fieldError("expected_json") ? "field-expected-json-error" : undefined,
+                `${idPrefix}-field-expected-json-hint`,
+                jsonBlurErrors.expected_json
+                  ? `${idPrefix}-field-expected-json-blur-error`
+                  : undefined,
+                fieldError("expected_json") ? `${idPrefix}-field-expected-json-error` : undefined,
               )}
             />
           </label>
-          <div id="field-expected-json-hint" data-testid="field-expected-json-hint">
+          <div id={`${idPrefix}-field-expected-json-hint`} data-testid="field-expected-json-hint">
             {t0602("jsonHint", locale)}
           </div>
           {jsonBlurErrors.expected_json ? (
             <div
-              id="field-expected-json-blur-error"
+              id={`${idPrefix}-field-expected-json-blur-error`}
               role="alert"
               data-testid="field-expected-json-blur-error"
             >
@@ -926,33 +1239,38 @@ export function EvaluationCaseEditorImport({
             </div>
           ) : null}
           {fieldError("expected_json") ? (
-            <div id="field-expected-json-error" role="alert">
+            <div id={`${idPrefix}-field-expected-json-error`} role="alert">
               {fieldError("expected_json")}
             </div>
           ) : null}
-          <label htmlFor="field-grader-config-json">
+          <label htmlFor={`${idPrefix}-field-grader-config-json`}>
             {t0602("fieldGraderConfigJson", locale)}
             <textarea
-              id="field-grader-config-json"
+              id={`${idPrefix}-field-grader-config-json`}
               data-testid="field-grader-config-json"
               value={draft.grader_config_json}
               onChange={(event) => updateDraft({ grader_config_json: event.target.value })}
               onBlur={(event) => blurJsonField("grader_config_json", event.target.value)}
               aria-describedby={describedBy(
-                "field-grader-config-json-hint",
+                `${idPrefix}-field-grader-config-json-hint`,
                 jsonBlurErrors.grader_config_json
-                  ? "field-grader-config-json-blur-error"
+                  ? `${idPrefix}-field-grader-config-json-blur-error`
                   : undefined,
-                fieldError("grader_config_json") ? "field-grader-config-json-error" : undefined,
+                fieldError("grader_config_json")
+                  ? `${idPrefix}-field-grader-config-json-error`
+                  : undefined,
               )}
             />
           </label>
-          <div id="field-grader-config-json-hint" data-testid="field-grader-config-json-hint">
+          <div
+            id={`${idPrefix}-field-grader-config-json-hint`}
+            data-testid="field-grader-config-json-hint"
+          >
             {t0602("jsonHint", locale)}
           </div>
           {jsonBlurErrors.grader_config_json ? (
             <div
-              id="field-grader-config-json-blur-error"
+              id={`${idPrefix}-field-grader-config-json-blur-error`}
               role="alert"
               data-testid="field-grader-config-json-blur-error"
             >
@@ -960,36 +1278,36 @@ export function EvaluationCaseEditorImport({
             </div>
           ) : null}
           {fieldError("grader_config_json") ? (
-            <div id="field-grader-config-json-error" role="alert">
+            <div id={`${idPrefix}-field-grader-config-json-error`} role="alert">
               {fieldError("grader_config_json")}
             </div>
           ) : null}
-          <label htmlFor="field-weight">
-            {t0602("fieldWeight", locale)}
-            <input
-              id="field-weight"
-              data-testid="field-weight"
-              value={draft.weight}
-              onChange={(event) => updateDraft({ weight: event.target.value })}
-              aria-describedby={describedBy(
-                fieldError("weight") ? "field-weight-error" : undefined,
-              )}
-            />
-          </label>
-          {fieldError("weight") ? (
-            <div id="field-weight-error" role="alert">
-              {fieldError("weight")}
-            </div>
-          ) : null}
+          <Field
+            id={`${idPrefix}-field-weight`}
+            data-testid="field-weight"
+            label={t0602("fieldWeight", locale)}
+            requirement="required"
+            locale={lang}
+            value={draft.weight}
+            onChange={(event) => updateDraft({ weight: event.target.value })}
+            error={fieldError("weight")}
+          />
           <Button variant="primary" data-testid="save-case-button" disabled={saving} type="submit">
             {t0602("saveButton", locale)}
           </Button>
           {saving ? <Pending label={t0602("savingCase", locale)} locale={lang} /> : null}
           {editError ? (
-            <p role="alert" data-testid="edit-error">
-              {editError}
-            </p>
+            <FocusableAlert
+              message={`${editError} ${t0602(editRecovery, locale)}`}
+              testId="edit-error"
+            />
           ) : null}
+          <ErrorSummary
+            errors={summaryItems}
+            title={t0602("summaryTitle", locale)}
+            locale={lang}
+            submitCount={saveSubmitCount}
+          />
           {renderFieldErrors(editFieldErrors, "edit-field-errors", [])}
         </form>
       ) : null}
