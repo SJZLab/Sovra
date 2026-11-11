@@ -1555,3 +1555,64 @@ describe("[UX06-R3 PRE-REVIEW] ids, recovery variants, stale alert, remaining pi
     expect(screen.queryByText("Fix these fields")).toBeNull();
   });
 });
+
+describe("[UX06-R3 PRE-REVIEW 2] duplicate key, 401, summary lang", () => {
+  test("import 409 duplicate_case_key still says to fix the file, in en and ar", async () => {
+    for (const [locale, phrase] of [
+      ["en", "Fix the file or text above"],
+      ["ar", "أصلح الملف أو النص أعلاه"],
+    ] as const) {
+      renderUI(locale);
+      enqueue("POST", LIST_URL, fail(409, { detail: "duplicate_case_key" }));
+      fireEvent.change(screen.getByTestId("import-text"), {
+        target: { value: JSON.stringify([importRow("c1")]) },
+      });
+      fireEvent.click(screen.getByTestId("import-button"));
+      await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+      const text = screen.getByTestId("import-error").textContent ?? "";
+      expect(text).toContain(phrase);
+      expect(text).not.toContain("Reload the list");
+      cleanup();
+    }
+  });
+
+  test("a 401 not_authenticated names signing in, never a raw code or a field", async () => {
+    for (const [locale, phrase] of [
+      ["en", "Sign in again"],
+      ["ar", "سجّل الدخول مرة أخرى"],
+    ] as const) {
+      renderUI(locale);
+      enqueue("POST", LIST_URL, fail(401, { detail: "not_authenticated" }));
+      fireEvent.change(screen.getByTestId("import-text"), {
+        target: { value: JSON.stringify([importRow("c1")]) },
+      });
+      fireEvent.click(screen.getByTestId("import-button"));
+      await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+      const text = screen.getByTestId("import-error").textContent ?? "";
+      expect(text).toContain(phrase);
+      expect(text).not.toContain("not_authenticated");
+      expect(text).not.toMatch(/Fix the (file|field)/);
+      cleanup();
+    }
+  });
+
+  test("the ErrorSummary carries lang=ar dir=rtl under ar", async () => {
+    renderUI("ar");
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue(
+      "PATCH",
+      `${LIST_URL}/${CASE_A}`,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "language", code: "invalid_value" }],
+      }),
+    );
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByText("أصلح هذه الحقول")).toBeTruthy());
+    const box = screen.getByText("أصلح هذه الحقول").closest("[role=alert]")!;
+    expect(box.getAttribute("lang")).toBe("ar");
+    expect(box.getAttribute("dir")).toBe("rtl");
+  });
+});

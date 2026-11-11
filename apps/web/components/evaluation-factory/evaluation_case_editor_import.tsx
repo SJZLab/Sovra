@@ -191,6 +191,7 @@ export function caseUrl(
 /** Maps a backend `detail` code to its catalogue key; an unknown code falls through to `errGeneric`. */
 const ERROR_DETAIL_KEY: Record<string, Parameters<typeof t0602>[0]> = {
   not_found: "errNotFound",
+  not_authenticated: "errNotAuthenticated",
   suite_locked: "errSuiteLocked",
   duplicate_case_key: "errDuplicateCaseKey",
   role_not_authorized: "errRoleNotAuthorized",
@@ -217,7 +218,8 @@ type RecoveryKey =
   | "recoverRestricted"
   | "recoverRetry"
   | "recoverAccess"
-  | "recoverNoFix";
+  | "recoverNoFix"
+  | "recoverSignIn";
 
 interface Failure {
   message: string;
@@ -231,6 +233,8 @@ interface Failure {
 function recoveryFor(detail: string | null, status: number): RecoveryKey | null {
   if (detail === "final_suite_content_restricted") return "recoverRestricted";
   if (detail === "role_not_authorized" || status === 403) return "recoverAccess";
+  if (detail === "duplicate_case_key") return null; // the file is what needs fixing
+  if (detail === "not_authenticated" || status === 401) return "recoverSignIn";
   if (status === 404 || status === 409) return "recoverNoFix";
   if (status >= 500) return "recoverRetry";
   return null;

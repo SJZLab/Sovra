@@ -213,6 +213,11 @@ const STRINGS = {
     ar: "اطلب من أحد المسؤولين تغيير دورك، ثم حاول مرة أخرى.",
   },
   /** 404/409 (not found, suite locked): editing the field or file cannot help. */
+  errNotAuthenticated: { en: "You are not signed in.", ar: "لم تسجّل الدخول." },
+  recoverSignIn: {
+    en: "Sign in again, then retry.",
+    ar: "سجّل الدخول مرة أخرى، ثم أعد المحاولة.",
+  },
   recoverNoFix: {
     en: "Reload the list, or ask an administrator if you expected this to work.",
     ar: "أعد تحميل القائمة، أو اسأل أحد المسؤولين إن كنت تتوقع أن ينجح هذا.",
