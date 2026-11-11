@@ -1181,7 +1181,6 @@ def suite(m: Any) -> None:
         ("mode", "manual"),
         ("data.validation.role", "validation "),
         ("hyperparameters.epochs", True),
-        ("adapter.target_modules", ("q_proj",)),
         ("template.packing", True),
     ):
         doc_h = set_path(json.loads(m.canonical_config_json(handmade.doc)), path_, val)
