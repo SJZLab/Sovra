@@ -1777,13 +1777,13 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "qlora-without-nf4",
-        'if (doc["method"] == "qlora") != (quant == "nf4"):',
-        'if (doc["method"] == "qlora") and (quant != "nf4"):',
+        'if (doc["method"] == "qlora") != (doc["precision"]["quantization"] == "nf4"):',
+        'if (doc["method"] == "qlora") and (doc["precision"]["quantization"] != "nf4"):',
     ),
     (
         "lora-with-nf4",
-        'if (doc["method"] == "qlora") != (quant == "nf4"):',
-        'if (doc["method"] == "lora") and (quant != "none"):',
+        'if (doc["method"] == "qlora") != (doc["precision"]["quantization"] == "nf4"):',
+        'if (doc["method"] == "lora") and (doc["precision"]["quantization"] != "none"):',
     ),
     (
         "casefold-enum",
@@ -1912,7 +1912,7 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "catalog-artifact-dropped",
-        '        if cat.mapped_artifact_id != art.artifact_id:\n            raise _fail("catalog_artifact_mismatch")\n',
+        '        if cat.mapped_artifact_id != base[\"trainable_artifact_id\"]:\n            raise _fail("catalog_artifact_mismatch")\n',
         "",
     ),
     ("catalog-version-dropped", '            or cat.version != base["catalog_version"]\n', ""),

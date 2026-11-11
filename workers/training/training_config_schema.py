@@ -598,8 +598,7 @@ def resolve_training_config(
         raise _fail("invalid_source_role")
     if train["split_manifest_id"] != validation["split_manifest_id"]:
         raise _fail("split_manifest_mismatch")
-    quant = doc["precision"]["quantization"]
-    if (doc["method"] == "qlora") != (quant == "nf4"):
+    if (doc["method"] == "qlora") != (doc["precision"]["quantization"] == "nf4"):
         raise _fail("method_quantization_mismatch")
 
     # 4. Facts.
@@ -623,7 +622,7 @@ def resolve_training_config(
             or cat.version != base["catalog_version"]
         ):
             raise _fail("catalog_mapping_changed")
-        if cat.mapped_artifact_id != art.artifact_id:
+        if cat.mapped_artifact_id != base["trainable_artifact_id"]:
             raise _fail("catalog_artifact_mismatch")
     if split.manifest_id != train["split_manifest_id"] or split.status != "locked":
         raise _fail("split_manifest_not_locked")
