@@ -602,6 +602,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-H010-P2 negative-test proof (import-validation activity -- outcome tables, resolved-model echo match, terminal-transaction connection re-check, claim/fencing, route seams, 97 fault-injected module copies; no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p2.py
+      - name: FTF-H010-P5 negative-test proof (import wizard UI contract parity -- every backend failure code has en+ar text, origins/states/ref cap/role sets equal the backend's, base_url and digest columns never read, fault-injected copies of the component source; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h010_p5.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
@@ -3371,6 +3373,55 @@ jobs:
       - name: Prove the real quality-issue UI against the real router and PostgreSQL 16
         run: uv run python3 tests/integration/test_ftf_0516_ui_real_api.py
 
+  model-import-ui-real-api-integration:
+    # FTF-H010-P5 UI (UI CHECKLIST f): the real import wizard
+    # (apps/web/components/model-import/import_model_wizard_ui.tsx, Vitest + jsdom) against the real
+    # model-import, model-version, artifact, project, LiteLLM connection and catalog routers on a real
+    # uvicorn server over PostgreSQL 16 as sovra_app, with FTF-H010-P2's local TLS gateway and OpenBao
+    # stand-ins and FTF-H010-P3's safetensors fixtures: endpoint success / echo mismatch / gateway
+    # down, weights success / digest mismatch / revoked license / private_s3, adapter on a mismatched
+    # base, role gating, a foreign project, reload mid-queue and a dropped POST response -- then an
+    # independent check of the stored rows -- tests/integration/test_ftf_h010_p5_ui_real_api.py
+    # (spec: apps/web/tests/real_api/ftf_h010_p5_ui_real_api.realapi.ts). The harness's
+    # /__harness/advance stands in for the absent FTF-0801/H016 dispatcher and is labelled as such.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' model-import-ui-real-api-integration ')
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftfh010p5ui
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftfh010p5ui"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftfh010p5ui
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Install JS/TS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prove the real import wizard against the real routers, PostgreSQL 16 and a local TLS gateway
+        run: uv run python3 tests/integration/test_ftf_h010_p5_ui_real_api.py
+
   dataset-upload-hardening-integration:
     # FTF-0501-P2: real Postgres evidence for migration 0025: a closed
     # (rejected / expired / verified) upload session cannot be reopened or
@@ -4329,6 +4380,7 @@ jobs:
       - mlflow-durable-outbox-integration
       - model-import-integration
       - model-import-validation-integration
+      - model-import-ui-real-api-integration
       - model-weights-import-integration
       - model-role-assignment-integration
       - candidate-selection-integration
