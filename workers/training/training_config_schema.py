@@ -201,9 +201,15 @@ def _parse_decimal(value: object) -> Decimal | None:
     return Decimal(value)
 
 
-def _normalize(value: Decimal) -> str:
-    """Canonical decimal text: no exponent, no trailing zeros ("0.00020" == "0.0002")."""
-    return format(value.normalize(), "f")
+def _normalize(text: str) -> str:
+    """Canonical decimal text of an already-validated plain decimal string.
+
+    Textual, never `Decimal.normalize()`: that rounds to the caller's thread-local decimal context
+    (28 digits by default) and would let two different values hash equal.
+    """
+    whole, _, frac = text.partition(".")
+    frac = frac.rstrip("0")
+    return f"{whole}.{frac}" if frac else whole
 
 
 def _exact_keys(
@@ -295,7 +301,7 @@ def _bounded_decimal(value: object, name: str, code: str, *, exclusive_low: bool
     low, high = Decimal(str(low_text)), Decimal(str(high_text))
     if parsed > high or parsed < low or (exclusive_low and parsed == low):
         raise _fail(code)
-    return _normalize(parsed)
+    return _normalize(str(value))
 
 
 def parse_training_config_request(body: object) -> TrainingConfigRequest:
@@ -451,7 +457,7 @@ def parse_training_config_request(body: object) -> TrainingConfigRequest:
     cost = _parse_decimal(budget["max_cost"])
     if cost is None or cost <= 0:
         raise _fail("invalid_budget")
-    cost_text = _normalize(cost)
+    cost_text = _normalize(str(budget["max_cost"]))
     whole, _, frac = cost_text.partition(".")
     if (
         len(whole) > LIMITS["max_cost_integer_digits"]

@@ -234,7 +234,28 @@
             "model_catalog_entry_id",
             "catalog_version"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "if": {
+            "properties": {
+              "model_catalog_entry_id": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "catalog_version": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "catalog_version": {
+                "type": "integer"
+              }
+            }
+          }
         },
         "tokenizer": {
           "type": "object",
@@ -507,7 +528,32 @@
         "adapter",
         "budget"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "advanced"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "auto_rule_version": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "auto_rule_version": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     },
     "ResolvedTrainingConfig": {
       "type": "object",
@@ -581,7 +627,28 @@
             "model_catalog_entry_id",
             "catalog_version"
           ],
-          "additionalProperties": false
+          "additionalProperties": false,
+          "if": {
+            "properties": {
+              "model_catalog_entry_id": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "catalog_version": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "catalog_version": {
+                "type": "integer"
+              }
+            }
+          }
         },
         "tokenizer": {
           "type": "object",
@@ -885,7 +952,32 @@
         "budget",
         "server"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "advanced"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "auto_rule_version": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "auto_rule_version": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

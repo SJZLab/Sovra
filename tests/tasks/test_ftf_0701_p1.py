@@ -1109,6 +1109,85 @@ def suite(m: Any) -> None:
         "target_modules order matters",
         sha_with(set_path(base, "adapter.target_modules", ["v_proj", "q_proj"])) != sha0,
     )
+    # decimals are exact whatever the caller's decimal context is
+    import decimal
+
+    long_lr = "0.00020000000000000000000000000001"
+    check(
+        "A20x",
+        "29+ significant digit learning_rate hashes differently",
+        sha_with(set_path(base, "hyperparameters.learning_rate", long_lr)) != sha0,
+    )
+    check(
+        "A20x",
+        "29+ significant digit dropout hashes differently",
+        sha_with(set_path(base, "adapter.lora_dropout", "0.0500000000000000000000000001")) != sha0,
+    )
+    check(
+        "A20x",
+        "long learning_rate stored exactly",
+        m.parse_training_config_request(
+            set_path(base, "hyperparameters.learning_rate", long_lr)
+        ).doc["hyperparameters"]["learning_rate"]
+        == long_lr,
+    )
+    for bad_cost in (
+        "1.00000000000000000000000000001",
+        "12345678901234.000000000000000000000001",
+        "0.00001",
+        "1.00001",
+    ):
+        check(
+            "A20x",
+            f"max_cost {bad_cost} refused",
+            parse_code(m, set_path(base, "budget.max_cost", bad_cost)) == "invalid_budget",
+        )
+    check(
+        "A20x",
+        "max_cost with many trailing zeros accepted",
+        parse_code(m, set_path(base, "budget.max_cost", "1.0000000000000000000000000000000"))
+        is None,
+    )
+    with decimal.localcontext() as ctx:
+        ctx.prec = 3
+        ctx.traps[decimal.Inexact] = True
+        ctx.traps[decimal.Rounded] = True
+        hostile = m.parse_training_config_request(set_path(base, "budget.max_cost", "10.5555"))
+        check(
+            "A20x",
+            "hostile context cannot round max_cost",
+            hostile.doc["budget"]["max_cost"] == "10.5555",
+        )
+        check(
+            "A20x",
+            "hostile context cannot round learning_rate",
+            m.parse_training_config_request(
+                set_path(base, "hyperparameters.learning_rate", "0.000123456")
+            ).doc["hyperparameters"]["learning_rate"]
+            == "0.000123456",
+        )
+        check("A20x", "hostile context sha equals normal sha", sha_with() == sha0)
+        check(
+            "A20x",
+            "hostile context still refuses 29-digit max_cost with a code",
+            parse_code(m, set_path(base, "budget.max_cost", "1.00000000000000000000000000001"))
+            == "invalid_budget",
+        )
+
+    class L(list):  # type: ignore[type-arg]
+        pass
+
+    check(
+        "A21x",
+        "list subclass target_modules refused",
+        parse_code(m, set_path(base, "adapter.target_modules", L(["q_proj"])))
+        == "invalid_target_modules",
+    )
+    check(
+        "E15",
+        "scope substring does not authorize",
+        fcode(budget=replace(b, scopes=("pretraining",))) == "budget_scope_not_authorized",
+    )
     check("G5", "target_modules is frozen too", _modules_frozen(ok.doc))
     # case/whitespace-only differences between a request and a fact are real differences
     check(
@@ -1290,6 +1369,13 @@ def _validate(schema: dict[str, Any], defs: dict[str, Any], value: Any) -> bool:
         return type(value) is type(schema["const"]) and value == schema["const"]
     if "enum" in schema:
         return any(type(value) is type(e) and value == e for e in schema["enum"])
+    for sub in schema.get("allOf", []):
+        if not _validate(sub, defs, value):
+            return False
+    if "if" in schema:
+        branch = schema.get("then") if _validate(schema["if"], defs, value) else schema.get("else")
+        if branch is not None and not _validate(branch, defs, value):
+            return False
     kind = schema.get("type")
     kinds = kind if isinstance(kind, list) else [kind]
     if not any(_type_ok(k, value) for k in kinds):
@@ -1311,7 +1397,8 @@ def _validate(schema: dict[str, Any], defs: dict[str, Any], value: Any) -> bool:
                 return False
         if "x-max-integer-digits" in schema:
             d = Decimal(value)
-            whole, _, frac = format(d.normalize(), "f").partition(".")
+            whole, _, frac = value.partition(".")
+            frac = frac.rstrip("0")
             if (
                 d <= Decimal(schema["x-decimal-exclusive-minimum"])
                 or len(whole) > schema["x-max-integer-digits"]
@@ -1546,6 +1633,14 @@ def contract_suite(m: Any) -> None:
         set_path(base, "tokenizer.source", "custom"),
         set_path(base, "base.trainable_artifact_id", "x"),
     ]
+    rejected += [
+        set_path(base, "auto_rule_version", "r1"),
+        set_path(set_path(base, "mode", "auto"), "auto_rule_version", None),
+        set_path(base, "base.model_catalog_entry_id", CAT),
+        set_path(base, "base.catalog_version", 4),
+        set_path(base, "budget.max_cost", "1.00000000000000000000000000001"),
+        set_path(base, "budget.max_cost", "12345678901234.000000000000000000000001"),
+    ]
     for key in ("trust_remote_code", "plugins", "chat_template"):
         rejected += [
             set_path(base, key, 1),
@@ -1623,8 +1718,7 @@ def leak_suite(m: Any) -> None:
                 check(
                     "I1",
                     "no chained exception",
-                    exc.__cause__ is None
-                    and (exc.__context__ is None or exc.__suppress_context__ or True),
+                    exc.__cause__ is None and (exc.__context__ is None or exc.__suppress_context__),
                 )
             else:
                 check("I1", "canary probe was refused", False)
@@ -1637,6 +1731,136 @@ def _raises_value_error(m: Any, code: str = "not_a_code") -> bool:
     except ValueError:
         return True
     return False
+
+
+def order_suite(m: Any) -> None:
+    """Pairwise precedence inside stage 2 and stage 4: the earlier check always wins."""
+    base = set_path(
+        set_path(valid_body(), "base.model_catalog_entry_id", CAT), "base.catalog_version", 4
+    )
+    facts0 = make_facts(m, catalog=m.CatalogFacts(entry_id=CAT, version=4, mapped_artifact_id=ART))
+    # stage 2 (request mutators)
+    stage2 = [
+        ("method_not_enabled", lambda b: set_path(b, "method", "full_sft")),
+        (
+            "auto_rule_version_unknown",
+            lambda b: set_path(set_path(b, "mode", "auto"), "auto_rule_version", "r1"),
+        ),
+    ]
+    for i, (ci, mi) in enumerate(stage2):
+        for cj, mj in stage2[i + 1 :]:
+            check("F6", f"{ci} before {cj}", resolve_code(m, mj(mi(base)), facts0) == ci)
+            check("F6", f"{cj} alone", resolve_code(m, mj(base), facts0) == cj)
+    stage4: list[tuple[str, Any]] = [
+        (
+            "artifact_not_trainable",
+            lambda f: replace(f, artifact=replace(f.artifact, status="archived")),
+        ),
+        (
+            "license_not_accepted",
+            lambda f: replace(f, artifact=replace(f.artifact, license_accepted=False)),
+        ),
+        (
+            "tokenizer_revision_mismatch",
+            lambda f: replace(f, artifact=replace(f.artifact, base_revision="zz")),
+        ),
+        ("catalog_mapping_changed", lambda f: replace(f, catalog=replace(f.catalog, version=9))),
+        (
+            "catalog_artifact_mismatch",
+            lambda f: replace(f, catalog=replace(f.catalog, mapped_artifact_id=MAN)),
+        ),
+        ("split_manifest_not_locked", lambda f: replace(f, split=replace(f.split, status="draft"))),
+        (
+            "split_manifest_changed",
+            lambda f: replace(f, split=replace(f.split, frozen_sha256=SHA_C)),
+        ),
+        (
+            "split_manifest_tampered",
+            lambda f: replace(f, split=replace(f.split, hash_verified=False)),
+        ),
+        (
+            "quality_report_changed",
+            lambda f: replace(f, split=replace(f.split, quality_report_current=False)),
+        ),
+        (
+            "dataset_grant_changed",
+            lambda f: replace(f, split=replace(f.split, grants_current=False)),
+        ),
+        ("train_split_empty", lambda f: replace(f, split=replace(f.split, train_count=0))),
+        (
+            "validation_split_empty",
+            lambda f: replace(f, split=replace(f.split, validation_count=0)),
+        ),
+        ("budget_policy_missing", lambda f: replace(f, budget=None)),
+        ("budget_scope_not_authorized", lambda f: replace(f, budget=replace(f.budget, scopes=()))),
+        (
+            "budget_currency_mismatch",
+            lambda f: replace(f, budget=replace(f.budget, currency="EUR")),
+        ),
+        (
+            "budget_limit_exceeds_policy",
+            lambda f: replace(f, budget=replace(f.budget, reserved=f.budget.total)),
+        ),
+    ]
+    for ci, mi in stage4:
+        check("F7", f"{ci} alone", resolve_code(m, base, mi(facts0)) == ci)
+    for i, (ci, mi) in enumerate(stage4):
+        for cj, mj in stage4[i + 1 :]:
+            if cj == "budget_policy_missing" and ci.startswith("budget_"):
+                continue
+            check("F7", f"{ci} before {cj}", resolve_code(m, base, mi(mj(facts0))) == ci)
+
+
+def facts_leak_suite(m: Any) -> None:
+    """Canaries that pass the shape check and reach a stage-4 facts refusal."""
+    base = valid_body()
+    facts = make_facts(m)
+    a, s_, b = facts.artifact, facts.split, facts.budget
+    canary_rev = "CANARYsecret-7f3a"
+    canary_mod = "CANARYsecret_7f3a"
+    cases = [
+        (set_path(base, "tokenizer.revision", canary_rev), facts),
+        (
+            set_path(base, "adapter.target_modules", [canary_mod]),
+            make_facts(m, artifact=replace(a, status="archived")),
+        ),
+        (
+            set_path(base, "tokenizer.revision", canary_rev),
+            make_facts(m, artifact=replace(a, base_revision=canary_rev + "x")),
+        ),
+        (
+            set_path(base, "adapter.target_modules", [canary_mod]),
+            make_facts(m, split=replace(s_, quality_report_current=False)),
+        ),
+        (set_path(base, "budget.max_cost", "99999.5"), facts),
+        (set_path(base, "tokenizer.revision", canary_rev), make_facts(m, budget=None)),
+        (
+            set_path(base, "adapter.target_modules", [canary_mod]),
+            make_facts(m, budget=replace(b, currency="EUR")),
+        ),
+    ]
+    for body, f in cases:
+        try:
+            m.resolve_training_config(m.parse_training_config_request(body), f)
+        except m.TrainingConfigError as exc:
+            chain = []
+            cur: BaseException | None = exc
+            while cur is not None:
+                chain.append(repr(cur) + str(cur) + "".join(map(str, cur.args)))
+                cur = cur.__cause__ or cur.__context__
+            check(
+                "I3",
+                f"facts refusal {exc.code} carries no canary",
+                all("CANARY" not in c for c in chain),
+            )
+            check(
+                "I3",
+                f"facts refusal {exc.code} has no chained exception",
+                exc.__context__ is None or exc.__suppress_context__,
+            )
+            check("I3", f"facts refusal {exc.code} message is the code", str(exc) == exc.code)
+        else:
+            check("I3", "facts canary probe was refused", False)
 
 
 def hashseed_suite() -> None:
@@ -1832,8 +2056,13 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "decimal-unnormalized",
-        '    return format(value.normalize(), "f")',
-        "    return str(value)",
+        '    frac = frac.rstrip("0")\n',
+        "",
+    ),
+    (
+        "decimal-context-rounding",
+        "    return _normalize(str(value))",
+        '    return format(Decimal(str(value)).normalize(), "f")',
     ),
     (
         "packing-allowed",
@@ -1856,6 +2085,37 @@ FAULTS: list[tuple[str, str, str]] = [
         '    if art.license_accepted is not True:\n        raise _fail("license_not_accepted")\n',
         "",
     ),
+    (
+        "order-stage2",
+        'if doc["method"] not in ENABLED_METHODS:',
+        'if doc["method"] not in ENABLED_METHODS and doc["mode"] != "auto":',
+    ),
+    (
+        "order-quality-grant",
+        "if split.quality_report_current is not True:",
+        "if split.quality_report_current is not True and split.grants_current is True:",
+    ),
+    (
+        "order-tamper-quality",
+        "if split.hash_verified is not True:",
+        "if split.hash_verified is not True and split.quality_report_current is True:",
+    ),
+    (
+        "order-scope-currency",
+        'if "training" not in budget.scopes:',
+        'if "training" not in budget.scopes and budget.currency == doc["budget"]["currency"]:',
+    ),
+    (
+        "order-catalog",
+        'or cat.version != base["catalog_version"]',
+        'or (cat.version != base["catalog_version"] and cat.mapped_artifact_id == base["trainable_artifact_id"])',
+    ),
+    (
+        "scope-substring",
+        '"training" not in budget.scopes:',
+        'not any("training" in x for x in budget.scopes):',
+    ),
+    ("list-subclass", "type(modules) is not list", "not isinstance(modules, list)"),
     ("capability-dropped", '        or art.capability != "trainable_open_weight"\n', ""),
     ("status-dropped", '        or art.status != "ready"\n', ""),
     (
@@ -1912,7 +2172,7 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "catalog-artifact-dropped",
-        '        if cat.mapped_artifact_id != base[\"trainable_artifact_id\"]:\n            raise _fail("catalog_artifact_mismatch")\n',
+        '        if cat.mapped_artifact_id != base["trainable_artifact_id"]:\n            raise _fail("catalog_artifact_mismatch")\n',
         "",
     ),
     ("catalog-version-dropped", '            or cat.version != base["catalog_version"]\n', ""),
@@ -1989,6 +2249,8 @@ def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
     if contract:
         contract_suite(module)
     leak_suite(module)
+    facts_leak_suite(module)
+    order_suite(module)
     return list(_failures)
 
 
