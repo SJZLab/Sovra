@@ -394,6 +394,36 @@ def test_worksheet_probe_lists_zero_sheets_as_empty_not_failed() -> None:
     )
 
 
+def test_registry_is_complete_for_xlsx() -> None:
+    import app.datasets.dataset_mapping_store as store
+
+    name = store.importer_for_content_type(XLSX)
+    check("REG-1", "the store selects the xlsx importer", name == "xlsx")
+    check(
+        "REG-2",
+        "every importer the store can select has a version entry (else propose KeyErrors)",
+        all(
+            store.importer_for_content_type(ct) in store._IMPORTER_VERSIONS
+            for ct in (*rev.PREVIEW_CONTENT_TYPES,)
+        )
+        and store._IMPORTER_VERSIONS["xlsx"] == xi.IMPORTER_VERSION,
+    )
+
+
+def test_list_worksheets_own_content_type_gate() -> None:
+    for ct in ("text/csv", "", "application/vnd.ms-excel"):
+        result = xi.list_worksheets(
+            reader_for(GOOD), verified_content_type=ct, dataset_sha256=sha(GOOD)
+        )
+        check(
+            "SHEET-13",
+            f"list_worksheets({ct!r}) is failed/content_type_not_supported_by_importer",
+            result.state == "failed"
+            and result.failure_code == "content_type_not_supported_by_importer"
+            and result.sheets == (),
+        )
+
+
 # --- CLOSE -------------------------------------------------------------------------------
 
 
