@@ -1000,7 +1000,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer).'
+          description: '`role_not_authorized` (including ml_engineer) or `actor_not_auditable`.'
         '404':
           description: '`not_found`.'
         '409':
@@ -1060,7 +1060,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer).'
+          description: '`role_not_authorized` (including ml_engineer) or `actor_not_auditable`.'
         '404':
           description: '`not_found`.'
         '409':
@@ -1099,7 +1099,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` or `purpose_not_authorized` (a revoked or narrowed grant).'
+          description: '`role_not_authorized`, `actor_not_auditable` (the principal subject is outside the audit identifier rule) or `purpose_not_authorized` (a revoked or narrowed grant).'
         '404':
           description: '`not_found`, identical for a missing, foreign and hidden held-out dataset.'
         '409':
@@ -1140,7 +1140,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` or `purpose_not_authorized`.'
+          description: '`role_not_authorized`, `actor_not_auditable` or `purpose_not_authorized`.'
         '404':
           description: '`not_found`.'
         '409':
@@ -1216,7 +1216,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` or `purpose_not_authorized`.'
+          description: '`role_not_authorized`, `actor_not_auditable` or `purpose_not_authorized`.'
         '404':
           description: '`not_found`.'
         '409':
@@ -1287,7 +1287,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer) or `purpose_not_authorized`.'
+          description: '`role_not_authorized` (including ml_engineer), `actor_not_auditable` or `purpose_not_authorized`.'
         '404':
           description: '`not_found`.'
         '409':
@@ -1335,7 +1335,7 @@ paths:
         '401':
           $ref: '#/components/responses/NotAuthenticated'
         '403':
-          description: '`role_not_authorized` (including ml_engineer).'
+          description: '`role_not_authorized` (including ml_engineer) or `actor_not_auditable`.'
         '404':
           description: '`not_found`.'
         '409':

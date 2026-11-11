@@ -4149,6 +4149,20 @@ def part_r_actor() -> None:
                     f"{path.split('/')[1]} as subject {label!r} is 403 actor_not_auditable (got {got[0]} {code(got)})",
                     got == (403, {"detail": "actor_not_auditable"}),
                 )
+            for path, key, raw in (
+                ("/mappings", None, b'{"mapping": {}}'),
+                ("/mappings", "actor-key-00009", b"nope"),
+                (f"/mappings/{mid}/approve", None, b"nope"),
+                (f"/mappings/{mid}/approve", "actor-key-00009", b"nope"),
+                (f"/mappings/{mid}/reject", None, b"nope"),
+                (f"/mappings/{mid}/reject", "actor-key-00009", b"nope"),
+            ):
+                got = call(base, "POST", f"{BASE_DS}/{ds.id}{path}", who, raw=raw, key=key)
+                check(
+                    "R-ACTOR",
+                    f"{path.split('/')[1]} with a bad body or no key as {label!r}: 403 before 400 (got {got[0]} {code(got)})",
+                    got == (403, {"detail": "actor_not_auditable"}),
+                )
             got = call(base, "GET", f"{BASE_DS}/{ds.id}/mappings", who)
             check("R-ACTOR", f"reads stay open for subject {label!r} (got {got[0]})", got[0] == 200)
         check("R-ACTOR", "nothing was stored or audited", w.snapshot() == before)

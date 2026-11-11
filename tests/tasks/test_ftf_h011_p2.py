@@ -3208,6 +3208,67 @@ def part_s_return3() -> None:
             "a newer rejection of a DIFFERENT mapping does not block reuse",
             w.resolve(v3).reused is True,
         )
+    # the rejection query's filters, one world per filter (round-2 review: each stayed GREEN)
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.reject(w.propose(v1, doc))
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        check(
+            "R3-B5",
+            "a rejection at the SAME version as the reused approval does not block (> not >=)",
+            w.resolve(v2).reused is True,
+        )
+    for label, name, purpose in (
+        ("another dataset name", "other", "training"),
+        ("another dataset purpose", "tab", "validation"),
+    ):
+        with sqlite_world() as w:
+            conn = w.connection("t", ALL_PURPOSES)
+            w.schema_sha = sha("q,a")
+            v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+            w.approve(w.propose(v1, doc))
+            o2 = w.dataset(name, purpose, conn, version=2, content_type="text/csv")
+            w.reject(w.propose(o2, doc))
+            v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+            check(
+                "R3-B6",
+                f"a newer identical rejection on {label} does not block reuse",
+                w.resolve(v3).reused is True,
+            )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        rejected = w.propose(v2, doc)
+        w.reject(rejected)
+        rejected.project_id = det_uuid("another-project")
+        w.session.flush()
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        check(
+            "R3-B7",
+            "a newer identical rejection recorded in another project does not block reuse",
+            w.resolve(v3).reused is True,
+        )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.approve(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        w.reject(w.propose(v3, doc))
+        refuses(
+            w,
+            "ruling (b) says ANY newer version: a rejection on v3 blocks resolving v2",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v2),
+            "R3-B8",
+        )
     with sqlite_world() as w:
         conn = w.connection("t", ALL_PURPOSES)
         w.schema_sha = sha("q,a")
