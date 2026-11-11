@@ -989,6 +989,127 @@ def test_revoke_skips_revoked_memberships(env: Env) -> None:
     check("an already-revoked membership is not removed again", env.requests("DELETE") == n)
 
 
+@with_env
+def test_r11c_revoke_marks_identity_revoked_before_any_argilla_removal(env: Env) -> None:
+    """R11c / REVOKE-SYNC-RACE: the identity must already be 'revoked' in the database when the
+    first real Argilla removal is issued, so a sync that starts after revoke has read the
+    memberships can never pass its liveness guard."""
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    seen: list[str] = []
+    real_remove = env.client.remove_workspace_user
+
+    def spying_remove(workspace_id: str, user_id: str) -> None:
+        seen.append(env.sql("SELECT status FROM argilla_reviewer_identities")[0][0])
+        real_remove(workspace_id, user_id)
+
+    env.client.remove_workspace_user = spying_remove  # type: ignore[method-assign]
+    env.revoke()
+    check(
+        "R11c: the identity is already revoked when the real removal is issued",
+        seen == ["revoked"],
+    )
+    # a sync that arrives after revoke read the (then empty/removed) memberships is refused
+    check(
+        "R11c: a sync after the revoke is refused and grants nothing",
+        raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident)
+        or raises(ArgillaIdentityError, env.sync, Role.ML_ENGINEER, scope, ident),
+    )
+    check(
+        "R11c: no real membership exists for the revoked identity",
+        not any(u == ident.argilla_user_id for _, u in env.server.memberships),
+    )
+
+
+@with_env
+def test_r11b_stale_guard_write_is_undone_by_the_post_write_recheck(env: Env) -> None:
+    """R11b / REVOKE-SYNC-RACE: a sync whose UPSERT guard read a stale snapshot (revoke's status
+    write not yet visible) writes 'active' for a revoked identity. The post-write re-read must
+    detect it, mark the row revoked, remove the real membership and raise. The stale snapshot is
+    modelled by neutralising the UPSERT's own guard (a revoke that completed in full first)."""
+    scope, ident = env.scope(), env.identity()
+    real_exec = store.execute_tenant_scoped
+    state = {"fired": False}
+
+    def stale_guard(session: Session, org: Any, statement: Any, params: Any = None) -> Any:
+        sql = str(statement)
+        if sql.startswith("INSERT INTO argilla_workspace_members") and not state["fired"]:
+            state["fired"] = True
+            env.revoke()  # revoke completes in full; it sees no membership row to remove.
+            statement = text(
+                sql.replace(
+                    "WHERE EXISTS (SELECT 1 FROM argilla_reviewer_identities "
+                    "WHERE id = :identity AND organization_id = :org AND status = 'active')",
+                    "WHERE 1 = 1",
+                )
+            )
+        return real_exec(session, org, statement, params)
+
+    store.execute_tenant_scoped = stale_guard
+    try:
+        refused = raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident)
+    finally:
+        store.execute_tenant_scoped = real_exec
+    check("R11b: the stale-guard sync is refused", state["fired"] and refused)
+    check(
+        "R11b: the real Argilla membership it added is removed",
+        not any(u == ident.argilla_user_id for _, u in env.server.memberships),
+    )
+    check(
+        "R11b: no membership row stays active for the revoked identity",
+        all(r[1] == "revoked" for r in env.member_rows()),
+    )
+
+
+@with_env
+def test_f14_revoke_outage_propagates_and_retry_completes(env: Env) -> None:
+    """F14 / Law 17: an Argilla outage while removing a membership is never swallowed into a
+    completed revoke; the unremoved membership stays 'active' so a retry finishes it."""
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    real_remove = env.client.remove_workspace_user
+
+    def outage(workspace_id: str, user_id: str) -> None:
+        raise ArgillaUnavailableError("Argilla returned HTTP 503")
+
+    env.client.remove_workspace_user = outage  # type: ignore[method-assign]
+    check(
+        "F14: an outage during the revoke removal propagates",
+        raises(ArgillaUnavailableError, env.revoke),
+    )
+    check(
+        "F14: the membership row stays active (never recorded revoked without the removal)",
+        env.member_rows()[0][1] == "active"
+        and (scope.argilla_workspace_id, ident.argilla_user_id) in env.server.memberships,
+    )
+    env.client.remove_workspace_user = real_remove  # type: ignore[method-assign]
+    env.revoke()
+    check(
+        "F14: a retry after the outage removes the real membership and revokes the row",
+        env.member_rows()[0][1] == "revoked"
+        and not any(u == ident.argilla_user_id for _, u in env.server.memberships),
+    )
+
+
+@with_env
+def test_f16_scope_creation_outage_never_fabricates_a_workspace(env: Env) -> None:
+    """F16 / Law 17: an Argilla outage while provisioning the workspace propagates; no scope row
+    is invented."""
+
+    def outage(name: str) -> Any:
+        raise ArgillaUnavailableError("Argilla returned HTTP 503")
+
+    env.client.ensure_workspace = outage  # type: ignore[method-assign]
+    check(
+        "F16: an outage during workspace provisioning propagates",
+        raises(ArgillaUnavailableError, env.scope),
+    )
+    check(
+        "F16: no scope row is fabricated for the unprovisioned workspace",
+        env.sql("SELECT count(*) FROM argilla_review_scopes")[0][0] == 0,
+    )
+
+
 _PURE = {n for n in globals() if n.startswith("test_")} - {
     n for n in globals() if n.startswith("test_") and getattr(globals()[n], "__name__", "") == "run"
 }
