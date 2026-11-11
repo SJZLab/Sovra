@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { chromium, type Browser, type Page } from "@playwright/test";
+import { browserLaunchOptions } from "./support/browser_launch";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { buildHarnessHtml } from "./browser/harness_page";
@@ -25,7 +26,7 @@ describe("[UX01-BROWSER] real-Chromium §72.5 evidence", () => {
   let browser: Browser;
 
   beforeAll(async () => {
-    browser = await chromium.launch();
+    browser = await chromium.launch(browserLaunchOptions());
   }, 60_000);
 
   afterAll(async () => {

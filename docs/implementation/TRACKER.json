@@ -755,7 +755,7 @@
       "status": "CERTIFIED",
       "commits": [],
       "evidence": [
-        "41904e5fe5702a08a12483760c9bc811acfa2ddf"
+        "05545cfc57be03fab2dfc7ee1d48c96d96c30301"
       ],
       "independent_review": null,
       "blockers": []
@@ -1068,9 +1068,11 @@
       "blockers": []
     },
     "FTF-0617": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "816f0fb36ef4c9a3fb821a6f943573cf63d7ed20"
+      ],
       "independent_review": null,
       "blockers": []
     },
