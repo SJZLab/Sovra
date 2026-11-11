@@ -345,6 +345,22 @@ def test_worksheet_probe_refuses_unsafe_and_unreadable_sources() -> None:
         result.state == "failed" and result.failure_code == "source_changed",
     )
 
+    pulled: list[int] = []
+
+    def watched() -> Iterator[bytes]:
+        pulled.append(1)
+        yield GOOD
+
+    reader = ic.ChunkReader(watched(), expected_size=len(GOOD), expected_sha256="0" * 64)
+    result = rev.run_worksheet_probe(
+        reader, verified_content_type=XLSX, dataset_sha256=sha(GOOD), reveal=True
+    )
+    check(
+        "SHEET-9b",
+        "a declared-hash mismatch is refused before a single byte is read",
+        result.failure_code == "source_changed" and pulled == [],
+    )
+
     def failing() -> Iterator[bytes]:
         yield GOOD[:20]
         raise ConnectionError("storage dropped")
