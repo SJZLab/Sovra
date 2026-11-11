@@ -2156,11 +2156,11 @@ components:
       type: object
       properties:
         expected_preview_sha256: {$ref: '#/components/schemas/Sha256Hex'}
-        purpose: {type: string, minLength: 1, maxLength: 32}
+        purpose: {type: string, minLength: 1, maxLength: 32, pattern: '^[^\x00]*$'}
         acknowledged_ignored_keys:
           type: array
           maxItems: 200
-          items: {type: string, minLength: 1, maxLength: 200}
+          items: {type: string, minLength: 1, maxLength: 200, pattern: '^[^\x00]*$'}
         rationale: {type: string, minLength: 1, maxLength: 2000, pattern: '^(?=[\s\S]*\S)[^\x00]*$'}
       required: [expected_preview_sha256, purpose, acknowledged_ignored_keys, rationale]
       additionalProperties: false

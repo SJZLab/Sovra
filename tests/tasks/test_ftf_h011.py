@@ -716,6 +716,13 @@ def part_r_validation() -> None:
             ("long rationale", approve_body(mapping, rationale="r" * 2001)),
             ("non-str rationale", approve_body(mapping, rationale=7)),
             ("NUL in rationale", approve_body(mapping, rationale="a\x00b")),
+            ("NUL in purpose", approve_body(mapping, purpose="train\x00ing")),
+            ("lone surrogate purpose", approve_body(mapping, purpose="train\ud800ing")),
+            ("NUL in acknowledged key", approve_body(mapping, acknowledged_ignored_keys=["k\x00"])),
+            (
+                "lone surrogate acknowledged key",
+                approve_body(mapping, acknowledged_ignored_keys=["k\ud800"]),
+            ),
             ("lone surrogate rationale", approve_body(mapping, rationale="a\ud800b")),
         ]
         for label, body in approve_bodies:

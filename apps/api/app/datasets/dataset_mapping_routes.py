@@ -262,12 +262,15 @@ def _approve_fields(payload: dict[str, Any]) -> dict[str, Any]:
     acknowledged = payload["acknowledged_ignored_keys"]
     if type(expected) is not str or _HEX64.fullmatch(expected) is None:
         raise _invalid_body()
-    if type(purpose) is not str or not 1 <= len(purpose) <= _MAX_PURPOSE:
+    if type(purpose) is not str or not 1 <= len(purpose) <= _MAX_PURPOSE or "\x00" in purpose:
         raise _invalid_body()
     if (
         type(acknowledged) is not list
         or len(acknowledged) > _MAX_KEYS
-        or not all(type(key) is str and 1 <= len(key) <= _MAX_KEY_LENGTH for key in acknowledged)
+        or not all(
+            type(key) is str and 1 <= len(key) <= _MAX_KEY_LENGTH and "\x00" not in key
+            for key in acknowledged
+        )
     ):
         raise _invalid_body()
     return {
