@@ -30,6 +30,7 @@ import {
   Button,
   EmptyState,
   ErrorSummary,
+  Field,
   StatusBadge,
   kindForStatus,
   networkError,
@@ -320,6 +321,18 @@ const M = {
   forbidden: { en: "You do not have permission for this.", ar: "ليست لديك صلاحية لذلك." },
   signIn: { en: "Your session ended.", ar: "انتهت جلستك." },
   unknownState: { en: "Unknown state", ar: "حالة غير معروفة" },
+  blockedGeneric: {
+    en: "Blocked by an external dependency",
+    ar: "محظور بسبب جهة خارجية",
+  },
+  jobsNotLoaded: {
+    en: "The import list has not loaded. Reload the jobs before starting an import.",
+    ar: "لم تُحمَّل قائمة الاستيراد. أعد تحميل المهام قبل بدء الاستيراد.",
+  },
+  failedLoadProfile: {
+    en: "Could not load the project security profile.",
+    ar: "تعذر تحميل ملف أمان المشروع.",
+  },
 } satisfies Record<string, Msg>;
 type MsgKey = keyof typeof M;
 
@@ -524,9 +537,11 @@ export function bindsTo(job: ImportJob, sent: SentBody, org: string, project: st
 
 function validRef(ref: string): "ok" | "empty" | "long" | "chars" {
   if (ref.length === 0 || /^\s*$/.test(ref)) return "empty";
-  if (ref.length > MAX_REF_LENGTH) return "long";
+  // The server counts code points and refuses only Cc (control) and Cs (lone surrogates); the
+  // `u` flag makes an astral character one code point, not two refused surrogate halves.
+  if ([...ref].length > MAX_REF_LENGTH) return "long";
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/.test(ref)) return "chars";
+  if (/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(ref)) return "chars";
   return "ok";
 }
 
@@ -612,6 +627,9 @@ function Inner({
   const [artifacts, setArtifacts] = useState<Loaded<ArtifactOpt[]>>({ state: "idle" });
   const [bases, setBases] = useState<Loaded<BaseOpt[]>>({ state: "idle" });
   const [profile, setProfile] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<UiError | null>(null);
+  const [pollTick, setPollTick] = useState(0);
+  const noticeRef = useRef<HTMLParagraphElement | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<UiError | null>(null);
@@ -663,12 +681,25 @@ function Inner({
     void (async () => {
       try {
         const r = await getJson(projectUrl(apiBaseUrl, organizationId, projectId));
-        if (alive.current && r.ok) setProfile(parseProfile(r.body));
-      } catch {
-        /* shown as unavailable */
+        if (!alive.current) return;
+        const parsed = r.ok ? parseProfile(r.body) : null;
+        if (parsed === null) {
+          setProfile(null);
+          setProfileError(
+            uiError(
+              tr(r.ok ? "malformed" : "failedLoadProfile", locale),
+              r.ok ? "retry" : kindForStatus(r.status),
+            ),
+          );
+        } else {
+          setProfile(parsed);
+          setProfileError(null);
+        }
+      } catch (caught) {
+        if (alive.current) setProfileError(networkError(caught, locale));
       }
     })();
-  }, [apiBaseUrl, organizationId, projectId, canWrite]);
+  }, [apiBaseUrl, organizationId, projectId, canWrite, locale]);
 
   // Bounded backoff polling (2 s -> 30 s) that stops when no job is non-terminal.
   const delayRef = useRef(POLL_START_MS);
@@ -681,11 +712,20 @@ function Inner({
     const timer = setTimeout(() => {
       delayRef.current = Math.min(delayRef.current * 2, POLL_MAX_MS);
       void loadJobs().then((list) => {
-        if (list !== null && alive.current) setAnnounce(tr("polled", locale));
+        if (!alive.current) return;
+        if (list !== null) setAnnounce(tr("polled", locale));
+        // A failed poll (error shown by loadJobs) must still re-arm the backoff.
+        setPollTick((n) => n + 1);
       });
     }, delayRef.current);
     return () => clearTimeout(timer);
-  }, [anyActive, jobs, loadJobs, locale]);
+  }, [anyActive, pollTick, loadJobs, locale]);
+
+  // After a successful create / found-after-lost-reply the form unmounts: focus the notice so
+  // focus never falls to <body>.
+  useEffect(() => {
+    if (notice === "jobCreated" || notice === "jobFound") noticeRef.current?.focus();
+  }, [notice]);
 
   // Origin-specific option loads.
   async function loadInto<T>(
@@ -736,6 +776,20 @@ function Inner({
     setCatalog({ state: "idle" });
     if (id) void loadInto(setCatalog, catalogUrl(apiBaseUrl, organizationId, id), parseCatalog);
   }
+
+  /** Only versions a SUCCEEDED imported_weights job produced are validated bases (exact, no name matching). */
+  const validatedBaseIds = new Set(
+    (jobs ?? [])
+      .filter(
+        (j) =>
+          j.state === "succeeded" &&
+          j.requested_origin === "imported_weights" &&
+          j.result_model_version_id !== null,
+      )
+      .map((j) => j.result_model_version_id as string),
+  );
+  const errFor = (id: string): string | undefined =>
+    fieldErrors.find((f) => f.fieldId === id)?.message;
 
   const effectiveRef = catalogChoice !== "" ? catalogChoice : ref;
 
@@ -835,13 +889,14 @@ function Inner({
 
   async function submit() {
     const body = buildBody();
-    if (body === null || !confirmed || !flight.begin()) return;
+    // The baseline of known job ids must exist, or a lost reply could never be verified.
+    if (body === null || !confirmed || jobs === null || !flight.begin()) return;
     setSubmitting(true);
     setSubmitError(null);
     setNotice(null);
     setOutcome(null);
     lastSent.current = body;
-    idsBeforeSubmit.current = new Set((jobs ?? []).map((j) => j.id));
+    idsBeforeSubmit.current = new Set(jobs.map((j) => j.id));
     try {
       let response: Response;
       try {
@@ -968,7 +1023,8 @@ function Inner({
               id={id}
               value={artifactId}
               onChange={(e) => setArtifactId(e.target.value)}
-              aria-invalid={fieldErrors.some((f) => f.fieldId === id) || undefined}
+              aria-invalid={errFor(id) ? true : undefined}
+              aria-describedby={errFor(id) ? `${id}-error` : undefined}
               style={selStyle}
             >
               <option value="">{tr("chooseArtifact", locale)}</option>
@@ -978,6 +1034,11 @@ function Inner({
                 </option>
               ))}
             </select>
+            {errFor(id) ? (
+              <div id={`${id}-error`} data-testid="artifact-error">
+                {errFor(id)}
+              </div>
+            ) : null}
             {chosen ? (
               <dl data-testid="artifact-facts" style={{ overflowWrap: "anywhere" }}>
                 <dt>{tr("statusLabel", locale)}</dt>
@@ -1045,6 +1106,10 @@ function Inner({
                     id={`${uid}-connection`}
                     value={connectionId}
                     onChange={(e) => chooseConnection(e.target.value)}
+                    aria-invalid={errFor(`${uid}-connection`) ? true : undefined}
+                    aria-describedby={
+                      errFor(`${uid}-connection`) ? `${uid}-connection-error` : undefined
+                    }
                     style={selStyle}
                   >
                     <option value="">{tr("chooseConnection", locale)}</option>
@@ -1054,6 +1119,11 @@ function Inner({
                       </option>
                     ))}
                   </select>
+                  {errFor(`${uid}-connection`) ? (
+                    <div id={`${uid}-connection-error`} data-testid="connection-error">
+                      {errFor(`${uid}-connection`)}
+                    </div>
+                  ) : null}
                 </div>
               );
             },
@@ -1085,27 +1155,20 @@ function Inner({
             </div>
           ) : null}
           {connections.state === "ok" && connections.data.length > 0 ? (
-            <div>
-              <label htmlFor={`${uid}-ref`} style={{ display: "block" }}>
-                {tr("refLabel", locale)} {locale === "ar" ? "(مطلوب)" : "(required)"}
-              </label>
-              <div id={`${uid}-ref-help`}>{tr("refHelp", locale)}</div>
-              <input
-                id={`${uid}-ref`}
-                type="text"
-                dir="ltr"
-                value={catalogChoice !== "" ? catalogChoice : ref}
-                disabled={catalogChoice !== ""}
-                aria-describedby={`${uid}-ref-help`}
-                aria-invalid={fieldErrors.some((f) => f.fieldId === `${uid}-ref`) || undefined}
-                onChange={(e) => setRef(e.target.value)}
-                style={{
-                  minBlockSize: "var(--target-min)",
-                  inlineSize: "100%",
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
+            <Field
+              id={`${uid}-ref`}
+              label={tr("refLabel", locale)}
+              helper={tr("refHelp", locale)}
+              error={errFor(`${uid}-ref`)}
+              requirement="required"
+              locale={locale}
+              type="text"
+              dir="ltr"
+              value={catalogChoice !== "" ? catalogChoice : ref}
+              disabled={catalogChoice !== ""}
+              onChange={(e) => setRef(e.target.value)}
+              style={{ inlineSize: "100%", boxSizing: "border-box" }}
+            />
           ) : null}
         </>
       );
@@ -1120,7 +1183,8 @@ function Inner({
           ? renderOptions(
               bases,
               () => loadForOrigin("imported_adapter"),
-              (list) => {
+              (all) => {
+                const list = all.filter((b) => validatedBaseIds.has(b.id));
                 if (list.length === 0)
                   return (
                     <EmptyState
@@ -1138,9 +1202,8 @@ function Inner({
                       id={`${uid}-base`}
                       value={baseId}
                       onChange={(e) => setBaseId(e.target.value)}
-                      aria-invalid={
-                        fieldErrors.some((f) => f.fieldId === `${uid}-base`) || undefined
-                      }
+                      aria-invalid={errFor(`${uid}-base`) ? true : undefined}
+                      aria-describedby={errFor(`${uid}-base`) ? `${uid}-base-error` : undefined}
                       style={selStyle}
                     >
                       <option value="">{tr("chooseBase", locale)}</option>
@@ -1150,6 +1213,11 @@ function Inner({
                         </option>
                       ))}
                     </select>
+                    {errFor(`${uid}-base`) ? (
+                      <div id={`${uid}-base-error`} data-testid="base-error">
+                        {errFor(`${uid}-base`)}
+                      </div>
+                    ) : null}
                     {baseId ? (
                       <p style={{ overflowWrap: "anywhere" }}>
                         {tr("digestLabel", locale)}:{" "}
@@ -1269,10 +1337,23 @@ function Inner({
           <>
             <StatusBadge
               state="blocked"
-              detail={job.failure_code !== null ? failureText(job.failure_code, locale) : undefined}
+              detail={
+                job.failure_code !== null && Object.hasOwn(FAILURE_MESSAGES, job.failure_code)
+                  ? failureText(job.failure_code, locale)
+                  : tr("blockedGeneric", locale)
+              }
               locale={locale}
             />
-            <span data-testid="job-state-text"> {tr("blockedLabel", locale)}</span>
+            <span data-testid="job-state-text">
+              {" "}
+              {tr("blockedLabel", locale)}
+              {job.failure_code !== null && !Object.hasOwn(FAILURE_MESSAGES, job.failure_code) ? (
+                <>
+                  {" "}
+                  ({tr("codeLabel", locale)}: <bdi>{job.failure_code}</bdi>)
+                </>
+              ) : null}
+            </span>
           </>
         );
       case "succeeded":
@@ -1288,7 +1369,11 @@ function Inner({
 
   const headingId = `${uid}-title`;
   const submitDisabled =
-    submitting || outcome === "verifying" || outcome === "check_failed" || !confirmed;
+    submitting ||
+    outcome === "verifying" ||
+    outcome === "check_failed" ||
+    !confirmed ||
+    jobs === null;
 
   return (
     <div lang={lang} dir={dir} style={rootStyle} data-testid="import-model-wizard">
@@ -1299,7 +1384,7 @@ function Inner({
         </p>
       ) : null}
       {notice ? (
-        <p role="status" data-testid="import-notice">
+        <p role="status" data-testid="import-notice" tabIndex={-1} ref={noticeRef}>
           {tr(notice, locale)}
         </p>
       ) : null}
@@ -1315,6 +1400,9 @@ function Inner({
       ) : (
         <section aria-labelledby={headingId}>
           <p>{tr(step === 1 ? "step1" : step === 2 ? "step2" : "step3", locale)}</p>
+          {profileError ? (
+            <AlertMessage error={profileError} locale={locale} testId="import-profile-error" />
+          ) : null}
           <ErrorSummary errors={fieldErrors} locale={locale} submitCount={submitCount} />
           {step === 1 ? (
             <fieldset>
@@ -1408,7 +1496,13 @@ function Inner({
                   data-testid="import-submit"
                   disabled={submitDisabled}
                   disabledReason={
-                    !confirmed && !submitting ? tr("startImportNeedsConfirm", locale) : undefined
+                    submitting
+                      ? undefined
+                      : jobs === null
+                        ? tr("jobsNotLoaded", locale)
+                        : !confirmed
+                          ? tr("startImportNeedsConfirm", locale)
+                          : undefined
                   }
                   onClick={() => void submit()}
                 >

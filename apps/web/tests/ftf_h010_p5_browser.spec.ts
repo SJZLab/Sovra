@@ -102,6 +102,16 @@ const CORE: Route[] = [
     body: { entries: [{ id: LONG_REF, status: "callable" }] },
   },
 ];
+// A version a SUCCEEDED imported_weights job produced is the only valid adapter base.
+const BASE_JOB = job({
+  id: "jbase",
+  requested_origin: "imported_weights",
+  trainable_artifact_id: ART,
+  external_provider_model_ref: null,
+  litellm_connection_id: null,
+  state: "succeeded",
+  result_model_version_id: BASE,
+});
 const withList = (body: unknown): Route[] => [{ method: "GET", path: IMPORTS, body }, ...CORE];
 
 const PROPS = {
@@ -204,13 +214,46 @@ const STATES: UiState[] = [
   },
   {
     id: "adapter form",
-    routes: withList([]),
+    routes: withList([BASE_JOB]),
     steps: [
       ...toAdapterForm,
       { select: [/Adapter artifact|قطعة المحوّل/, ART] },
       { select: [/Base model version|إصدار النموذج الأساسي/, BASE] },
     ],
     ready: '[data-testid="artifact-facts"]',
+  },
+  {
+    id: "adapter form without a validated base",
+    routes: withList([]),
+    steps: toAdapterForm,
+    ready: "[aria-label]",
+  },
+  {
+    id: "project profile load error",
+    routes: [
+      { method: "GET", path: IMPORTS, body: [] },
+      { method: "GET", path: `${ORG_PATH}/projects/${PROJECT}`, status: 500, body: {} },
+      ...CORE.slice(1),
+    ],
+    steps: toWeightsForm,
+    ready: '[data-testid="import-profile-error"]',
+  },
+  {
+    id: "blocked job with an unknown code",
+    routes: withList([
+      job({ id: "jb", state: "blocked_external", failure_code: "a_future_block" }),
+    ]),
+    ready: '[data-testid="job-jb"]',
+  },
+  {
+    id: "endpoint ref inline error",
+    routes: withList([]),
+    steps: [
+      ...toEndpointForm,
+      { select: [/Gateway connection|اتصال البوابة/, CONN] },
+      { button: /Review import|مراجعة الاستيراد/ },
+    ],
+    ready: '[role="alert"][id$="-ref-error"]',
   },
   {
     id: "weights options load error",
@@ -560,6 +603,35 @@ describe("[H010P5-BROWSER] focus, wrap and bilingual behaviour in a real browser
         return clone.innerText;
       });
       expect(text).not.toMatch(/[A-Za-z]{3,}/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("the ref input is described by its help text and, when invalid, its inline error", async () => {
+    const page = await openState(find("endpoint ref inline error"), "en", "light");
+    try {
+      const described = await page.evaluate(() => {
+        const input = document.querySelector<HTMLInputElement>('input[id$="-ref"]')!;
+        return (input.getAttribute("aria-describedby") ?? "")
+          .split(" ")
+          .map((id) => document.getElementById(id)?.textContent ?? "");
+      });
+      expect(described.join(" ")).toMatch(/Sent exactly as typed/);
+      expect(described.join(" ")).toMatch(/Enter the model reference/);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("after a created import focus lands on the notice, never <body>", async () => {
+    const page = await openState(find("submit created"), "en", "light");
+    try {
+      await page.waitForFunction(
+        () => document.activeElement?.getAttribute("data-testid") === "import-notice",
+        undefined,
+        { timeout: 5000 },
+      );
     } finally {
       await page.close();
     }

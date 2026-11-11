@@ -27,6 +27,8 @@ const ART = "44444444-4444-4444-4444-444444444444";
 const ADAPTER = "55555555-5555-5555-5555-555555555555";
 const BASE = "66666666-6666-6666-6666-666666666666";
 const UNVALIDATED = "77777777-7777-7777-7777-777777777777";
+const FW_UNVALIDATED = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const BASE_JOB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const JOB = "88888888-8888-8888-8888-888888888888";
 const RESULT = "99999999-9999-9999-9999-999999999999";
 const ORG_BASE = `${API}/api/v1/organizations/${ORG}`;
@@ -99,6 +101,13 @@ function defaults(): Routes {
       body: [
         { id: BASE, version_number: 1, import_kind: "full_weight", weights_digest: sha("b") },
         { id: UNVALIDATED, version_number: 2, import_kind: "endpoint", weights_digest: null },
+        // An FTF-1001 synchronous full_weight row that no succeeded import job produced.
+        {
+          id: FW_UNVALIDATED,
+          version_number: 3,
+          import_kind: "full_weight",
+          weights_digest: sha("c"),
+        },
       ],
     },
   };
@@ -330,7 +339,7 @@ test("H010P5-C5: field validation -> ErrorSummary takes focus; control chars / l
   ] as const) {
     fireEvent.change(screen.getByLabelText(/Model reference/), { target: { value: ref } });
     fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
-    expect(await screen.findByText(msg)).toBeTruthy();
+    expect((await screen.findAllByText(msg)).length).toBeGreaterThanOrEqual(2); // summary + inline
     expect(screen.queryByTestId("import-submit")).toBeNull();
   }
   fireEvent.change(screen.getByLabelText(/Model reference/), {
@@ -359,7 +368,19 @@ test("H010P5-D1: weights form shows status, license state, digest in <bdi>; bloc
   expect(screen.getByTestId("artifact-blocked-reason").textContent).toMatch(/License not accepted/);
 });
 
-test("H010P5-D2: adapter base list holds only full-weight versions, chosen by exact id", async () => {
+const baseJob = () =>
+  job({
+    id: BASE_JOB,
+    requested_origin: "imported_weights",
+    trainable_artifact_id: ART,
+    external_provider_model_ref: null,
+    litellm_connection_id: null,
+    state: "succeeded",
+    result_model_version_id: BASE,
+  });
+
+test("H010P5-D2: adapter base list holds only versions a succeeded weights job produced, by exact id", async () => {
+  routes[`GET ${IMPORTS}`] = { body: [baseJob()] };
   routes[`POST ${IMPORTS}`] = {
     status: 201,
     body: job({
@@ -375,6 +396,8 @@ test("H010P5-D2: adapter base list holds only full-weight versions, chosen by ex
   const base = screen.getByLabelText(/Base model version/);
   expect(within(base).getAllByRole("option")).toHaveLength(2);
   expect(base.innerHTML).not.toContain(UNVALIDATED);
+  // BASE-LIST-UNVALIDATED: an unvalidated full_weight row is never offered.
+  expect(base.innerHTML).not.toContain(FW_UNVALIDATED);
   fireEvent.change(screen.getByLabelText(/Adapter artifact/), { target: { value: ADAPTER } });
   fireEvent.change(base, { target: { value: BASE } });
   fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
@@ -794,4 +817,197 @@ test("H010P5-K2: every request (reads and the write) sends the session cookie", 
   await confirmAndStart();
   expect(calls.length).toBeGreaterThanOrEqual(5);
   for (const c of calls) expect(c.credentials, `${c.method} ${c.url}`).toBe("include");
+});
+
+// ---- H010P5-R1: independent pre-review round 1 (FTF-H010-P5-r1) -----------------------------
+test("H010P5-R1-1: an unvalidated full_weight row is never a base; a succeeded weights job's version is", async () => {
+  // No job produced BASE or FW_UNVALIDATED: the base list is empty, not "every full_weight".
+  mount({ role: "ml_engineer" });
+  await pick(/Adapter and base/);
+  expect(screen.queryByLabelText(/Base model version/)).toBeNull();
+  expect(screen.getByText(/No validated base versions/)).toBeTruthy();
+});
+
+test("H010P5-R1-2: submit is blocked until the job list has loaded (no false 'created' after a lost reply)", async () => {
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    // First list GET rejected; later ones return an OLDER failed job for the same ref/connection.
+    return lists === 1
+      ? { reject: true }
+      : { body: [job({ id: "old", state: "failed", failure_code: "digest_mismatch" })] };
+  };
+  routes[`POST ${IMPORTS}`] = { reject: true };
+  mount();
+  await toReviewEndpoint();
+  fireEvent.click(screen.getByTestId("import-confirm"));
+  const submit = screen.getByTestId("import-submit") as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.click(submit);
+  await settle();
+  expect(posts()).toHaveLength(0);
+  expect(screen.queryByText(/The import was created/)).toBeNull();
+  // Reload the jobs: the baseline now exists and submit is available again.
+  fireEvent.click(screen.getByRole("button", { name: /Reload jobs/ }));
+  await settle();
+  expect((screen.getByTestId("import-submit") as HTMLButtonElement).disabled).toBe(false);
+});
+
+test("H010P5-R1-3: blocked_external with an unknown code never says 'failed' and shows the code in <bdi>", async () => {
+  routes[`GET ${IMPORTS}`] = {
+    body: [job({ state: "blocked_external", failure_code: "brand_new_block" })],
+  };
+  mount();
+  await waitFor(() => screen.getByTestId(`job-${JOB}`));
+  const li = screen.getByTestId(`job-${JOB}`);
+  expect(li.textContent).toMatch(/Blocked/);
+  expect(li.textContent).not.toMatch(/failed/i);
+  expect(
+    Array.from(li.querySelectorAll("bdi")).some((b) => b.textContent === "brand_new_block"),
+  ).toBe(true);
+});
+
+test("H010P5-R1-4: field errors are inline on the UX01 Field and on selects, wired by aria-describedby", async () => {
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
+  await settle();
+  const sel = screen.getByLabelText(/Gateway connection/);
+  const selErr = screen.getByTestId("connection-error");
+  expect(sel.getAttribute("aria-invalid")).toBe("true");
+  expect(sel.getAttribute("aria-describedby")).toBe(selErr.id);
+  fireEvent.change(sel, { target: { value: CONN } });
+  await settle();
+  fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
+  await settle();
+  const input = screen.getByLabelText(/Model reference/);
+  expect(input.getAttribute("aria-invalid")).toBe("true");
+  expect(input.getAttribute("aria-required")).toBe("true");
+  const ids = (input.getAttribute("aria-describedby") ?? "").split(" ");
+  expect(
+    ids.some((id) => document.getElementById(id)?.textContent === "Enter the model reference."),
+  ).toBe(true);
+  // artifact select
+  cleanup();
+  mount();
+  await pick(/Full weights/);
+  fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
+  await settle();
+  const art = screen.getByLabelText(/Model artifact/);
+  expect(art.getAttribute("aria-describedby")).toBe(screen.getByTestId("artifact-error").id);
+});
+
+test("H010P5-R1-5: after a created import, and after a found-after-lost-reply, focus is on the notice, never <body>", async () => {
+  routes[`POST ${IMPORTS}`] = { status: 201, body: job({ id: "new1" }) };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(document.activeElement).toBe(screen.getByTestId("import-notice"));
+  cleanup();
+
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    return { body: lists === 1 ? [] : [job({ id: "new2" })] };
+  };
+  routes[`POST ${IMPORTS}`] = { reject: true };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  expect(screen.getByTestId("import-notice").textContent).toMatch(/was created/);
+  expect(document.activeElement).toBe(screen.getByTestId("import-notice"));
+});
+
+test("H010P5-R1-6: a rejected, failed or malformed project GET shows an announced alert, not a silent 'Unavailable'", async () => {
+  for (const reply of [
+    { reject: true },
+    { status: 500, body: {} },
+    { malformed: true },
+    { body: {} },
+  ]) {
+    routes[`GET ${ORG_BASE}/projects/${PROJECT}`] = reply;
+    const { unmount } = mount();
+    await settle();
+    await settle();
+    const alert = screen.getByTestId("import-profile-error");
+    expect(alert.getAttribute("role")).toBe("alert");
+    unmount();
+  }
+});
+
+test("H010P5-R1-7: the ref input is described by its help text (aria-describedby pinned)", async () => {
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  const input = screen.getByLabelText(/Model reference/);
+  const ids = (input.getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean);
+  expect(ids.length).toBeGreaterThan(0);
+  expect(ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ")).toMatch(
+    /Sent exactly as typed/,
+  );
+});
+
+test("H010P5-R1-8: the ref check matches the server: code points, astral accepted, lone surrogate and control refused", async () => {
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  const review = () => fireEvent.click(screen.getByRole("button", { name: /Review import/ }));
+  const setRef = (v: string) =>
+    fireEvent.change(screen.getByLabelText(/Model reference/), { target: { value: v } });
+  setRef("ft:\u{20000}-model");
+  review();
+  await settle();
+  expect(screen.getByTestId("import-submit")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Back$/ }));
+  await settle();
+  setRef("\u{20000}".repeat(2048)); // 2048 code points, 4096 UTF-16 units
+  review();
+  await settle();
+  expect(screen.getByTestId("import-submit")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Back$/ }));
+  await settle();
+  setRef("\u{20000}".repeat(2049));
+  review();
+  await settle();
+  expect(screen.queryByTestId("import-submit")).toBeNull();
+  setRef("bad\ud800ref");
+  review();
+  await settle();
+  expect(screen.queryByTestId("import-submit")).toBeNull();
+});
+
+test("H010P5-R1-9: a failed poll keeps polling with backoff; the error is shown; it stops at a terminal state", async () => {
+  vi.useFakeTimers();
+  let n = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    n += 1;
+    if (n === 1) return { body: [job()] };
+    if (n <= 3) return { reject: true };
+    return { body: [job({ state: "failed", failure_code: "digest_mismatch" })] };
+  };
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(POLL_START_MS * 2 + 1);
+  });
+  expect(screen.getByTestId("import-list-error")).toBeTruthy();
+  // One act per step: React flushes the re-arm at act exit.
+  for (let i = 0; i < 6; i += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MAX_MS);
+    });
+  }
+  expect(listGets().length).toBeGreaterThanOrEqual(4);
+  expect(screen.getByTestId(`job-${JOB}`).getAttribute("data-state")).toBe("failed");
+  const settled = listGets().length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5 * POLL_MAX_MS);
+  });
+  expect(listGets()).toHaveLength(settled);
 });
