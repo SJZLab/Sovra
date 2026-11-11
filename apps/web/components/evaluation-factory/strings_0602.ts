@@ -212,6 +212,11 @@ const STRINGS = {
     en: "Ask an administrator to change your role, then try again.",
     ar: "اطلب من أحد المسؤولين تغيير دورك، ثم حاول مرة أخرى.",
   },
+  /** 404/409 (not found, suite locked): editing the field or file cannot help. */
+  recoverNoFix: {
+    en: "Reload the list, or ask an administrator if you expected this to work.",
+    ar: "أعد تحميل القائمة، أو اسأل أحد المسؤولين إن كنت تتوقع أن ينجح هذا.",
+  },
   restrictedSaveNotice: {
     en: "Your save was refused and the case form was closed. No case content is shown.",
     ar: "رُفض الحفظ وأُغلق نموذج الحالة. لا يُعرض أي محتوى للحالات.",

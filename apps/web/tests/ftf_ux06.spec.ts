@@ -1427,3 +1427,131 @@ describe("[UX06-R3 UNPINNED] each alert is announced (role=alert) in its own rig
     ).toContain(node.id);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// FTF-UX06 round 3, pre-review round 1 findings
+// ---------------------------------------------------------------------------------------------
+describe("[UX06-R3 PRE-REVIEW] ids, recovery variants, stale alert, remaining pins", () => {
+  test("two editors in error states share no id and each textarea describes its own list", async () => {
+    const mk = (key: string) =>
+      createElement(EvaluationCaseEditorImport, {
+        key,
+        apiBaseUrl: API_BASE,
+        organizationId: ORG,
+        projectId: PROJECT,
+        suiteId: SUITE,
+      });
+    const { container } = render(createElement("div", null, [mk("a"), mk("b")]));
+    for (const index of [0, 1]) {
+      enqueue(
+        "POST",
+        LIST_URL,
+        fail(400, {
+          detail: "validation_failed",
+          errors: [{ index: 0, field: "category", code: "required" }],
+        }),
+      );
+      fireEvent.change(screen.getAllByTestId("import-text")[index]!, {
+        target: { value: JSON.stringify([importRow("alpha")]) },
+      });
+      fireEvent.click(screen.getAllByTestId("import-button")[index]!);
+      await waitFor(() =>
+        expect(screen.getAllByTestId("import-field-errors").length).toBe(index + 1),
+      );
+    }
+    const ids = Array.from(container.querySelectorAll("[id]")).map((n) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    screen.getAllByTestId("import-text").forEach((area, index) => {
+      const target = document.getElementById(
+        (area.getAttribute("aria-describedby") ?? "")
+          .split(" ")
+          .find((id) => id.endsWith("import-field-errors")) ?? "",
+      );
+      expect(target).toBe(screen.getAllByTestId("import-field-errors")[index]);
+    });
+  });
+
+  test("409 suite_locked and 404 on save/import never say to fix the field or file", async () => {
+    for (const [status, detail] of [
+      [409, "suite_locked"],
+      [404, "not_found"],
+    ] as const) {
+      await openEditorWithSave(fail(status, { detail }));
+      await waitFor(() => expect(screen.getByTestId("edit-error")).toBeTruthy());
+      const text = screen.getByTestId("edit-error").textContent ?? "";
+      expect(text).toContain("Reload the list");
+      expect(text).not.toContain("Fix the field");
+      cleanup();
+    }
+    renderUI();
+    enqueue("POST", LIST_URL, fail(409, { detail: "suite_locked" }));
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(screen.getByTestId("import-error").textContent).not.toContain("Fix the file");
+  });
+
+  test("a malformed-200 import response says retry, never fix the file", async () => {
+    renderUI();
+    enqueue("POST", LIST_URL, ok({ items: "nope" }));
+    fireEvent.change(screen.getByTestId("import-text"), {
+      target: { value: JSON.stringify([importRow("c1")]) },
+    });
+    fireEvent.click(screen.getByTestId("import-button"));
+    await waitFor(() => expect(screen.getByTestId("import-error")).toBeTruthy());
+    expect(screen.getByTestId("import-error").textContent).toContain("Try again.");
+    expect(screen.getByTestId("import-error").textContent).not.toContain("Fix the file");
+  });
+
+  test("a restricted-save alert is cleared by a later successful load", async () => {
+    await openEditorWithSave(fail(403, { detail: "final_suite_content_restricted" }));
+    await waitFor(() => expect(screen.getByTestId("restricted-save-error")).toBeTruthy());
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    expect(screen.queryByTestId("restricted-save-error")).toBeNull();
+  });
+
+  test("blur and server field-error alerts keep role=alert (P1, P2, R2, R3)", async () => {
+    await openEditorWithSave(
+      fail(400, {
+        detail: "validation_failed",
+        errors: [
+          { index: null, field: "expected_json", code: "empty_object" },
+          { index: null, field: "grader_type", code: "invalid_value" },
+        ],
+      }),
+    );
+    await waitFor(() => expect(screen.getByTestId("edit-field-errors")).toBeTruthy());
+    for (const field of ["field-expected-json", "field-grader-type"]) {
+      const ids = (screen.getByTestId(field).getAttribute("aria-describedby") ?? "").split(" ");
+      const node = ids
+        .map((id) => document.getElementById(id))
+        .find((n) => n?.id.endsWith("-error"));
+      expect(node?.getAttribute("role"), field).toBe("alert");
+    }
+    for (const field of ["field-input-json", "field-expected-json"]) {
+      setField(field, "{broken");
+      blur(field);
+      expect(screen.getByTestId(`${field}-blur-error`).getAttribute("role")).toBe("alert");
+    }
+  });
+
+  test("the ErrorSummary title is Arabic under ar", async () => {
+    renderUI("ar");
+    await loadCases([evalCase(CASE_A, "a-case")]);
+    await openEditor(CASE_A);
+    enqueue(
+      "PATCH",
+      `${LIST_URL}/${CASE_A}`,
+      fail(400, {
+        detail: "validation_failed",
+        errors: [{ index: null, field: "language", code: "invalid_value" }],
+      }),
+    );
+    setField("field-language", "fr");
+    fireEvent.click(screen.getByTestId("save-case-button"));
+    await waitFor(() => expect(screen.getByText("أصلح هذه الحقول")).toBeTruthy());
+    expect(screen.queryByText("Fix these fields")).toBeNull();
+  });
+});

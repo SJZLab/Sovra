@@ -216,7 +216,8 @@ type RecoveryKey =
   | "recoverSave"
   | "recoverRestricted"
   | "recoverRetry"
-  | "recoverAccess";
+  | "recoverAccess"
+  | "recoverNoFix";
 
 interface Failure {
   message: string;
@@ -230,6 +231,7 @@ interface Failure {
 function recoveryFor(detail: string | null, status: number): RecoveryKey | null {
   if (detail === "final_suite_content_restricted") return "recoverRestricted";
   if (detail === "role_not_authorized" || status === 403) return "recoverAccess";
+  if (status === 404 || status === 409) return "recoverNoFix";
   if (status >= 500) return "recoverRetry";
   return null;
 }
@@ -622,6 +624,7 @@ export function EvaluationCaseEditorImport({
 
   async function loadPage(after: string | null) {
     setListError(null);
+    setRestrictedSave(null);
     setListLoading(true);
     const query = after === null ? "" : `?after=${encodeURIComponent(after)}`;
     try {
@@ -859,7 +862,7 @@ export function EvaluationCaseEditorImport({
   ) {
     if (errors.length === 0) return null;
     return (
-      <ul data-testid={testId} id={testId}>
+      <ul data-testid={testId} id={`${idPrefix}-${testId}`}>
         {errors.map((entry, position) => {
           const caseKey =
             entry.index !== null && typeof rows[entry.index]?.case_key === "string"
@@ -868,7 +871,7 @@ export function EvaluationCaseEditorImport({
           return (
             <li
               key={position}
-              id={`${testId}-item-${position}`}
+              id={`${idPrefix}-${testId}-item-${position}`}
               style={{ overflowWrap: "anywhere" }}
             >
               {rowOrRequest(entry.index, locale)}
@@ -1037,7 +1040,7 @@ export function EvaluationCaseEditorImport({
             aria-label={t0602("importTextLabel", locale)}
             aria-describedby={describedBy(
               `${idPrefix}-import-help`,
-              importFieldErrors.length > 0 ? "import-field-errors" : undefined,
+              importFieldErrors.length > 0 ? `${idPrefix}-import-field-errors` : undefined,
             )}
             value={importText}
             onChange={(event) => setImportText(event.target.value)}
