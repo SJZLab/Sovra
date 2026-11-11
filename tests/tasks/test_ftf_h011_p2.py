@@ -3212,6 +3212,19 @@ def part_s_return3() -> None:
         conn = w.connection("t", ALL_PURPOSES)
         w.schema_sha = sha("q,a")
         v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        w.reject(w.propose(v1, doc))
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        w.approve(w.propose(v2, doc))
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        check(
+            "R3-B4",
+            "a rejection OLDER than the reused approval does not block reuse",
+            w.resolve(v3).reused is True,
+        )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
         a = w.propose(v1, doc)
         w.reject(a)
         v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
