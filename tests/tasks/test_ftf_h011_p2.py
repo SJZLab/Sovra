@@ -1885,6 +1885,15 @@ def part_s_approve() -> None:
         refuses(
             w, "an unfinished re-run", "preview_incomplete", lambda: w.approve(m), "NEG-LAW17-5"
         )
+        for odd in (" blocked", "Blocked", "BLOCKED", " completed", "Completed", "completed "):
+            w.preview_state = (odd, None)
+            refuses(
+                w,
+                f"a preview state {odd!r} is not an exact known state",
+                "preview_incomplete",
+                lambda: w.approve(m),
+                "NEG-LAW17-5b",
+            )
         w.preview_state = ("completed", None)
         w.preview_error = MappingPreviewUnavailableError("x")
         refuses(w, "the importer vanishing", "importer_unavailable", lambda: w.approve(m))
@@ -2852,12 +2861,22 @@ def part_s_variants2() -> None:
             lambda: w.propose(ds, actor=store.MappingActor("user", "a", "ML_ENGINEER", "r")),
             "VARIANT2-7",
         )
-        edge = store.MappingActor("user", "a" * 200, "workspace_admin", "r" * 100)
+        edge = store.MappingActor("user", "a" * 128, "workspace_admin", "r" * 100)
         check(
             "VARIANT2-8",
-            "an actor id of exactly 200 and a request id of exactly 100 characters are accepted",
-            w.propose(ds, actor=edge).created_by == "a" * 200,
+            "an actor id of exactly 128 (the audit writer's limit) and a request id of exactly 100 are accepted",
+            w.propose(ds, actor=edge).created_by == "a" * 128,
         )
+        for bad_id in ("a" * 129, "a" * 200, "a b", "x|y", ".a", "é"):
+            refuses(
+                w,
+                f"an actor id the audit writer refuses ({bad_id[:6]!r}, {len(bad_id)})",
+                "actor_not_auditable",
+                lambda bad_id=bad_id: w.propose(
+                    ds, actor=store.MappingActor("user", bad_id, "workspace_admin", "r")
+                ),
+                "VARIANT2-8b",
+            )
         m = w.session.query(store.DatasetMapping).one()
         refuses(
             w,
@@ -3142,6 +3161,76 @@ def part_s_return2() -> None:
         )
 
 
+def part_s_return3() -> None:
+    """FTF-H011-P3 round 2: Control-plane rulings (b) and (c) from the P2 certification."""
+    doc = {
+        "shape": "prompt_completion",
+        "csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0},
+        "prompt": {"header": "q"},
+        "completion": {"header": "a"},
+    }
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        a = w.propose(v1, doc)
+        w.approve(a)
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        b = w.propose(v2, doc)
+        w.reject(b)
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        check(
+            "R3-B0",
+            "setup: v2's rejected mapping is the identical mapping v1 approved",
+            a.mapping_sha256 == b.mapping_sha256,
+        )
+        refuses(
+            w,
+            "v3 after v1 approved and v2 rejected the identical mapping (V2c)",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v3),
+            "R3-B1",
+        )
+        w.approve(w.propose(v3, doc))
+        check("R3-B2", "a fresh own approval of v3 resolves again", w.resolve(v3).reused is False)
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        a = w.propose(v1, doc)
+        w.approve(a)
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        other = dict(doc, completion={"header": "z"})
+        w.reject(w.propose(v2, other))
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        check(
+            "R3-B3",
+            "a newer rejection of a DIFFERENT mapping does not block reuse",
+            w.resolve(v3).reused is True,
+        )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        a = w.propose(v1, doc)
+        w.reject(a)
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        refuses(
+            w,
+            "own mapping rejected, no prior approval anywhere (F8)",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v1),
+            "R3-C1",
+        )
+        refuses(
+            w,
+            "a later version with no decision and only a rejected ancestor has no approved mapping",
+            "mapping_not_found",
+            lambda: w.resolve(v2),
+            "R3-C2",
+        )
+
+
 def main() -> None:
     part_p()
     part_m()
@@ -3155,6 +3244,7 @@ def main() -> None:
     part_s_round2()
     part_s_approver()
     part_s_return2()
+    part_s_return3()
     if FAILURES:
         for failure in FAILURES:
             print(failure, file=sys.stderr)

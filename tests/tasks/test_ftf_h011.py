@@ -105,6 +105,8 @@ BASE_DS = f"/api/v1/organizations/{ORG}/projects/{PROJECT}/datasets"
 NOW = p2._NOW
 CANARIES = ("canary-raw-secret-7", "canary-header-secret-8", "tenants/o/uploads/x/source")
 
+# Subjects the audit writer's actor_id rule refuses (`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`).
+BAD_SUBJECTS = ("bad actor", "auth0|x1", "x" * 129, ".lead")
 PRINCIPALS = {
     name: AuthenticatedPrincipal(issuer="https://issuer.example", subject=name)
     for name in (
@@ -117,6 +119,7 @@ PRINCIPALS = {
         "evaluator",
         "approver",
         "stranger",
+        *BAD_SUBJECTS,
     )
 }
 ROLES = {
@@ -128,6 +131,7 @@ ROLES = {
     "viewer": Role.VIEWER,
     "evaluator": Role.EVALUATOR,
     "approver": Role.APPROVER,
+    **{subject: Role.WORKSPACE_ADMIN for subject in BAD_SUBJECTS},
 }
 
 
@@ -1996,6 +2000,7 @@ def part_r_review() -> None:
 STORE_STATUS: dict[str, tuple[int, str]] = {
     "invalid_request": (400, "invalid_request"),
     "actor_not_permitted": (403, "actor_not_permitted"),
+    "actor_not_auditable": (403, "actor_not_auditable"),
     "approval_not_permitted": (403, "approval_not_permitted"),
     "dataset_not_found": (404, "not_found"),
     "purpose_not_authorized": (403, "purpose_not_authorized"),
@@ -4121,6 +4126,36 @@ def part_r_nul() -> None:
             )
 
 
+def part_r_actor() -> None:
+    """Ruling (d): a principal whose subject the audit writer refuses gets a stable 403, never a 500."""
+    with http_world() as (w, base):
+        conn, ds = seeded(w)
+        made = propose(base, ds)
+        mapping = made[1]
+        mid = mapping["id"]
+        before = w.snapshot()
+        for who in BAD_SUBJECTS:
+            label = who[:12]
+            for path, body, key in (
+                ("/mapping-probe", {"csv": {"encoding": "utf-8"}}, None),
+                ("/mapping-preview", {"mapping": MSG}, None),
+                ("/mappings", {"mapping": MSG}, "actor-key-00001"),
+                (f"/mappings/{mid}/approve", approve_body(mapping), "actor-key-00002"),
+                (f"/mappings/{mid}/reject", {"rationale": "no"}, "actor-key-00003"),
+            ):
+                got = call(base, "POST", f"{BASE_DS}/{ds.id}{path}", who, body, key)
+                check(
+                    "R-ACTOR",
+                    f"{path.split('/')[1]} as subject {label!r} is 403 actor_not_auditable (got {got[0]} {code(got)})",
+                    got == (403, {"detail": "actor_not_auditable"}),
+                )
+            got = call(base, "GET", f"{BASE_DS}/{ds.id}/mappings", who)
+            check("R-ACTOR", f"reads stay open for subject {label!r} (got {got[0]})", got[0] == 200)
+        check("R-ACTOR", "nothing was stored or audited", w.snapshot() == before)
+        good = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-preview", "admin", {"mapping": MSG})
+        check("R-ACTOR", "positive control: a valid subject still previews", good[0] == 200)
+
+
 def part_r_unchanged_decision() -> None:
     with http_world() as (w, base):
         conn, ds = seeded(w)
@@ -4543,6 +4578,7 @@ def main() -> None:
     part_r_lists_and_limits()
     part_r_unchanged_decision()
     part_r_nul()
+    part_r_actor()
     part_u2()
     part_m()
     part_c()

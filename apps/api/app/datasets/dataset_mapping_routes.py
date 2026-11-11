@@ -48,6 +48,7 @@ from sqlalchemy.orm import Session
 from workers.data.dataset_mapping_review import MappingPreviewResult, ProbeResult
 from workers.data.import_common import StrictJsonError, strict_loads
 
+from app.auth.audit_event_writer import _SAFE_IDENTIFIER as _AUDIT_ACTOR_RULE
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.rbac_middleware import (
     AuthorizedContext,
@@ -119,7 +120,12 @@ _BAD_REQUEST: Final = frozenset(
     }
 )
 _FORBIDDEN: Final = frozenset(
-    {"actor_not_permitted", "approval_not_permitted", "purpose_not_authorized"}
+    {
+        "actor_not_auditable",
+        "actor_not_permitted",
+        "approval_not_permitted",
+        "purpose_not_authorized",
+    }
 )
 _NOT_FOUND: Final = frozenset({"dataset_not_found", "mapping_not_found"})
 # A refusal that may mean "an identical request already took effect": look for the stored outcome.
@@ -300,6 +306,14 @@ def _parse_after(request: Request) -> int:
     if not raw.isascii() or not raw.isdecimal() or len(raw) > 9:
         raise HTTPException(status_code=400, detail="invalid_after")
     return int(raw)
+
+
+def _require_auditable(ctx: AuthorizedContext) -> None:
+    """Every audited route writes the principal's subject as the audit `actor_id`; the audit writer
+    refuses a subject outside its own identifier rule, which would be a 500 (ruling (d)). Refuse it
+    first, with a stable code, before any body is read or any row is written."""
+    if _AUDIT_ACTOR_RULE.fullmatch(ctx.principal.subject) is None:
+        raise HTTPException(status_code=403, detail="actor_not_auditable")
 
 
 def _actor(ctx: AuthorizedContext) -> MappingActor:
@@ -538,6 +552,7 @@ def build_dataset_mapping_router(
         dataset_id: uuid.UUID,
         ctx: AuthorizedContext = read_dependency,
     ) -> JSONResponse:
+        _require_auditable(ctx)
         del organization_id
         payload = await _read_body(request, required=frozenset(), optional=_PROBE_FIELDS)
         tenant = TenantContext.from_authorized_context(ctx)
@@ -581,6 +596,7 @@ def build_dataset_mapping_router(
         dataset_id: uuid.UUID,
         ctx: AuthorizedContext = read_dependency,
     ) -> JSONResponse:
+        _require_auditable(ctx)
         del organization_id
         payload = await _read_body(request, required=_MAPPING_FIELDS)
         document = _document(payload["mapping"])
@@ -696,6 +712,7 @@ def build_dataset_mapping_router(
         dataset_id: uuid.UUID,
         ctx: AuthorizedContext = read_dependency,
     ) -> JSONResponse:
+        _require_auditable(ctx)
         del organization_id
         key = _idempotency_key(request)
         payload = await _read_body(request, required=_MAPPING_FIELDS)
@@ -781,6 +798,7 @@ def build_dataset_mapping_router(
         mapping_id: uuid.UUID,
         ctx: AuthorizedContext = write_dependency,
     ) -> JSONResponse:
+        _require_auditable(ctx)
         del organization_id
         key = _idempotency_key(request)
         fields = _approve_fields(await _read_body(request, required=_APPROVE_FIELDS))
@@ -853,6 +871,7 @@ def build_dataset_mapping_router(
         mapping_id: uuid.UUID,
         ctx: AuthorizedContext = write_dependency,
     ) -> JSONResponse:
+        _require_auditable(ctx)
         del organization_id
         key = _idempotency_key(request)
         payload = await _read_body(request, required=_REJECT_FIELDS)

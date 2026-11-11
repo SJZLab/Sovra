@@ -75,6 +75,7 @@ from workers.data.import_common import (
     strict_loads,
 )
 
+from app.auth.audit_event_writer import _SAFE_IDENTIFIER as _AUDIT_ACTOR_RULE
 from app.auth.audit_event_writer import write_audit_event
 from app.auth.organization_workspace_schema import Base
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
@@ -147,6 +148,7 @@ CODES: Final = frozenset(
     {
         "invalid_request",
         "actor_not_permitted",
+        "actor_not_auditable",
         "approval_not_permitted",
         "dataset_not_found",
         "purpose_not_authorized",
@@ -382,6 +384,9 @@ def _require_actor(actor: object, *, roles: frozenset[str], code: str) -> Mappin
         raise MappingStoreError("invalid_request")
     _clean(actor.actor_type, 64)
     _clean(actor.actor_id, 200)
+    if _AUDIT_ACTOR_RULE.fullmatch(actor.actor_id) is None:
+        # the audit writer would refuse this actor_id after the work; refuse it first (ruling (d))
+        raise MappingStoreError("actor_not_auditable")
     _clean(actor.role, 64)
     _clean(actor.request_id, 100)
     if actor.role not in roles:
@@ -889,6 +894,26 @@ def _approved_for(
     return execute_tenant_scoped(session, context.organization_id, statement).scalars().first()
 
 
+def _newer_identical_rejection(
+    session: Session, context: TenantContext, dataset: Dataset, prior: DatasetMapping
+) -> bool:
+    """A dataset version of the same name and purpose, newer than the reused approval's, whose
+    `rejected` mapping has the same `mapping_sha256`."""
+    statement = (
+        select(DatasetMapping.id)
+        .where(
+            DatasetMapping.project_id == dataset.project_id,
+            DatasetMapping.status == "rejected",
+            DatasetMapping.dataset_name == dataset.name,
+            DatasetMapping.dataset_purpose == dataset.purpose,
+            DatasetMapping.dataset_version > prior.dataset_version,
+            DatasetMapping.mapping_sha256 == prior.mapping_sha256,
+        )
+        .limit(1)
+    )
+    return execute_tenant_scoped(session, context.organization_id, statement).first() is not None
+
+
 def _latest_decision_status(
     session: Session, context: TenantContext, dataset: Dataset
 ) -> str | None:
@@ -964,6 +989,10 @@ def resolve_approved_mapping(
     prior = _approved_for(session, context, dataset, earlier=True)
     if prior is None:
         raise MappingStoreError("mapping_not_found")
+    if _newer_identical_rejection(session, context, dataset, prior):
+        # A newer version's explicit rejection of this very mapping is never skipped by a reuse
+        # of the older approval (Control-plane ruling (b), V2c: v1 approved, v2 rejected, v3).
+        raise MappingStoreError("mapping_reapproval_required")
     try:
         # Law 16: the prior approval's own grant must still allow this purpose, now
         authorize_dataset_source_purpose(
