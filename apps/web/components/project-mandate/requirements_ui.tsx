@@ -391,11 +391,18 @@ function RequirementsPanelInner({
     setScopes(new Set(policy.scopes as BudgetScope[]));
   }
 
+  // A load sequence token: only the latest GET may report. A reply to an older GET (a repeated
+  // mount effect under StrictMode, a slow first request) is dropped, so it can neither put an old
+  // version back after a save nor re-show a stale state. The form exists only once the latest GET
+  // has answered, so a save always follows the latest load.
+  const budgetSeq = useRef(0);
   async function refreshBudgetPolicy(): Promise<void> {
+    const seq = ++budgetSeq.current;
     setBudget({ state: "loading" });
     const outcome = await requestJson(budgetPolicyUrl(apiBaseUrl, organizationId, projectId), {
       credentials: "include",
     });
+    if (seq !== budgetSeq.current) return;
     if (!outcome.ok) {
       // A 404 is "no policy yet" (the route answers `not_found` for a missing policy and for a
       // project it cannot show; creating one then answers 404 for the latter, which is shown).

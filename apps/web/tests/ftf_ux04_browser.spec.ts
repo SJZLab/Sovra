@@ -15,6 +15,7 @@ import { build } from "vite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import type { Route } from "./browser/ux04_entry";
+import { browserLaunchOptions } from "./support/browser_launch";
 import {
   axeProblems,
   keyboardProblems,
@@ -551,7 +552,7 @@ beforeAll(async () => {
   );
   bundle = outputs.find((o) => o.type === "chunk")?.code ?? "";
   expect(bundle.length, "the in-memory bundle must be built").toBeGreaterThan(1000);
-  browser = await chromium.launch();
+  browser = await chromium.launch(browserLaunchOptions());
 }, 120_000);
 
 afterAll(async () => {

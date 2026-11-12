@@ -12,7 +12,7 @@
 //   (d) no simulated success -- only a typed, bound 2xx counts        [UX04-D*]
 //   (e) typed errors: 5xx, non-JSON, unknown codes keep state         [UX04-E*]
 //   (f) the real router lives in tests/integration/test_ftf_ux04_real_api.py
-import { createElement, useState } from "react";
+import { StrictMode, createElement, useState } from "react";
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -2958,5 +2958,167 @@ describe("[UX04-J] shared helpers", () => {
     expect(jsonEqual({}, [])).toBe(false);
     expect(jsonEqual(null, {})).toBe(false);
     expect(jsonEqual(1, "1")).toBe(false);
+  });
+});
+
+describe("[UX04-R3] review round 3 (findings 1-3 of the r1 pre-review)", () => {
+  // Finding 1: a host that never adopts the created record keeps `project={null}` and only updates
+  // its own state; every re-render must keep the form the user is looking at.
+  function NonAdoptingHost() {
+    const [saves, setSaves] = useState(0);
+    return createElement(
+      "div",
+      null,
+      createElement(ProjectSetupForm, {
+        ...formProps({ project: null }),
+        onSaved: () => setSaves((n) => n + 1),
+      }),
+      createElement("p", { "data-testid": "host-saves" }, String(saves)),
+    );
+  }
+
+  test("[UX04-R3-1] a non-adopting host re-render keeps the created form (name, notice, heading, focus)", async () => {
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, null), 201),
+    );
+    render(createElement(NonAdoptingHost));
+    type("project-name-input", "kept-name");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Project created"));
+    await waitFor(() => expect(text("host-saves")).toBe("1"));
+    // The host re-rendered itself (its own state changed) with `project` still null.
+    expect(text("project-saved-notice")).toBe("Project created");
+    expect(input("project-name-input").value).toBe("kept-name");
+    expect(tid("project-setup-form").querySelector("h2")!.textContent).not.toBe("Create project");
+    expect(document.activeElement).toBe(tid("project-submit-button"));
+    // And a further host re-render from the outside changes nothing either.
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, project({ name: "kept-name" }))),
+    );
+    type("project-name-input", "kept-name-2");
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    expect(fetchMock().mock.calls[1]![1].method).toBe("PATCH");
+  });
+
+  test("[UX04-R3-1] negative: adopted -> null is still a fresh create form (POST)", async () => {
+    function Host() {
+      const [p, setP] = useState<ProjectRecord | null>(null);
+      return createElement(
+        "div",
+        null,
+        createElement(ProjectSetupForm, { ...formProps({ project: p }), onSaved: setP }),
+        createElement("button", { "data-testid": "go-new", onClick: () => setP(null) }, "new"),
+      );
+    }
+    fetchMock()
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, null), 201))
+      .mockImplementationOnce(async (_u: string, init: RequestInit) => ok(echo(init, null), 201));
+    render(createElement(Host));
+    type("project-name-input", "first");
+    click("project-submit-button");
+    await waitFor(() => expect(text("project-saved-notice")).toBe("Project created"));
+    click("go-new");
+    expect(input("project-name-input").value).toBe("");
+    expect(tid("project-setup-form").querySelector("h2")!.textContent).toBe("Create project");
+    type("project-name-input", "second");
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(2));
+    expect(fetchMock().mock.calls[1]![1].method).toBe("POST");
+  });
+
+  // Finding 2: with no own save, a host re-passing the same id at an OLDER version than the form
+  // first saw (a racing refetch) must neither revert the fields nor lower the version it sends.
+  test("[UX04-R3-2] an older-than-initial prop never reseeds the form or lowers the version sent", async () => {
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, project({ row_version: 5 }))),
+    );
+    const view = renderForm({ project: project({ row_version: 5, name: "v5-name" }) });
+    type("project-name-input", "typed-name");
+    view.rerender(
+      createElement(
+        ProjectSetupForm,
+        formProps({ project: project({ row_version: 3, name: "old-name" }) }),
+      ),
+    );
+    expect(input("project-name-input").value).toBe("typed-name");
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    expect(sentBody().expected_row_version).toBe(5);
+  });
+
+  test("[UX04-R3-2] negative: a NEWER prop is still the reload the conflict message asks for", async () => {
+    const view = renderForm({ project: project({ row_version: 5, name: "v5-name" }) });
+    type("project-name-input", "typed-name");
+    view.rerender(
+      createElement(
+        ProjectSetupForm,
+        formProps({ project: project({ row_version: 6, name: "v6-name" }) }),
+      ),
+    );
+    expect(input("project-name-input").value).toBe("v6-name");
+    fetchMock().mockImplementationOnce(async (_u: string, init: RequestInit) =>
+      ok(echo(init, project({ row_version: 6 }))),
+    );
+    click("project-submit-button");
+    await waitFor(() => expect(fetchMock()).toHaveBeenCalledTimes(1));
+    expect(sentBody().expected_row_version).toBe(6);
+  });
+
+  // Finding 3: a late GET that lands after a save (or after a newer GET) must not put the old
+  // policy back. Two real GETs, resolved out of order.
+  test("[UX04-R3-3] a stale GET that lands after a save never restores the old version", async () => {
+    const gets: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return Promise.resolve(ok([]));
+        if (url === BUD && init?.method === undefined) return new Promise((r) => gets.push(r));
+        if (url === BUD && init?.method === "PATCH") {
+          const sent = JSON.parse(init.body as string);
+          return Promise.resolve(
+            ok(
+              policy({
+                total_amount: sent.total_amount,
+                available_amount: sent.total_amount,
+                scopes: sent.scopes,
+                row_version: 4,
+              }),
+            ),
+          );
+        }
+        throw new Error("unexpected");
+      }),
+    );
+    // StrictMode runs the mount effect twice: two real GETs are in flight.
+    render(createElement(StrictMode, null, createElement(RequirementsPanel, panelProps())));
+    await waitFor(() => expect(gets).toHaveLength(2));
+    await act(async () => gets[1]!(ok(policy({ row_version: 3 }))));
+    await waitFor(() => expect(text("budget-row-version")).toBe("3"));
+    type("budget-total-amount-input", "2000");
+    click("budget-policy-submit-button");
+    await waitFor(() => expect(text("budget-row-version")).toBe("4"));
+    // The FIRST (older) GET now finally answers with the pre-save policy.
+    await act(async () => gets[0]!(ok(policy({ total_amount: "1000.0000", row_version: 2 }))));
+    expect(text("budget-row-version")).toBe("4");
+    expect(input("budget-total-amount-input").value).toBe("2000");
+  });
+
+  test("[UX04-R3-3] negative: with no save in between, the latest GET still wins", async () => {
+    const gets: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return Promise.resolve(ok([]));
+        if (url === BUD && init?.method === undefined) return new Promise((r) => gets.push(r));
+        throw new Error("unexpected");
+      }),
+    );
+    render(createElement(StrictMode, null, createElement(RequirementsPanel, panelProps())));
+    await waitFor(() => expect(gets).toHaveLength(2));
+    await act(async () => gets[1]!(ok(policy({ row_version: 7 }))));
+    await waitFor(() => expect(text("budget-row-version")).toBe("7"));
+    await act(async () => gets[0]!(ok(policy({ row_version: 2 }))));
+    expect(text("budget-row-version")).toBe("7");
   });
 });

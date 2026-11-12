@@ -271,13 +271,21 @@ export function ProjectSetupForm(props: ProjectSetupFormProps) {
   // would drop the "Project created" notice and keyboard focus.
   const createdId = useRef<string | null>(null);
   const generation = useRef(0);
+  const previousProjectId = useRef<string | null>(props.project?.id ?? null);
   const adopted = !!props.project && props.project.id === createdId.current;
-  if (!props.project && createdId.current !== null) {
-    // The host went back to "no project" after adopting ours: that is a fresh create form, so
-    // a new instance (never a PATCH of the project the previous instance created).
+  if (
+    !props.project &&
+    createdId.current !== null &&
+    previousProjectId.current === createdId.current
+  ) {
+    // The host went from adopting ours to "no project": that is a fresh create form, so a new
+    // instance (never a PATCH of the project the previous instance created). A host that never
+    // adopted (`project` stays null across renders) keeps the created form: only this
+    // adopted -> null transition resets, not "null while we hold a created id".
     createdId.current = null;
     generation.current += 1;
   }
+  previousProjectId.current = props.project?.id ?? null;
   const idPart = props.project && !adopted ? props.project.id : "new";
   const identity = `${props.organizationId}|${props.workspaceId}|${idPart}|${generation.current}`;
   const { onSaved } = props;
@@ -313,7 +321,20 @@ function ProjectSetupFormInner({
     };
   }, []);
   const [saved, setSaved] = useState<ProjectRecord | null>(null);
-  const record = newerOf(project, saved);
+  // The record this form works from never goes below the highest version it has seen (from the
+  // caller or from its own save): a host re-passing an OLDER record (a racing refetch) must not
+  // revert the form or make the next save send a stale `expected_row_version`.
+  const highest = useRef<ProjectRecord | null>(null);
+  const candidate = newerOf(project, saved);
+  if (
+    candidate !== null &&
+    (highest.current === null ||
+      candidate.id !== highest.current.id ||
+      candidate.row_version >= highest.current.row_version)
+  ) {
+    highest.current = candidate;
+  }
+  const record = highest.current;
   const isEdit = record !== null;
 
   const [name, setName] = useState(record?.name ?? "");
@@ -337,10 +358,12 @@ function ProjectSetupFormInner({
   const ownVersion = useRef<number | null>(null);
   const seenVersion = useRef<number | null>(project?.row_version ?? null);
   useEffect(() => {
-    if (!project || project.row_version === seenVersion.current) return;
+    if (!project) return;
+    // Only a record NEWER than everything this form has seen or saved is a reload; an equal or
+    // older one (an echo, a racing refetch) is ignored and never lowers the highest version.
+    const highestSeen = Math.max(seenVersion.current ?? 0, ownVersion.current ?? 0);
+    if (project.row_version <= highestSeen) return;
     seenVersion.current = project.row_version;
-    // Only a record NEWER than everything this form has saved is a reload; an older echo is ignored.
-    if (project.row_version <= (ownVersion.current ?? 0)) return;
     setName(project.name);
     setProjectType(project.project_type);
     setDescription(project.description ?? "");
