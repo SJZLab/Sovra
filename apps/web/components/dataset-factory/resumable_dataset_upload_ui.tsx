@@ -1565,7 +1565,13 @@ function UploadInner({
               variant="primary"
               data-testid="upload-finalize-button"
               disabled={!datasetName.trim() || isFinalizing}
-              disabledReason={datasetName.trim() ? undefined : t("finalizeNeedsName")}
+              disabledReason={
+                checkingStatus
+                  ? t("startOverBusyReason")
+                  : datasetName.trim()
+                    ? undefined
+                    : t("finalizeNeedsName")
+              }
               onClick={() => void exclusive(finalize)}
             >
               {t("finalizeButton")}
@@ -1658,9 +1664,12 @@ function UploadInner({
         <>
           {alertFor("upload-finalize-retry-text", errorMessage)}
           <div>
+            {/* FTF-UX02 r4 pre-review round 2 (finding 4): while a check is in flight a second click
+                was dropped by the lock with no feedback -- disabled WITH the reason instead. */}
             <Button
               variant="primary"
               data-testid="upload-check-status-button"
+              disabledReason={checkingStatus ? t("startOverBusyReason") : undefined}
               onClick={() => void exclusive(checkStatus)}
             >
               {t("checkStatus")}

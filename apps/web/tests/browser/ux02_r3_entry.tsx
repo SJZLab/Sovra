@@ -24,6 +24,9 @@ export interface Route {
   reject?: boolean;
   /** Settle only after this many ms (a request slow enough for the UI to be observed busy). */
   delayMs?: number;
+  /** The headers arrive at once (or after `delayMs`) but `json()` settles only this many ms later:
+   * a real fetch resolves on headers, the body can still be on its way. */
+  bodyDelayMs?: number;
   /** The JSON body is not JSON (a 200 HTML error page). */
   notJson?: boolean;
 }
@@ -74,12 +77,19 @@ function stubFetch(routes: Route[]): void {
     for (const route of routes) {
       if (route.method !== method || !pathname.endsWith(route.path)) continue;
       if (route.pending) return new Promise(() => undefined);
-      if (route.reject) return Promise.reject(new TypeError("Failed to fetch"));
+      if (route.reject)
+        return route.delayMs
+          ? new Promise<Response>((_resolve, reject) =>
+              setTimeout(() => reject(new TypeError("Failed to fetch")), route.delayMs),
+            )
+          : Promise.reject(new TypeError("Failed to fetch"));
       const status = route.status ?? 200;
       const reply = {
         ok: status >= 200 && status < 300,
         status,
         json: async () => {
+          if (route.bodyDelayMs)
+            await new Promise<void>((resolve) => setTimeout(resolve, route.bodyDelayMs));
           if (route.notJson) throw new SyntaxError("Unexpected token < in JSON at position 0");
           return route.body;
         },

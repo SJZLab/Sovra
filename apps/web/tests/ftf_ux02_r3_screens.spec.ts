@@ -862,11 +862,9 @@ test.each([
     fireEvent.click(screen.getByTestId("upload-check-status-button"));
     await flush();
     expect(start.disabled, "busy: disabled").toBe(true);
-    const shown = screen
-      .getByTestId("upload-finalize")
-      .querySelector('[data-testid="disabled-reason"]')!;
+    // Finalize (round 2, finding 4) shows the same reason now, so find Start over's own by id.
+    const shown = document.getElementById(start.getAttribute("aria-describedby")!)!;
     expect(shown.textContent).toBe(reason);
-    expect(start.getAttribute("aria-describedby")).toContain(shown.id);
     fireEvent.click(start);
     expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
     late.failed();

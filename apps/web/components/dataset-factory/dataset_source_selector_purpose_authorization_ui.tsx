@@ -323,6 +323,8 @@ function DatasetSourceSelectorInner({
   // never paint "Authorized" or a denial against the pair now on screen (the same latest-request
   // guard `DatasetIssueResolutionUI` uses for its loads).
   const authorizeRequestRef = useRef(0);
+  // Connections created here, merged back into every list reply (see refreshConnections).
+  const createdRef = useRef<DatasetSourceConnectionSummary[]>([]);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
   // Round-3 pre-review 3 finding 1: Retry unmounts as soon as the error clears; when the retry
@@ -413,7 +415,15 @@ function DatasetSourceSelectorInner({
       }
       // Law 17 (advisory): a list item that belongs to another project is not this project's
       // connection -- it is dropped, never shown or selectable here.
-      setConnections(body.filter((item) => item.project_id === projectId));
+      // FTF-UX02 r4 pre-review round 2 (CREATE-WIPED-BY-LIST, severity 2): a connection created in
+      // THIS component while the (older) list request was in flight is not in that reply; it is merged
+      // back (by id, the list's own copy wins) instead of being wiped, so the selection and focus on
+      // it survive.
+      const listed = body.filter((item) => item.project_id === projectId);
+      setConnections([
+        ...listed,
+        ...createdRef.current.filter((made) => !listed.some((item) => item.id === made.id)),
+      ]);
       if (options?.focusRetryOnFailure) retrySucceededFocusRef.current = true;
     } catch (caught) {
       if (!aliveRef.current) return;
@@ -522,6 +532,7 @@ function DatasetSourceSelectorInner({
         setCreateError(phrase("responseMalformedRetryable", locale));
         return;
       }
+      createdRef.current = [...createdRef.current, created];
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
       setJustCreatedId(created.id);
@@ -569,14 +580,21 @@ function DatasetSourceSelectorInner({
         },
       );
       if (stale()) return;
+      // FTF-UX02 r4 pre-review round 2 (STALE-AUTHORIZE-BODY, severity 3): the body of a failure is
+      // read FIRST and only then checked for staleness -- fetch resolves on headers, so the user can
+      // change the pair while the body is still arriving, and the old pair's failure must not paint.
       if (response.status === 403) {
+        const detail = await readErrorDetail(response, locale);
+        if (stale()) return;
         setAuthorizeState("denied");
-        setAuthorizeMessage(await readErrorDetail(response, locale));
+        setAuthorizeMessage(detail);
         return;
       }
       if (!response.ok) {
+        const detail = await readErrorDetail(response, locale);
+        if (stale()) return;
         setAuthorizeState("idle");
-        setAuthorizeMessage(await readErrorDetail(response, locale));
+        setAuthorizeMessage(detail);
         return;
       }
       // FTF-UX02 round-3 finding 2: "Authorized" only for `{authorized: true, purpose: <sent>}`.

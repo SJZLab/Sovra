@@ -70,6 +70,7 @@ function conn(id: string, name: string, extra: Record<string, unknown> = {}) {
   };
 }
 const CONN_A = conn(CONNECTION, "Support tickets export");
+const CONN_NEW = "a0000000-0000-0000-0000-0000000000c3";
 const CONN_B2 = conn("a0000000-0000-0000-0000-0000000000b2", "Archive bucket");
 const CONN_LONG = [
   conn("a0000000-0000-0000-0000-000000000001", LONG_UNBROKEN),
@@ -634,6 +635,180 @@ const STATES: UiState[] = [
       { click: "upload-malformed-back-button" },
     ],
     ready: '[data-testid="upload-resume-banner"]',
+    behaviourOnly: true,
+  },
+  // ---- Pre-review round 2 (UX02-R4R2) behaviour fixtures ----
+  ...(
+    [
+      ["403", 403, { detail: "purpose 'training' is not allowed for this connection" }],
+      ["500", 500, { detail: "boom" }],
+      ["200", 200, { authorized: true, purpose: "training" }],
+    ] as const
+  ).map(([label, status, body]): UiState => ({
+    id: `0500A authorize slow ${label} body`,
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [CONN_A, CONN_B2] },
+      {
+        method: "POST",
+        path: `${SOURCES}/${CONNECTION}/authorize`,
+        status,
+        body,
+        bodyDelayMs: 900,
+      },
+    ],
+    steps: [
+      { click: `dataset-source-option-${CONNECTION}` },
+      { select: ["dataset-source-purpose-to-check-select", "training"] },
+      { click: "dataset-source-check-authorization-button" },
+    ],
+    ready: '[data-testid="dataset-source-authorization-section"]',
+    behaviourOnly: true,
+  })),
+  {
+    id: "0500A authorize rejected late",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [CONN_A, CONN_B2] },
+      {
+        method: "POST",
+        path: `${SOURCES}/${CONNECTION}/authorize`,
+        reject: true,
+        delayMs: 900,
+      },
+    ],
+    steps: [
+      { click: `dataset-source-option-${CONNECTION}` },
+      { select: ["dataset-source-purpose-to-check-select", "training"] },
+      { click: "dataset-source-check-authorization-button" },
+    ],
+    ready: '[data-testid="dataset-source-authorization-section"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0500A create while authorize in flight",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [CONN_A] },
+      {
+        method: "POST",
+        path: `${SOURCES}/${CONNECTION}/authorize`,
+        body: { authorized: true, purpose: "training" },
+        delayMs: 1200,
+      },
+      { method: "POST", path: SOURCES, status: 201, body: conn(CONN_NEW, "Fresh one") },
+    ],
+    steps: [
+      { click: `dataset-source-option-${CONNECTION}` },
+      { select: ["dataset-source-purpose-to-check-select", "training"] },
+      { click: "dataset-source-check-authorization-button" },
+      { fill: ["dataset-source-display-name-input", "Fresh one"] },
+      { click: "dataset-source-purpose-training" },
+      { select: ["dataset-source-security-classification-select", "internal"] },
+      { click: "dataset-source-review-button" },
+      { click: "dataset-source-confirm-button" },
+    ],
+    ready: '[data-testid="dataset-source-created-status"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0500A create during first list load",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [CONN_A], delayMs: 1200 },
+      { method: "POST", path: SOURCES, status: 201, body: conn(CONN_NEW, "Fresh one") },
+    ],
+    steps: [
+      { fill: ["dataset-source-display-name-input", "Fresh one"] },
+      { click: "dataset-source-purpose-training" },
+      { select: ["dataset-source-security-classification-select", "internal"] },
+      { click: "dataset-source-review-button" },
+      { click: "dataset-source-confirm-button" },
+    ],
+    ready: '[data-testid="dataset-source-created-status"]',
+    behaviourOnly: true,
+  },
+  ...(
+    [
+      ["network error", { reject: true, delayMs: 900 }],
+      [
+        "slow session body",
+        {
+          body: { ...sessionBody, status: "rejected", rejection_reason: "size_mismatch" },
+          bodyDelayMs: 900,
+        },
+      ],
+      ["slow error detail", { status: 410, body: { detail: "upload_expired" }, bodyDelayMs: 900 }],
+    ] as const
+  ).map(([label, late]): UiState => ({
+    id: `0501-UI late ${label} after Back`,
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 201, body: {} },
+      { method: "GET", path: SESSION_P, ...late },
+    ],
+    steps: [
+      ...finalizeAs("my-dataset"),
+      { click: "upload-check-status-button" },
+      { click: "upload-malformed-back-button" },
+    ],
+    ready: '[data-testid="upload-resume-banner"]',
+    behaviourOnly: true,
+  })),
+  {
+    id: "0501-UI malformed check in flight",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 201, body: {} },
+      { method: "GET", path: SESSION_P, pending: true },
+    ],
+    steps: [...finalizeAs("my-dataset"), { click: "upload-check-status-button" }],
+    ready: '[data-testid="upload-malformed"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI finalize retry check settles",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 500, body: {} },
+      { method: "GET", path: SESSION_P, status: 500, body: {}, delayMs: 900 },
+    ],
+    steps: [...finalizeAs("my-dataset"), { click: "upload-check-status-button" }],
+    ready: '[data-testid="upload-finalize"] [data-testid="disabled-reason"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI fresh upload while old check in flight",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 201, body: {} },
+      { method: "GET", path: SESSION_P, reject: true, delayMs: 5000 },
+    ],
+    steps: [
+      ...finalizeAs("my-dataset"),
+      { click: "upload-check-status-button" },
+      { click: "upload-malformed-back-button" },
+      { click: "upload-abandon-draft-button" },
+      { click: "upload-abandon-confirm-button" },
+      ...startUpload,
+    ],
+    ready: '[data-testid="upload-new-upload-button"]',
     behaviourOnly: true,
   },
   {
@@ -1838,4 +2013,224 @@ describe("[UX02-R3-FOLLOWUP2] focus on step changes and unpinned hand-offs", () 
       await page.close();
     }
   });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Pre-review round 2 (UX02-R4R2), real Chromium. Slow BODIES (headers first), late rejections, a
+// create during the first list load, and the finalize_retry busy state. Each was RED against round 1
+// (findings) or against the named fault (see the submission's round-2 table).
+// ---------------------------------------------------------------------------------------------------
+describe("[UX02-R4R2] stale bodies, late rejections, create vs list, busy finalize_retry", () => {
+  const stateOf = (id: string) => STATES.find((st) => st.id === id)!;
+  const outputs = (page: Page) =>
+    page.evaluate(() => ({
+      authorized:
+        document.querySelector('[data-testid="dataset-source-authorization-result-authorized"]') !==
+        null,
+      denied:
+        document.querySelector('[data-testid="dataset-source-authorization-result-denied"]') !==
+        null,
+      error:
+        document.querySelector('[data-testid="dataset-source-authorization-error"]')?.textContent ??
+        null,
+    }));
+  const NOTHING = { authorized: false, denied: false, error: null };
+
+  for (const locale of ["en", "ar"] as Locale[]) {
+    for (const label of ["403", "500", "200"]) {
+      for (const change of ["connection", "purpose"] as const) {
+        test(`[0500A] [${locale}] a slow ${label} body that arrives after the ${change} changed paints nothing`, async () => {
+          const page = await openState(
+            stateOf(`0500A authorize slow ${label} body`),
+            locale,
+            "light",
+          );
+          try {
+            if (change === "connection")
+              await page.getByTestId(`dataset-source-option-${CONN_B2.id}`).click();
+            else
+              await page
+                .getByTestId("dataset-source-purpose-to-check-select")
+                .selectOption("validation");
+            await page.waitForTimeout(1500);
+            expect(await outputs(page)).toEqual(NOTHING);
+          } finally {
+            await page.close();
+          }
+        });
+      }
+    }
+
+    for (const change of ["connection", "purpose"] as const) {
+      test(`[0500A] [${locale}] a rejected authorize fetch that lands after the ${change} changed paints nothing`, async () => {
+        const page = await openState(stateOf("0500A authorize rejected late"), locale, "light");
+        try {
+          if (change === "connection")
+            await page.getByTestId(`dataset-source-option-${CONN_B2.id}`).click();
+          else
+            await page
+              .getByTestId("dataset-source-purpose-to-check-select")
+              .selectOption("validation");
+          await page.waitForTimeout(1500);
+          expect(await outputs(page)).toEqual(NOTHING);
+        } finally {
+          await page.close();
+        }
+      });
+    }
+
+    test(`[0500A] [${locale}] an authorize reply that lands after a create selected another connection paints nothing`, async () => {
+      const page = await openState(
+        stateOf("0500A create while authorize in flight"),
+        locale,
+        "light",
+      );
+      try {
+        await page.waitForTimeout(1600);
+        expect(await outputs(page)).toEqual(NOTHING);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0500A] [${locale}] a create during the first list load survives the list reply (selected, focused, merged)`, async () => {
+      const page = await openState(stateOf("0500A create during first list load"), locale, "light");
+      try {
+        await page.waitForTimeout(1600);
+        const res = await page.evaluate((id) => {
+          const option = document.querySelector<HTMLElement>(
+            `[data-testid="dataset-source-option-${id}"]`,
+          );
+          return {
+            created: option !== null,
+            focused: document.activeElement === option,
+            pressed: option?.getAttribute("aria-pressed") ?? null,
+            listed:
+              document.querySelector(
+                '[data-testid="dataset-source-option-33333333-3333-3333-3333-333333333333"]',
+              ) !== null,
+          };
+        }, CONN_NEW);
+        expect(res).toEqual({ created: true, focused: true, pressed: "true", listed: true });
+      } finally {
+        await page.close();
+      }
+    });
+
+    for (const label of ["network error", "slow session body", "slow error detail"]) {
+      test(`[0501-UI] [${locale}] a late ${label} after Back is ignored (banner stays, draft kept)`, async () => {
+        const page = await openState(stateOf(`0501-UI late ${label} after Back`), locale, "light");
+        try {
+          await page.waitForTimeout(1800);
+          const res = await page.evaluate(() => ({
+            banner: document.querySelector('[data-testid="upload-resume-banner"]') !== null,
+            malformed: document.querySelector('[data-testid="upload-malformed"]') !== null,
+            rejected: document.querySelector('[data-testid="upload-rejected-text"]') !== null,
+            expired: document.querySelector('[data-testid="upload-expired-text"]') !== null,
+            draft: window.localStorage.length > 0,
+          }));
+          expect(res).toEqual({
+            banner: true,
+            malformed: false,
+            rejected: false,
+            expired: false,
+            draft: true,
+          });
+        } finally {
+          await page.close();
+        }
+      });
+    }
+
+    test(`[0501-UI] [${locale}] the malformed screen shows the busy indicator while 'Check upload status' is in flight`, async () => {
+      const page = await openState(stateOf("0501-UI malformed check in flight"), locale, "light");
+      try {
+        await page.waitForSelector(
+          '[data-testid="upload-malformed"] [role="status"][aria-busy="true"]',
+          {
+            timeout: 4000,
+          },
+        );
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0501-UI] [${locale}] after Back and a fresh upload Start over is usable while the old check is still in flight`, async () => {
+      const page = await openState(
+        stateOf("0501-UI fresh upload while old check in flight"),
+        locale,
+        "light",
+      );
+      try {
+        const res = await page.evaluate(() => ({
+          disabled: document.querySelector<HTMLButtonElement>(
+            '[data-testid="upload-new-upload-button"]',
+          )!.disabled,
+          busyReason:
+            (
+              document.querySelector(
+                '[data-testid="upload-finalize"] [data-testid="disabled-reason"]',
+              )?.textContent ?? ""
+            ).includes("status check") || document.body.textContent!.includes("انتظر حتى ينتهي"),
+        }));
+        expect(res).toEqual({ disabled: false, busyReason: false });
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0501-UI] [${locale}] finalize_retry: Finalize and Check upload status are disabled with the reason while a check is in flight, then usable with focus off <body>`, async () => {
+      const page = await openState(stateOf("0501-UI check status in flight"), locale, "light");
+      try {
+        const reason =
+          locale === "ar" ? "انتظر حتى ينتهي فحص الحالة." : "Wait for the status check to finish.";
+        const res = await page.evaluate(() => {
+          const info = (id: string) => {
+            const b = document.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!;
+            const text = (b.getAttribute("aria-describedby") ?? "")
+              .split(" ")
+              .map((x) => document.getElementById(x)?.textContent ?? "")
+              .join("|");
+            return { disabled: b.disabled, text };
+          };
+          return {
+            finalize: info("upload-finalize-button"),
+            check: info("upload-check-status-button"),
+          };
+        });
+        expect(res.finalize.disabled).toBe(true);
+        expect(res.finalize.text).toContain(reason);
+        expect(res.check.disabled).toBe(true);
+        expect(res.check.text).toContain(reason);
+      } finally {
+        await page.close();
+      }
+      const settled = await openState(
+        stateOf("0501-UI finalize retry check settles"),
+        locale,
+        "light",
+      );
+      try {
+        await settled.waitForFunction(
+          () =>
+            !document.querySelector('[data-testid="disabled-reason"]') &&
+            !document.querySelector<HTMLButtonElement>('[data-testid="upload-check-status-button"]')
+              ?.disabled,
+          undefined,
+          { timeout: 4000 },
+        );
+        // Both buttons are usable again and focus is not stranded on <body> (it lands on the alert).
+        const res = await settled.evaluate(() => ({
+          finalize: document.querySelector<HTMLButtonElement>(
+            '[data-testid="upload-finalize-button"]',
+          )!.disabled,
+          focusOnBody: document.activeElement === document.body,
+        }));
+        expect(res).toEqual({ finalize: false, focusOnBody: false });
+      } finally {
+        await settled.close();
+      }
+    });
+  }
 });
