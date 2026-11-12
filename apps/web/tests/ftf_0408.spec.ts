@@ -188,9 +188,11 @@ test("a real requirements-fetch failure surfaces the server error, not a silent 
     }),
   );
 
+  // UX04: a localized sentence; the backend's internal `detail` is not shown.
   await waitFor(() =>
-    expect(screen.getByTestId("requirements-error").textContent).toBe("internal error"),
+    expect(screen.getByTestId("requirements-error").textContent).toContain("could not be loaded"),
   );
+  expect(screen.getByTestId("requirements-error").textContent).not.toContain("internal error");
 });
 
 test("no budget policy yet: shows the missing notice and an enabled currency field for creation", async () => {
@@ -220,7 +222,8 @@ test("no budget policy yet: shows the missing notice and an enabled currency fie
 });
 
 test("creating a budget policy POSTs total_amount/currency/scopes for real", async () => {
-  const created = budgetPolicy();
+  // A newly created policy is version 1 (UX04: a reply that is not this request's result is refused).
+  const created = budgetPolicy({ row_version: 1 });
   const fetchMock = mockFetch({
     requirements: () => ({ ok: true, json: async () => [] }),
     budgetGet: () => ({ ok: false, status: 404, json: async () => ({ detail: "not_found" }) }),
@@ -331,9 +334,12 @@ test("a real 409 concurrency conflict surfaces the server error and preserves th
   fireEvent.click(screen.getByTestId("budget-policy-submit-button"));
 
   await waitFor(() =>
-    expect(screen.getByTestId("budget-policy-error").textContent).toBe(
-      "expected_row_version mismatch",
+    expect(screen.getByTestId("budget-policy-error").textContent).toContain(
+      "changed since you opened it",
     ),
+  );
+  expect(screen.getByTestId("budget-policy-error").textContent).not.toContain(
+    "expected_row_version",
   );
   // The draft the user typed is preserved, not reverted back to "500.0000".
   expect((screen.getByTestId("budget-total-amount-input") as HTMLInputElement).value).toBe(
