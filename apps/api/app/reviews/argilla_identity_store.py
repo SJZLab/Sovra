@@ -395,6 +395,23 @@ def _membership_row(
     return (row[0], row[1]) if row is not None else None
 
 
+def _identity_is_active(
+    session_factory: Callable[[], Session], organization_id: uuid.UUID, identity_id: uuid.UUID
+) -> bool:
+    """Fresh read (own transaction) of whether the identity is still 'active' right now."""
+    with tenant_scoped_session(session_factory, organization_id) as session:
+        row = execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT status FROM argilla_reviewer_identities "
+                "WHERE id = :id AND organization_id = :org"
+            ),
+            {"id": identity_id, "org": organization_id},
+        ).first()
+    return row is not None and row[0] == "active"
+
+
 def _require_current_scope(
     session: Session, organization_id: uuid.UUID, scope: ReviewScopeRecord
 ) -> None:
@@ -502,6 +519,26 @@ def sync_workspace_membership(
                 ),
                 {"org": organization_id, "scope": scope.id, "identity": identity.id},
             ).first()
+        # Second, post-commit liveness check (FTF-R006-P1b r3, REVOKE-SYNC-RACE): the guard inside
+        # the UPSERT reads a snapshot that a concurrent revoke's not-yet-committed (or just-
+        # committed) status write may not be part of, and that revoke's own membership read may
+        # have missed this not-yet-committed row. Re-reading the identity AFTER our write is
+        # durable closes the window: revoke marks the identity revoked FIRST, so any sync whose
+        # write revoke could not see necessarily sees 'revoked' here and undoes its own add.
+        if written is not None and not _identity_is_active(
+            session_factory, organization_id, identity.id
+        ):
+            with tenant_scoped_session(session_factory, organization_id) as session:
+                execute_tenant_scoped(
+                    session,
+                    organization_id,
+                    text(
+                        "UPDATE argilla_workspace_members SET status = 'revoked', "
+                        "updated_at = now() WHERE id = :id"
+                    ),
+                    {"id": written[0]},
+                )
+            written = None
         if written is None:
             try:
                 client.remove_workspace_user(scope.argilla_workspace_id, identity.argilla_user_id)
@@ -538,21 +575,37 @@ def revoke_reviewer_identity(
     subject: str,
     client: ArgillaClient,
 ) -> None:
-    """Final, explicit revoke: removes every active workspace membership
-    this identity still holds on the real Argilla server, then marks the
-    identity `revoked`. Idempotent -- revoking an already-revoked identity
-    is a no-op, never an error (so a retried or duplicated revoke request
-    can never fail). There is no explicit "already revoked, return early"
-    branch: an already-revoked identity has no 'active' membership rows
-    left (the first revoke cleared them all), so the membership query
-    below naturally selects nothing, the loop makes zero real Argilla
-    calls, and the final UPDATE's own `AND status <> 'revoked'` guard
-    affects zero rows -- the same outcome an explicit early check would
-    give, with no separate branch to keep in sync with that guard."""
+    """Final, explicit revoke: marks the identity `revoked` FIRST, then removes
+    every active workspace membership it still holds on the real Argilla
+    server. Idempotent -- revoking an already-revoked identity is a no-op,
+    never an error: the status UPDATE's `AND status <> 'revoked'` guard
+    affects zero rows, and the membership query selects only 'active' rows,
+    so a completed revoke makes zero Argilla calls. Because the identity is
+    already revoked when an Argilla outage interrupts the removal loop, the
+    outage propagates (Law 17) and a retry still finds the unremoved
+    'active' rows and finishes the job."""
     with tenant_scoped_session(session_factory, organization_id) as session:
         identity = _identity_row(session, organization_id, issuer, subject)
         if identity is None:
             raise ArgillaIdentityError(f"no reviewer identity for organization {organization_id}")
+        # REVOKE-FIRST (FTF-R006-P1b r3, REVOKE-SYNC-RACE): the identity is marked 'revoked'
+        # BEFORE its memberships are read or removed. A concurrent `sync_workspace_membership`
+        # therefore either (a) wrote its membership row before this commit -- the read below sees
+        # it and removes it -- or (b) writes after it, where its own liveness guard and post-write
+        # re-check see 'revoked' and undo the real add. The old order (read memberships, remove,
+        # THEN mark revoked) left a window in which a sync passed the guard and the revoked
+        # identity kept real workspace access. `AND status <> 'revoked'` keeps a second revoke
+        # from re-stamping `revoked_at` or touching a row the terminal-state trigger would refuse.
+        execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "UPDATE argilla_reviewer_identities SET status = 'revoked', revoked_at = :now, "
+                "updated_at = :now WHERE id = :id AND status <> 'revoked'"
+            ),
+            {"id": identity.id, "now": datetime.now(UTC)},
+        )
+    with tenant_scoped_session(session_factory, organization_id) as session:
         memberships = execute_tenant_scoped(
             session,
             organization_id,
@@ -581,21 +634,3 @@ def revoke_reviewer_identity(
                 ),
                 {"id": membership_id},
             )
-
-    with tenant_scoped_session(session_factory, organization_id) as session:
-        # `AND status <> 'revoked'` makes this write itself race-safe: a concurrent second
-        # `revoke_reviewer_identity` call for the same identity (both having read it as 'active'
-        # before either wrote) affects zero rows here instead of re-stamping `revoked_at` with a
-        # later timestamp, and -- just as importantly -- never asks the database to update a row
-        # whose current status is already 'revoked', which the migration's own terminal-state
-        # trigger would otherwise refuse (that trigger exists to stop a *different* caller's raw
-        # SQL from reviving a revoked identity, never this module's own idempotent re-revoke).
-        execute_tenant_scoped(
-            session,
-            organization_id,
-            text(
-                "UPDATE argilla_reviewer_identities SET status = 'revoked', revoked_at = :now, "
-                "updated_at = :now WHERE id = :id AND status <> 'revoked'"
-            ),
-            {"id": identity.id, "now": datetime.now(UTC)},
-        )
