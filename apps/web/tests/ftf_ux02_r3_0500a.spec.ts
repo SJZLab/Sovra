@@ -5,7 +5,7 @@
 // One test per case from the verifier's reproduction; each was RED against the round-2 component.
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { DatasetSourceSelectorPurposeAuthorizationUi } from "../components/dataset-factory/dataset_source_selector_purpose_authorization_ui";
@@ -243,3 +243,128 @@ test("[UX02-R3-N2] a Retry that succeeds hands focus to the first connection, ne
   await waitFor(() => expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy());
   expect(document.activeElement).toBe(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
 });
+
+// Round 4, finding 3 (NN/g H5, checklist I4): an impossible action stays visible but disabled WITH
+// the reason shown (the UX01 Button `disabledReason`), localized, and the reason leaves with the cause.
+test.each([
+  ["en", "Complete the display name, an allowed purpose and a security classification to review."],
+  ["ar", "أكمل الاسم المعروض وغرضًا مسموحًا وتصنيف الأمان للمراجعة."],
+] as const)(
+  "[UX02-R4-D1] [%s] Review is disabled WITH a reason that is wired by aria-describedby and goes away when the form is ready",
+  async (locale, reason) => {
+    stub({ list: [] });
+    mountUi(locale);
+    await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+    const button = screen.getByTestId("dataset-source-review-button") as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const shown = screen.getByTestId("disabled-reason");
+    expect(shown.textContent).toBe(reason);
+    expect(button.getAttribute("aria-describedby")).toContain(shown.id);
+    fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+      target: { value: "New one" },
+    });
+    fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+    fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+      target: { value: "internal" },
+    });
+    expect(button.disabled).toBe(false);
+    expect(screen.queryByTestId("disabled-reason")).toBeNull();
+  },
+);
+
+test.each([
+  ["en", "Choose a purpose to authorize."],
+  ["ar", "اختر الغرض المطلوب تفويضه."],
+] as const)(
+  "[UX02-R4-D2] [%s] Check authorization is disabled WITH a reason until a purpose is chosen",
+  async (locale, reason) => {
+    stub({ list: [GOOD] });
+    mountUi(locale);
+    await waitFor(() =>
+      expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+    const button = screen.getByTestId(
+      "dataset-source-check-authorization-button",
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    const section = screen.getByTestId("dataset-source-authorization-section");
+    const shown = within(section).getByTestId("disabled-reason");
+    expect(shown.textContent).toBe(reason);
+    expect(button.getAttribute("aria-describedby")).toContain(shown.id);
+    fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+      target: { value: "training" },
+    });
+    expect(button.disabled).toBe(false);
+    expect(within(section).queryByTestId("disabled-reason")).toBeNull();
+  },
+);
+
+// Round 4, finding 4 (response-time rule): nothing before 1 s, then a polite busy indicator.
+test.each([
+  ["en", "Creating the connection…"],
+  ["ar", "جارٍ إنشاء الاتصال…"],
+] as const)(
+  "[UX02-R4-B1] [%s] a create in flight shows a busy indicator only after one second",
+  async (locale, label) => {
+    stub({ list: [], create: new Promise(() => undefined) as unknown as Reply });
+    mountUi(locale);
+    await waitFor(() => expect(screen.getByTestId("dataset-source-empty-state")).toBeTruthy());
+    fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+      target: { value: "New one" },
+    });
+    fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+    fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+      target: { value: "internal" },
+    });
+    fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByText(label)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      const status = screen.getByText(label).closest('[role="status"]')!;
+      expect(status.getAttribute("aria-live")).toBe("polite");
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+test.each([
+  ["en", "Checking authorization…"],
+  ["ar", "جارٍ فحص التفويض…"],
+] as const)(
+  "[UX02-R4-B2] [%s] an authorization check in flight shows a busy indicator only after one second",
+  async (locale, label) => {
+    stub({ list: [GOOD], authorize: new Promise(() => undefined) as unknown as Reply });
+    mountUi(locale);
+    await waitFor(() =>
+      expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+    fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+      target: { value: "training" },
+    });
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByText(label)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      const status = screen.getByText(label).closest('[role="status"]')!;
+      expect(status.getAttribute("aria-live")).toBe("polite");
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);

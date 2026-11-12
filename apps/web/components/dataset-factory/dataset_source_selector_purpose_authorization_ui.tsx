@@ -64,7 +64,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Button, EmptyState, Field, PendingView } from "../ui";
+import { Button, EmptyState, Field, Pending, PendingView } from "../ui";
 import { dirFor, phrase, resolveLocale, type Locale } from "../ui/phrases";
 import { classificationWord, purposeWord, sourceTypeWord, t0501 } from "./strings_0501";
 
@@ -753,6 +753,9 @@ function DatasetSourceSelectorInner({
               type="submit"
               data-testid="dataset-source-review-button"
               disabled={!formIsReadyForReview}
+              disabledReason={
+                formIsReadyForReview ? undefined : phrase("reviewDisabledReason", locale)
+              }
             >
               {phrase("reviewButton", locale)}
             </Button>
@@ -807,6 +810,9 @@ function DatasetSourceSelectorInner({
             >
               {phrase("confirmCreateButton", locale)}
             </Button>
+            {creating ? (
+              <Pending label={phrase("creatingConnectionStatus", locale)} locale={locale} />
+            ) : null}
           </div>
         )}
       </section>
@@ -849,9 +855,15 @@ function DatasetSourceSelectorInner({
             data-testid="dataset-source-check-authorization-button"
             onClick={handleCheckAuthorization}
             disabled={!purposeToCheck || authorizeState === "checking"}
+            disabledReason={
+              purposeToCheck ? undefined : phrase("checkAuthorizationDisabledReason", locale)
+            }
           >
             {phrase("checkAuthorizationButton", locale)}
           </Button>
+          {authorizeState === "checking" ? (
+            <Pending label={phrase("checkingAuthorizationStatus", locale)} locale={locale} />
+          ) : null}
           {authorizeState === "authorized" && (
             // FTF-UX02 round-2 pre-review round 2 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): a
             // successful check had no role/aria-live anywhere, so a screen-reader user who just

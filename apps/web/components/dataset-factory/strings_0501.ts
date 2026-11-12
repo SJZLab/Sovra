@@ -60,6 +60,8 @@ const STRINGS = {
   },
   newUpload: { en: "Start a new upload", ar: "ابدأ رفعًا جديدًا" },
   uploadAnother: { en: "Upload another dataset", ar: "ارفع مجموعة بيانات أخرى" },
+  startOver: { en: "Start over", ar: "ابدأ من جديد" },
+  checkingStatus: { en: "Checking upload status…", ar: "جارٍ فحص حالة الرفع…" },
   back: { en: "Back", ar: "رجوع" },
 
   // failures / messages (English verbatim from the pre-round-3 component)

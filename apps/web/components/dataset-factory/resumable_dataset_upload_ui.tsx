@@ -81,6 +81,7 @@ import {
   Button,
   Dialog,
   Field,
+  Pending,
   PendingView,
   networkError,
   uiError,
@@ -809,6 +810,9 @@ function UploadInner({
   // and `needsFocusOnIdle` then moves focus to the fresh form's first control once IT has mounted.
   const [pendingAbandon, setPendingAbandon] = useState(false);
   const [needsFocusOnIdle, setNeedsFocusOnIdle] = useState(false);
+  // FTF-UX02 round 4: "Check upload status" keeps the phase, so its own in-flight flag drives the
+  // busy indicator (NN/g response times: indicator after ~1 s).
+  const [checkingStatus, setCheckingStatus] = useState(false);
   const [purpose, setPurpose] = useState<UploadPurpose>(ALLOWED_PURPOSES[0]);
   const [contentType, setContentType] = useState<UploadContentType>(SUPPORTED_CONTENT_TYPES[0]);
   const [file, setFile] = useState<File | null>(null);
@@ -1181,6 +1185,7 @@ function UploadInner({
   async function checkStatus() {
     if (!session) return;
     setErrorMessage(null);
+    setCheckingStatus(true);
     try {
       await loadSessionFromDraft(
         {
@@ -1201,6 +1206,8 @@ function UploadInner({
       if (!aliveRef.current) return;
       setErrorMessage(networkErrorMessage(caught, locale));
       setPhase(phase);
+    } finally {
+      if (aliveRef.current) setCheckingStatus(false);
     }
   }
 
@@ -1513,6 +1520,9 @@ function UploadInner({
             >
               {t("resumeButton")}
             </Button>
+            <Button data-testid="upload-new-upload-button" onClick={startOver}>
+              {t("startOver")}
+            </Button>
           </div>
         </section>
       )}
@@ -1558,6 +1568,13 @@ function UploadInner({
               onClick={() => void exclusive(finalize)}
             >
               {t("finalizeButton")}
+            </Button>
+            <Button
+              data-testid="upload-new-upload-button"
+              disabled={checkingStatus}
+              onClick={startOver}
+            >
+              {t("startOver")}
             </Button>
           </div>
         </section>
@@ -1628,6 +1645,7 @@ function UploadInner({
               {t("back")}
             </Button>
           </div>
+          {checkingStatus ? <Pending label={t("checkingStatus")} locale={locale} /> : null}
         </section>
       )}
 
@@ -1645,6 +1663,7 @@ function UploadInner({
               {t("checkStatus")}
             </Button>
           </div>
+          {checkingStatus ? <Pending label={t("checkingStatus")} locale={locale} /> : null}
         </>
       )}
       {phase === "expired" && alertFor("upload-expired-text", errorMessage ?? t("expiredDefault"))}

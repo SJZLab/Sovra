@@ -460,6 +460,158 @@ test("[UX02-R3-U5] 0501-UI an expired session offers a way forward: 'Start a new
   expect(screen.getByTestId("upload-form")).toBeTruthy();
 });
 
+// ---- Round 4, findings 4 and 6: 0501-UI start-over from every non-terminal screen + busy "Check status" ----
+const SESSION_R4 = {
+  id: "66666666-6666-6666-6666-666666666666",
+  project_id: PROJECT,
+  dataset_source_connection_id: CONNECTION,
+  purpose: "training",
+  status: "open",
+  declared_size_bytes: 3,
+  declared_sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+  declared_content_type: "application/json",
+  rejection_reason: null,
+  created_at: "2026-10-09T00:00:00+00:00",
+  expires_at: "2026-10-09T01:00:00+00:00",
+  finalized_at: null,
+  part_size_bytes: 3,
+  part_count: 1,
+};
+
+function stub501(opts: { put?: number; finalize?: [number, unknown]; hangStatus?: boolean }) {
+  let hang = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      const ok = (status: number, body: unknown) => ({
+        ok: status < 300,
+        status,
+        json: async () => body,
+      });
+      if (u.hostname === "storage.example") return ok(opts.put ?? 200, {});
+      if (u.pathname.endsWith("/finalize")) {
+        hang = Boolean(opts.hangStatus);
+        const [status, body] = opts.finalize ?? [201, {}];
+        return ok(status, body);
+      }
+      if (u.pathname.endsWith("/part-urls")) {
+        return ok(200, {
+          parts: [
+            {
+              part_number: 1,
+              method: "PUT",
+              url: "https://storage.example/p1",
+              content_length: 3,
+              expires_at: "2026-10-09T00:05:00+00:00",
+            },
+          ],
+        });
+      }
+      if (u.pathname.endsWith("/parts"))
+        return ok(200, { part_size_bytes: 3, part_count: 1, parts: [] });
+      if (init?.method === "POST") return ok(201, SESSION_R4);
+      if (hang) return new Promise(() => undefined);
+      return ok(200, SESSION_R4);
+    }),
+  );
+}
+
+async function drive501(locale: "en" | "ar", target: string, finalizeName: boolean) {
+  mount501(locale);
+  fireEvent.change(screen.getByTestId("upload-file-input"), {
+    target: { files: [new File([new Uint8Array([1, 2, 3])], "data.jsonl")] },
+  });
+  fireEvent.click(screen.getByTestId("upload-start-button"));
+  await waitFor(() => expect(screen.getByTestId(target)).toBeTruthy());
+  if (finalizeName) {
+    fireEvent.change(screen.getByTestId("upload-dataset-name-input"), { target: { value: "ds" } });
+    fireEvent.click(screen.getByTestId("upload-finalize-button"));
+  }
+}
+
+test.each([
+  ["en", "Start over"],
+  ["ar", "ابدأ من جديد"],
+] as const)(
+  "[UX02-R4-O1] [%s] interrupted / ready / incomplete / conflict / finalize_retry / storage_unavailable each offer 'Start over', which returns to a fresh form with focus on its first control",
+  async (locale, label) => {
+    const cases: Array<[string, Parameters<typeof stub501>[0], string, boolean, string]> = [
+      ["interrupted", { put: 403 }, "upload-interrupted", false, ""],
+      ["ready", {}, "upload-dataset-name-input", false, ""],
+      [
+        "incomplete",
+        { finalize: [409, { detail: "upload_incomplete" }] },
+        "upload-dataset-name-input",
+        true,
+        "upload-incomplete-text",
+      ],
+      [
+        "conflict",
+        { finalize: [409, { detail: "dataset_version_conflict" }] },
+        "upload-dataset-name-input",
+        true,
+        "upload-conflict-text",
+      ],
+      [
+        "finalize_retry",
+        { finalize: [500, {}] },
+        "upload-dataset-name-input",
+        true,
+        "upload-finalize-retry-text",
+      ],
+      [
+        "storage_unavailable",
+        { finalize: [503, { detail: "storage_unavailable" }] },
+        "upload-dataset-name-input",
+        true,
+        "upload-storage-unavailable-text",
+      ],
+    ];
+    for (const [name, opts, first, finalizeName, then] of cases) {
+      stub501(opts);
+      await drive501(locale, first, finalizeName);
+      if (then) await waitFor(() => expect(screen.getByTestId(then)).toBeTruthy());
+      const button = screen.getByTestId("upload-new-upload-button");
+      expect(button.textContent, name).toBe(label);
+      fireEvent.click(button);
+      expect(screen.getByTestId("upload-form"), name).toBeTruthy();
+      expect(document.activeElement, name).toBe(screen.getByTestId("upload-purpose-select"));
+      expect(screen.queryByTestId("upload-new-upload-button"), name).toBeNull();
+      cleanup();
+      window.localStorage.clear();
+    }
+  },
+);
+
+test.each([
+  ["en", "Checking upload status…"],
+  ["ar", "جارٍ فحص حالة الرفع…"],
+] as const)(
+  "[UX02-R4-B3] [%s] 'Check upload status' in flight shows a busy indicator only after one second",
+  async (locale, label) => {
+    stub501({ finalize: [500, {}], hangStatus: true });
+    await drive501(locale, "upload-dataset-name-input", true);
+    await waitFor(() => expect(screen.getByTestId("upload-check-status-button")).toBeTruthy());
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId("upload-check-status-button"));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.queryByText(label)).toBeNull();
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+      expect(screen.getByText(label).closest('[role="status"]')!.getAttribute("aria-live")).toBe(
+        "polite",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
 test("[UX02-R3-L1] 0516 Load more on the LAST page and Reload on the first issues land on a Review button, never <body>", async () => {
   replies["GET issues"] = {
     ok: true,

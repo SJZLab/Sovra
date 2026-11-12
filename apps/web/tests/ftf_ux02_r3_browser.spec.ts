@@ -1434,6 +1434,13 @@ describe("[UX02-R3-FOLLOWUP] focus after success, terminal screens, Pending indi
       "0501-UI rejected",
       "0501-UI accepted",
       "0501-UI already verified",
+      // Round 4 (finding 6): the non-terminal screens offer "Start over" too.
+      "0501-UI interrupted",
+      "0501-UI ready to finalize",
+      "0501-UI incomplete",
+      "0501-UI name conflict",
+      "0501-UI finalize retry",
+      "0501-UI storage unavailable",
     ]) {
       test(`[${id}] [${locale}] the way forward is a button; using it focuses the fresh form, never <body>`, async () => {
         const page = await openState(stateOf(id), locale, "light", { width: 320, height: 640 });

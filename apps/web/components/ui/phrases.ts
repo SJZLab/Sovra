@@ -127,6 +127,18 @@ export const PHRASES = {
   authorizationHeading: { en: "Purpose authorization", ar: "تفويض الغرض" },
   purposeToCheckLabel: { en: "Purpose to authorize", ar: "الغرض المطلوب تفويضه" },
   checkAuthorizationButton: { en: "Check authorization", ar: "فحص التفويض" },
+  // FTF-UX02 round 4 (NN/g H5 + response times): why Review / Check authorization are disabled, and
+  // the busy labels shown after one second while a create / authorization check is in flight.
+  reviewDisabledReason: {
+    en: "Complete the display name, an allowed purpose and a security classification to review.",
+    ar: "أكمل الاسم المعروض وغرضًا مسموحًا وتصنيف الأمان للمراجعة.",
+  },
+  checkAuthorizationDisabledReason: {
+    en: "Choose a purpose to authorize.",
+    ar: "اختر الغرض المطلوب تفويضه.",
+  },
+  creatingConnectionStatus: { en: "Creating the connection…", ar: "جارٍ إنشاء الاتصال…" },
+  checkingAuthorizationStatus: { en: "Checking authorization…", ar: "جارٍ فحص التفويض…" },
   authorizedResult: { en: "Authorized", ar: "مُفوَّض" },
   connectionStatusActive: { en: "Active", ar: "نشط" },
   connectionStatusRevoked: { en: "Revoked", ar: "مُلغى" },
