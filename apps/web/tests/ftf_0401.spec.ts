@@ -79,7 +79,12 @@ test("create mode: submitting a generic project POSTs the real payload, agent_ob
   fetchMock.mockResolvedValueOnce({
     ok: true,
     json: async () =>
-      existingProject({ project_type: "generic_model_tuning", agent_objective: null }),
+      existingProject({
+        name: "my-project",
+        project_type: "generic_model_tuning",
+        agent_objective: null,
+        status: "active",
+      }),
   });
 
   const onSaved = vi.fn();
@@ -195,9 +200,13 @@ test("edit mode: setup_incomplete notice shows only for an agentic project not y
 
 test("edit mode: Save draft POSTs real ui_state to the ui-state route", async () => {
   const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
-  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ saved: true }) });
-
   const project = existingProject();
+  // The real route answers with the project carrying the ui_state it stored (UX04: only a reply that
+  // matches what was sent counts as a saved draft).
+  fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) => ({
+    ok: true,
+    json: async () => ({ ...project, ui_state: JSON.parse(init.body as string).ui_state }),
+  }));
   render(
     createElement(ProjectSetupForm, {
       apiBaseUrl: API_BASE,
@@ -249,9 +258,13 @@ test("a failed submit surfaces the real server-provided error detail, never a ge
   );
   fireEvent.click(screen.getByTestId("project-submit-button"));
 
+  // UX04: the sentence says what happened and what to do; the backend's internal `detail` is not shown.
   await waitFor(() =>
-    expect(screen.getByTestId("project-form-error").textContent).toBe(
-      "expected_row_version mismatch",
+    expect(screen.getByTestId("project-form-error").textContent).toContain(
+      "changed since you opened it",
     ),
+  );
+  expect(screen.getByTestId("project-form-error").textContent).not.toContain(
+    "expected_row_version",
   );
 });

@@ -12403,3 +12403,49 @@ through the GitHub MCP); gates clean (product_truth 47/47, validate_spec --stric
   show "Authorized" falsely (severity 4/3; pre-existing in the base), overflow up to 1156 px, 0516 and most of 0501-UI not
   rebuilt, browser spec incomplete, A9 GREEN, evidence missing. The submission itself said PARTIAL. Faults 32/33 RED.
   Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. UNWIRED until FTF-H029.
+## 2026-10-23T18:52Z — CONTROL-PLANE DESIGNS: FTF-0701 (P1-P3) and the FTF-H010 parent remainder (P5-P6)
+- Designs added to the top of the QUEUE.md Backlog with recorded rulings on their spec conflicts (07 contract declares only
+  the routes FTF-0701 builds; AUTO/full_sft/seq_cls_lora refused with stable codes; §68.1 rights/privacy reading; admin-only
+  connection routes not widened; "evaluate"/"load" disclosed blocked per the FTF-0616 precedent). No ask-first item for the
+  relay. The FTF-0616 owner ask is amended to also name one fine-tuned deployment id.
+## 2026-10-23T18:52Z — RETURNED: FTF-R006-P1b (r2)
+- **FTF-R006-P1b: RETURNED** (round 2 → 3; PR #971, merge 264f53d67bc7969fbea3791eacdce0a048947d48, head f14d1b9b).
+  Producers session_01AdkmA4u9UVHYQec35s96tE, session_014C2g7EL2fR4UNWjCMsGiiK, session_01NRbmWMXHtq3ZnTNo7W3cAS (9 commits
+  without a trailer) ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 84/84, ci-verdict 120528030069;
+  argilla-real-server-integration 120415148677 "All FTF-R006-P1b real-Argilla-server checks passed" (only /version and
+  /me/workspaces called); mutation-gate 38/38. Verified on a local real argilla-server 2.8.0 + OpenSearch 2.19.6: the
+  cross-tenant write is FIXED (0 Argilla calls on a foreign scope; org1 annotator 403 on org2), concurrent sync converges,
+  the UPDATE grant is closed. Return: a revoked identity still reads a dataset (HTTP 200) in two deterministic
+  interleavings and 2/5 free runs; F14/F16 GREEN; the real-server CI job tests none of the access clauses; the CI stack uses
+  Elasticsearch 8.8.2 and Redis 7.4.11 against the recorded licence rulings; no gate step; [relay] title on a ci.yml change.
+  UNWIRED: nothing exposed. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T18:52Z — RETURNED: FTF-UX06 (r2)
+- **FTF-UX06: RETURNED** (round 2 → 3; PR #979, merge 8fa5187518e39dabf279099020da177afaae87b6, head 0a0ca719). Producers
+  session_013sdtmd5nis31i2LstSad9T, session_01UPYrEmHzuYi5scj3ozKgc2 ≠ certifier session_01QVznorVMjnmcttUhyDnoGR. CI 82/82,
+  ci-verdict 120154580671; gate 120142014289 installed Chromium and ran vitest incl. ftf_ux06_browser (step-level) and
+  "FTF-0602-P1 evaluation case tests: all checks passed". Local 3112/3112; FTF-0602 REQUALIFIED. 168 real-Chromium pages:
+  axe 0, lang/dir, malformed replies announced with recovery and no unmount, round-1 overflow fixed. Return: saved-notice
+  overflow up to 2609 px and a 403 save that unmounts the form with focus on <body> (severity 3 each), raw codes and
+  English words under ar, 5 named faults still GREEN, wrong recovery on 403, static ids (ruling: useId), evidence.
+  Faults: round-1 11/16 now RED; new 21/24 RED. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK.
+## 2026-10-23T18:52Z — CERTIFIED (child slice): FTF-H011-P2
+- **FTF-H011-P2: CERTIFIED (L2)** (round 2 under the stopping rule; PR #978, merge df2218effe11d4bb7b8da2b1bc6a06ab6f275072, head 25e7e97b). Producer
+  session_0184kEDzTAo4bXYZtvM3vh3G ≠ certifier session_01QVznorVMjnmcttUhyDnoGR, absent. CI 82/82, ci-verdict 120172546371;
+  dataset-mapping-store-integration 120155287358 and gate 120155082613 "all checks passed"; mutation-gate 50/50. Local:
+  task script 752/0, PG16 integration 238/0; both suites RED on the round-1 store (RET2-2/3c/6/7 "got None"); uncapped
+  mutation 316/316; one Alembic head. Rulings met: an explicit own rejection returns mapping_reapproval_required before any
+  prior lookup; reuse re-authorizes the prior approval's own connection (Law 16). Probes: R1 and P13l refuse with no
+  writes; rejection then re-approval, older-version rejections, revoked-then-restored connection, grant variants,
+  cross-tenant/project, 12 rounds of reject-vs-resolve races all correct. Faults F1-F3/F5-F7/F9-F12 RED; F4 equivalent,
+  F8 refusal-code only (fails closed). FTF-H011-P1 REQUALIFIED. Gates: product_truth 49/49, validate_spec --strict,
+  data_exposure OK. UNWIRED.
+## 2026-11-10T11:20Z — CERTIFIED (child slice): FTF-UX01-F1
+- **FTF-UX01-F1: CERTIFIED (L2)** (round 2 under the stopping rule; PRs #994 merge 21e0b3a8 and #1008 merge bb940d33, reviewed at origin/main 43512af4). Round 2 produced by the Control plane; certifier session_01TEaAUzVQteaKGsG3GKafdU (claude-opus-5-5) ≠ producer, absent. ci-verdict success on #1008 (run 40017818032).
+  Round-1 finding fixed: E3/E3b/E3c (Error subclass or DOMException English message under ar) now RED in [UX01-F1-2d] (jsdom) and [UX01-F1-2e] (real Chromium). F1 specs 18/18; full web suite 37 files 3136/3136. Faults: 33 run, 32 RED, 1 GREEN (F5, equivalent: body.focus() is unobservable, disclosed); A4-A9 pinned by the UX01/UX05 suite. Own probes: networkError under ar/en for null/undefined/string/plain object/empty Error/Arabic Error/number message/AggregateError, kindForStatus NaN/-1/399/401.5/600/"400", AlertMessage with undefined/null/7/"RETRY"/" retry"/valueOf/isPrototypeOf/__defineGetter__ kinds: all correct, no throw. Reachability: AlertMessage/focus/singleflight reach 12 journey pages; wiring.spec 4/4. Gates: product_truth 49/49, validate_spec --strict, data_exposure OK, eslint/prettier/tsc clean. UX_STANDARD §4: independent H1-H10 evaluation, no severity 3-4; WCAG 2.2 AA pins A4-A8. FTF-UX01 and FTF-UX05 REQUALIFIED. Advisories: no skill-query output or H1-H10 x state table in the submission; "network error: 42" under en; hard-coded English at resumable_dataset_upload_ui.tsx:685 and dataset_issue_resolution_ui.tsx:179 (UX02 area); ar not reachable on live pages until FTF-H029. UNWIRED for ar.
+## 2026-11-10T11:20Z — RETURNED: FTF-H010-P4 (r1 -> r2)
+- **FTF-H010-P4: NOT CERTIFIED (round 1)** (PR #998, merge 43512af4; certifier session_01TEaAUuvBmaNA8bNeumKzUn, claude-opus-5-5). Live path ok (build_model_role_router mounted; four routes 401 unauthenticated); task script 28190 checks, PG16 integration 518 checks, uncapped mutation 352/352 KILLED, product_truth 49/49, validate_spec --strict, data_exposure OK; one Alembic head 0037. 67 adversarial probes PASS, 2 FAIL (defect 1).
+  Defects: (1) WEIGHTS-ARTIFACT-STATE-UNCHECKED, model_role_crud.py:286-287 and :321-332: an archived or digest-drifted weights artifact still allows continue_tuning (reproduced on real PG16); (2) UNPINNED-ADVISORY-LOCK, 0037_model_role_assignments.py:69: removing pg_advisory_xact_lock stays GREEN and a two-session race leaves judge and candidate both active; (3) UNPINNED-REVOCATION-CHECK, same migration line 181: the all-NULL-or-all-set revocation CHECK is unpinned. Advisories: duplicate-key JSON last-wins, all-space idempotency key accepted, backdated revoked_at (disclosed), role on a later-revoked-license version. Slice only advances FTF-H010; P5 and P6 remain. Returned as QUEUE item 0p.
+## 2026-11-10T14:50Z — CERTIFIED: FTF-0617
+- **FTF-0617: CERTIFIED (L2)** (top-level task, +1: 158/304; round 2 under the stopping rule; PR #1011, merge 816f0fb36ef4c9a3fb821a6f943573cf63d7ed20; certifier session_01TEaAUykoLREiSbDbBx5mVn, claude-opus-5-5 ≠ producer). ci-verdict success on #1011; new job zero-egress-judge-integration in `needs` and green; unit step ci.yml:520. Local: task script 31 scenarios / 84 faults exit 0; PG16 integration exit 0; uncapped mutation 250/250 killed. Clauses: private-only judge or authorized humans on strict projects; external fallback or unknown upstream judge fails closed even when the LiteLLM alias looks local (admission and per-call fingerprint, MODEL_MISMATCH, missing fingerprint = judge_route_identity_unverified); Law 17 met. FTF-0616-F1 deployment_fingerprint wired. 36 probes correct; 16 own faults, 11 RED, 5 GREEN (none clause-level). Gates: product_truth 49/49, validate_spec --strict, data_exposure OK. Advisories: critical=False hard-coded at zero_egress_judge_policy.py:862 (not exploitable: evaluation_case_store refuses llm_judge on critical); unsigned caller-supplied approval JSON (FTF-0908 precedent); approval not tied to a project and a later-revoked approver still gets a verdict; human_review plan records the role set. UNWIRED (no live caller; design ruling and FTF-0616 precedent): read strictly under Laws 5/7/8 this would be RETURN for wiring; not counted product-true.
+## 2026-11-10T14:50Z — RETURNED: FTF-1301-F1 (r2 -> r3)
+- **FTF-1301-F1: NOT CERTIFIED (round 2)** (PRs #996 merge dab64d21 and #1005 merge 5e0d91b4; certifier session_01TEaAUw5wvAy9voEc4KzUkz, claude-opus-5-5). Code works: all probes pass on the merged code; no severity 3-4; ftf_1301 27/27, ux05 browser 253/253, full web suite 3144/3144, wiring.spec passes, product_truth 49/49, validate_spec --strict, data_exposure OK. Round-1 list: browser out-of-order test MET; clear-old-result code met but notice and organization unpinned; F3/F4/F5 RED in jsdom only, GREEN in Chromium; evidence met with a stale docstring (costprofile_schema_ui.tsx:20-24). Faults GREEN in both: remove setNotice(null) (line 305); drop organizationId from identityKey (line 221). GREEN in Chromium only: F3, F4, F5, P8 Verify/Create guard. Returned as QUEUE item 0q (tests only).

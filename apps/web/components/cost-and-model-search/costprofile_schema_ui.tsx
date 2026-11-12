@@ -17,11 +17,10 @@
  * yet" notice rather than silently picking an unqualified one when it is
  * `null`.
  *
- * Scope disclosed, not hidden (see docs/certifications/queue.md): this
- * repository has no Next.js app shell yet -- the same precedent
- * `project_schema_api_ui.tsx` (FTF-0401) already established. This is a
- * real, DOM-level tested component (Vitest + React Testing Library +
- * jsdom with a mocked `fetch`), not a full browser E2E.
+ * Mounted by `pages/cost-profile.tsx`. Tested at the DOM level (Vitest + React
+ * Testing Library + jsdom with a mocked `fetch`, `ftf_1301.spec.ts`) and in
+ * real Chromium against the same bundle (`ftf_ux05_browser.spec.ts`); the
+ * live-API journey shell is a separate task (FTF-H029).
  *
  * FTF-UX05 (2026-10-22): audit finding X2 (severity 2) -- the create-form
  * error rendered as a bare `<p>` with no `role="alert"`; it now carries
@@ -209,6 +208,18 @@ async function readErrorDetail(response: Response, locale: Locale): Promise<UiEr
   return uiError(phrase("requestFailedTemplate", locale, { status: response.status }), kind);
 }
 
+/** A stable key for the (apiBaseUrl, organizationId, projectId) triple this panel is scoped to --
+ * used both to reset display state synchronously on any identity change (FTF-1301-F1 round 2,
+ * same `seenIdentity` pattern as the sibling FTF-0309 component) and to suppress a write's own
+ * error from a project/organization the user has since switched away from. */
+function identityKey(identity: {
+  apiBaseUrl: string;
+  organizationId: string;
+  projectId: string;
+}): string {
+  return `${identity.apiBaseUrl}\u0000${identity.organizationId}\u0000${identity.projectId}`;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -278,6 +289,21 @@ export function CostProfileSearchPanel({
   // destructured props above.
   const identityRef = useRef({ apiBaseUrl, organizationId, projectId });
   identityRef.current = { apiBaseUrl, organizationId, projectId };
+  const identity = identityKey(identityRef.current);
+  // FTF-1301-F1 round 2 (STALE-WHILE-LOADING): the round-1 fix stops a stale RESPONSE from
+  // overwriting state, but did nothing about the previous project's already-rendered state
+  // sitting on screen -- labelled "loading" -- until the new project's own response arrives.
+  // Reset synchronously during render on any identity change (never in an effect, so there is
+  // no committed frame showing project A's rate under project B's loading indicator), same
+  // `seenIdentity` pattern as the sibling FTF-0309 component.
+  const [seenIdentity, setSeenIdentity] = useState(identity);
+  if (seenIdentity !== identity) {
+    setSeenIdentity(identity);
+    setSearch(null);
+    setError(null);
+    setNotice(null);
+    setLoading(true);
+  }
 
   const [profileType, setProfileType] = useState<ProfileType>("provider");
   const [label, setLabel] = useState("");
@@ -353,6 +379,11 @@ export function CostProfileSearchPanel({
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!createFlight.begin()) return;
+    // FTF-1301-F1 round 2 (P8 advisory): captured now, compared after every await -- a write's
+    // OWN error/malformed-response result must never surface once the user has switched to a
+    // different project or organization, same as a stale search reply.
+    const clickedIdentity = identity;
+    const stillCurrent = () => identityKey(identityRef.current) === clickedIdentity;
     setNotice(null);
     armSaveFocus(() => inPanel("cost-profile-submit-button"));
     armSearchFocus(() => inPanel("cost-per-success-search-results"));
@@ -374,7 +405,8 @@ export function CostProfileSearchPanel({
         }),
       });
       if (!response.ok) {
-        setError(await readErrorDetail(response, locale));
+        const detail = await readErrorDetail(response, locale);
+        if (stillCurrent()) setError(detail);
         return;
       }
       const created: unknown = await response.json();
@@ -382,7 +414,9 @@ export function CostProfileSearchPanel({
         // The server answered 2xx, so the write very likely happened, but the response cannot be
         // read: keep the typed values, and say to check the current state before submitting again
         // (a blind retry would record the rate twice).
-        setError(uiError(phrase("malformedWriteResponseMessage", locale), "verify-state"));
+        if (stillCurrent()) {
+          setError(uiError(phrase("malformedWriteResponseMessage", locale), "verify-state"));
+        }
         return;
       }
       setLabel("");
@@ -392,7 +426,7 @@ export function CostProfileSearchPanel({
       setNotice(phrase("costProfileCreated", locale));
       await refresh(true);
     } catch (caught) {
-      setError(networkError(caught, locale, { write: true }));
+      if (stillCurrent()) setError(networkError(caught, locale, { write: true }));
     } finally {
       createFlight.end();
       setSaving(false);
@@ -407,6 +441,11 @@ export function CostProfileSearchPanel({
 
   async function handleVerify(costProfileId: string) {
     if (!verifyFlight.begin()) return;
+    // FTF-1301-F1 round 2 (P8 advisory): a 409 (or any other) error from a Verify clicked on
+    // project A must never surface once the user has switched to project B -- same guard as
+    // handleCreate's own-response errors.
+    const clickedIdentity = identity;
+    const stillCurrent = () => identityKey(identityRef.current) === clickedIdentity;
     setNotice(null);
     armSearchFocus(
       () =>
@@ -420,12 +459,13 @@ export function CostProfileSearchPanel({
         { method: "POST", credentials: "include" },
       );
       if (!response.ok) {
-        setError(await readErrorDetail(response, locale));
+        const detail = await readErrorDetail(response, locale);
+        if (stillCurrent()) setError(detail);
         verifyFlight.end();
         return;
       }
     } catch (caught) {
-      setError(networkError(caught, locale, { write: true }));
+      if (stillCurrent()) setError(networkError(caught, locale, { write: true }));
       verifyFlight.end();
       return;
     }

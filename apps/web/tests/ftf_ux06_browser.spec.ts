@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { chromium, type Browser, type Page } from "@playwright/test";
+import { browserLaunchOptions } from "./support/browser_launch";
 import { build } from "vite";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
@@ -195,7 +196,7 @@ beforeAll(async () => {
   );
   bundle = outputs.find((o) => o.type === "chunk")?.code ?? "";
   expect(bundle.length, "the in-memory bundle must be built").toBeGreaterThan(1000);
-  browser = await chromium.launch();
+  browser = await chromium.launch(browserLaunchOptions());
 }, 120_000);
 
 afterAll(async () => {
@@ -628,6 +629,186 @@ describe("[UX06-BROWSER] round 2 fixes", () => {
         return el.scrollWidth - el.clientWidth;
       });
       expect(over).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe("[UX06-BROWSER] round 3 fixes", () => {
+  const SAVED_LONG: UiState = {
+    id: "saved notice, 200-char case_key",
+    routes: [
+      { method: "GET", path: LIST_PATH, body: { items: [evalCase()], next_after: null } },
+      {
+        method: "PATCH",
+        path: CASE_PATH,
+        status: 200,
+        body: evalCase({ case_key: MAX_CASE_KEY, language: "fr" }),
+      },
+    ],
+    steps: [
+      { click: "load-cases-button" },
+      { click: `edit-case-${CASE_A}` },
+      { fill: ["field-language", "fr"] },
+      { click: "save-case-button" },
+    ],
+    ready: '[data-testid="notice"]',
+  };
+  const IMPORTED_LONG: UiState = {
+    id: "import success, 200-char case_key",
+    routes: [
+      { method: "GET", path: LIST_PATH, body: { items: [], next_after: null } },
+      {
+        method: "POST",
+        path: LIST_PATH,
+        status: 201,
+        body: { items: [evalCase({ case_key: MAX_CASE_KEY })] },
+      },
+    ],
+    steps: [
+      { click: "load-cases-button" },
+      { fill: ["import-text", JSON.stringify([{ case_key: MAX_CASE_KEY }])] },
+      { click: "import-button" },
+    ],
+    ready: '[data-testid="notice"]',
+  };
+  const WIDTHS = [1280, 390, 320, 195]; // 195 ~ 200 % zoom at 390
+
+  for (const state of [SAVED_LONG, IMPORTED_LONG]) {
+    test(`OVERFLOW-SAVED-NOTICE: [${state.id}] scrolls 0 px at every width`, async () => {
+      const page = await openState(state, "en", "light");
+      try {
+        for (const width of WIDTHS) {
+          await page.setViewportSize({ width, height: 844 });
+          const over = await page.evaluate(() => {
+            const el = document.documentElement;
+            return el.scrollWidth - el.clientWidth;
+          });
+          expect(over, `${state.id} at ${width}px`).toBeLessThanOrEqual(1);
+        }
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("N4: the wrap is declared at the component root, so the notice and every alert inherit it", async () => {
+    const page = await openState(SAVED_LONG, "en", "light");
+    try {
+      const wraps = await page.evaluate(() => {
+        const q = (sel: string) => getComputedStyle(document.querySelector(sel)!).overflowWrap;
+        return {
+          root: q("section"),
+          notice: q('[data-testid="notice"]'),
+        };
+      });
+      expect(wraps).toEqual({ root: "anywhere", notice: "anywhere" });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("FAILED-SAVE-403-SILENT: a 403 on save leaves an announced alert holding focus, outside the form", async () => {
+    const page = await openState(
+      {
+        id: "edit save 403 final suite",
+        routes: [
+          { method: "GET", path: LIST_PATH, body: { items: [evalCase()], next_after: null } },
+          {
+            method: "PATCH",
+            path: CASE_PATH,
+            status: 403,
+            body: { detail: "final_suite_content_restricted" },
+          },
+        ],
+        steps: [
+          { click: "load-cases-button" },
+          { click: `edit-case-${CASE_A}` },
+          { fill: ["field-language", "fr"] },
+          { click: "save-case-button" },
+        ],
+        ready: '[data-testid="restricted-save-error"]',
+      },
+      "en",
+      "light",
+    );
+    try {
+      const state = await page.evaluate(() => ({
+        active: document.activeElement?.getAttribute("data-testid"),
+        role: document.activeElement?.getAttribute("role"),
+        form: document.querySelector('[data-testid="case-form"]') !== null,
+      }));
+      expect(state).toEqual({ active: "restricted-save-error", role: "alert", form: false });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("ERROR-SUMMARY: a save field error is a focusable summary whose link focuses the field", async () => {
+    const page = await openState(
+      {
+        id: "edit save field error",
+        routes: [
+          { method: "GET", path: LIST_PATH, body: { items: [evalCase()], next_after: null } },
+          {
+            method: "PATCH",
+            path: CASE_PATH,
+            status: 400,
+            body: {
+              detail: "validation_failed",
+              errors: [{ index: null, field: "language", code: "invalid_value" }],
+            },
+          },
+        ],
+        steps: [
+          { click: "load-cases-button" },
+          { click: `edit-case-${CASE_A}` },
+          { fill: ["field-language", "fr"] },
+          { click: "save-case-button" },
+        ],
+        ready: '[data-testid="edit-field-errors"]',
+      },
+      "en",
+      "light",
+    );
+    try {
+      await page.getByRole("link", { name: /language: invalid_value/ }).click();
+      const active = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+      expect(active).toBe("field-language");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("NOT-BILINGUAL: a store code shows localized under ar in real Chromium", async () => {
+    const page = await openState(
+      {
+        id: "import unknown_field under ar",
+        routes: [
+          {
+            method: "POST",
+            path: LIST_PATH,
+            status: 400,
+            body: {
+              detail: "validation_failed",
+              errors: [{ index: 0, field: "category", code: "unknown_field" }],
+            },
+          },
+        ],
+        steps: [
+          { fill: ["import-text", JSON.stringify([{ case_key: "c1" }])] },
+          { click: "import-button" },
+        ],
+        ready: '[data-testid="import-field-errors"]',
+      },
+      "ar",
+      "light",
+    );
+    try {
+      const text = await page.getByTestId("import-field-errors").innerText();
+      expect(text).not.toContain("unknown_field");
+      expect(text).toContain("حقل غير معروف");
     } finally {
       await page.close();
     }

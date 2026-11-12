@@ -1,17 +1,27 @@
 # PROGRESS — Sovra
 
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
-Updated: 2026-10-23T17:46Z. Source: `python3 scripts/status.py` on main.
-- **Status: 157/304 certified · 49 product-true** (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
+Updated: 2026-11-10T14:50Z. Source: `python3 scripts/status.py` on main.
+- **Status: 158/304 certified · 58 product-true** (9 web items named their page-wired component as `proving_symbol` on 2026-11-10; PROVISIONAL until an independent L2 review confirms them) (denominator 304 since the owner-approved addenda FTF-0708A and FTF-1004A, ADR 0004).
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
   Certification counts change only through Control-plane `[CERT]` PRs, so these figures are exact until the next one.
+- **Certified (2026-11-10): FTF-0617 (zero-egress judge policy), 158/304.** On strict projects the server accepts only a private judge or authorized humans, and an outside fallback or an unknown judge is refused even when its alias looks local. 250 of 250 deliberate code breakages were caught, and 36 hostile inputs were all handled correctly. It is not reachable from the running product yet: nothing calls the rule today (the first callers come with FTF-0618 and the evaluation worker), so it does not add to the 49 product-true.
+- **Returned (2026-11-10): FTF-1301-F1 (cost panel after a project switch).** It works and no serious usability problem remains, but five deliberate breakages (clearing the old message and organization on a switch, and three stale-reply cases) go uncaught in the real-browser tests. It goes back for a third, tests-only round.
+- **Relay (2026-11-10):** the relay lane that was stuck for 18 days is running again; it merged FTF-0617 and FTF-1301-F1 round 2 today. FTF-1504 is open for the next lane (a dead claim was ruled void).
+- **Certified (child slice, 2026-11-10): FTF-UX01-F1** - the shared error and keyboard-focus code is hardened: an unknown error kind no longer crashes a screen, no English text leaks into Arabic errors (checked in a real browser too), and the two helper modules have their own tests. 33 deliberate breakages were tried and 32 were caught; the one that was not is a change no test can observe. The count stays 157/304 because this is a child slice.
+- **Returned (2026-11-10): FTF-H010-P4** (model roles and continuation eligibility): the routes are live and 352 of 352 code breakages are caught, but an archived or changed weights file still shows "continue tuning" as allowed, and two database safeguards (a lock that stops one model being judge and candidate at once, and a revocation consistency rule) are not covered by any test. It goes back for a second round; import-wizard slices P5 and P6 still follow. The first relay merge after 18 days of a stuck lane was #998; lane B is running again.
 - **Certified today (2026-10-06):** FTF-0500B, FTF-0500C, FTF-0601, FTF-0307, FTF-1206A, FTF-04A18, FTF-0902,
   FTF-0500D, FTF-1002, FTF-0103A, FTF-0510, FTF-0214, FTF-0604, FTF-0606, FTF-0608, FTF-1807, FTF-04A21, FTF-04A34, FTF-04A32, FTF-0515, FTF-04A22, FTF-0605, FTF-0607, FTF-0610, FTF-0609, FTF-0611, FTF-0612, FTF-0613, FTF-1305, FTF-0308, FTF-0602, FTF-0901 and FTF-1706 (2026-10-07/08), plus follow-ups FTF-1206A-F2, FTF-H034-F1 through F5, FTF-0510-F1, FTF-0608-F1 and FTF-04A21-F1.
 - **FTF-0103A (live login + Membership): CERTIFIED.** Every /api/v1 route now authorizes real logged-in members, and
   org overrides through headers or query parameters are proven blocked. This unblocks the wiring tasks.
 - **Model catalog (FTF-0214): CERTIFIED.** The live catalog/probe routes now carry 10 certified units end to end, and a
   revoked connection is shown as revoked, never healthy. Product-true is 45. The UI page mount waits on FTF-H029.
+- **2026-10-23T18:52Z:**
+  - CERTIFIED (child slice): FTF-H011-P2 after 2 rounds - saved dataset field mappings: locked after approval, tenant-isolated, safe under parallel use, an explicit admin rejection always wins, and an approval from a revoked connection is never reused. FTF-H011 now needs P3 (routes), P4 (wizard), P5 and P6.
+  - Returned: FTF-UX06 r2 (evaluation case editor): most of round 1 is fixed and verified in a real browser, but a long case name still overflows in the "saved" message, a save refused for access reasons blanks the form without a message, some error codes still show untranslated in Arabic, and five error announcements have no test. Round 3 (UX lane).
+  - Returned: FTF-R006-P1b r2 (Argilla reviewer accounts): the cross-organization leak is fixed and verified on a real Argilla server, but a revoked reviewer can still keep access in a narrower timing race, two outage paths have no test, the new real-server CI job does not actually test the access rules, and it runs search and cache servers whose licences the project ruled out (Elasticsearch, Redis 7.4). Round 3 fixes these. Nothing is exposed: the code has no live route yet.
+  - Control plane: designs written for FTF-0701 (training configuration schema; three slices, the first claimable now - 22 tasks depend on it) and for closing FTF-H010 (model import wizard and version panel; the wizard is claimable now). Both need no new dependency, secret or owner approval; clauses that need a GPU or the org gateway key are disclosed as blocked, never claimed.
 - **2026-10-23T17:46Z:**
   - Control-plane ruling: count-first lanes. One relay lane keeps the UI-redesign rounds; the others take the work that raises the certified count (finish nearly-done tasks FTF-H010, FTF-0617, FTF-1504, then FTF-R004/H011/R006 slices). Three stale draft PRs are released for reclaiming; designs for FTF-H010, FTF-0701, FTF-0603 and FTF-H027 come next.
 - **2026-10-23T14:56Z:**
@@ -30983,3 +30993,106 @@ STEP 4 stop condition: single-item outcome -- FTF-UX01-F1 round 1 (lane B's item
 `main`, PROVISIONAL, awaiting Control-plane L2 certification. No new `BLOCKER.md` entry. No new
 "Owner actions" line. Certified count unchanged (merge != certification, Law 4); product-true
 count unchanged (this item touches no `proving_symbol` -- UNWIRED, same as its UX01/UX05 parents).
+
+## 2026-10-27T12:52Z -- Scheduled relay shift -- systemic CI outage discovered; BLOCKER.md written, shift stopped
+
+STEP 0/0.1 clean: hash matched (`sha256sum CLAUDE.md` == `CLAUDE.md.sha256`); read
+PROGRESS.md/QUEUE.md/docs/certifications/queue.md fresh rather than assuming state. Found the
+designated branch already at current `origin/main` HEAD (`bb940d3`) -- a prior session's
+designated branch had already been merged, so this one restarted clean per the normal rule.
+STEP 0.2: no `cognee-cli` available; text-search fallback used throughout (declared here per the
+routine's own instruction).
+
+Surveyed all 18 open PRs (none merged into `main`, none stale-claimed inside the 3-hour window --
+every one genuinely open and unclaimed by this shift). Every PR's `updated_at` stopped at
+~2026-10-23T22:49Z -- four days of no shift progress despite the stated 2-hour relay cadence.
+
+Per "Returned work first," checked CI on every non-draft relay/governance PR (#998, #1005, #1011,
+#1003, #950, #1009): all six show `ci-verdict` red. Investigated PR #1005 (FTF-1301-F1 round 2)
+first since it had the clearest signature -- two failing integration jobs
+(`json-import-integration`, `egress-verification-integration`) entirely unrelated to its own
+frontend-only diff (confirmed via `pull_request_read get_files`: 5 files, all `apps/web`/docs, zero
+overlap with the failing jobs' own source files). Ruled out "this PR's own fault": pulled
+`tests/integration/test_ftf_0906_egress_verification.py` and ran it locally against the current
+`main` head -- passes cleanly; ran `tests/unit/test_ci_policy.py` locally -- 72/72 pass (the
+base-branch policy script `ci-verdict` always re-fetches fresh is not broken either). Re-ran the
+failed jobs once (CI contract's flake-confirmation allowance) -- failed again in ~2s with
+`runner_id: 0` (no runner ever assigned, died before any test body ran). Re-ran the entire workflow
+fresh -- `classify`/`relay-policy`/`secret-scanning`/`gate`/`mutation-gate` (zero service
+containers, zero cross-job dependencies) ALL failed in 2-3s with `runner_id: 0`; every job
+depending on `classify` was then correctly `skipped`. No job log exists for any of these (`HTTP
+404` on every attempt, including seconds after completion) -- consistent with "no runner was ever
+dispatched," not an expired log.
+
+Cross-checked the other five PRs' check-runs: identical shape on every one -- `ci-verdict` red,
+every job that actually got a runner (all from the original 2026-10-23 attempts) succeeded or was
+correctly skipped, nothing attempted today got a runner. No shared code-level cause links these six
+PRs; the common factor is the CI platform itself failing to provision runners at all, not any PR's
+diff, not a flaky test, not a policy-script bug.
+
+This is a systemic CI/config failure per STEP 4(b)/(c) -- not an item-level park. `ci-verdict` is
+the sole definition of "CI green" in this repo; if no job can ever acquire a runner, no PR (open or
+future) can ever reach green, so nothing can merge or certify, and no new relay work can be
+validated or claimed. Wrote the full evidence trail and three owner-facing route options
+(Actions billing/usage limit, Actions disabled/restricted at repo or org level, a GitHub-side
+runner-provisioning outage) to `BLOCKER.md` under a new LIVE entry and stopped there, per
+"same action, same failure, reproduced 3x -- never retry a 4th time."
+
+STEP 3: this file and `BLOCKER.md` only (docs-only, this designated branch; no `[relay]`-titled PR,
+no item claimed, no shared-file edit beyond these two). No code or tracker file was touched on any
+of the 18 open PRs -- PR #1005 was left subscribed with its re-run already queued, in case runners
+recover on their own, but nothing was pushed to it. STEP 4 stop condition: (b)/(c) true blocker --
+`BLOCKER.md` written, shift stopped. Certified/product-true counts unchanged (0 items claimed, 0
+merged, 0 certified this shift).
+
+## 2026-11-10T09:50Z -- PR-activity wake (follow-up, not a scheduled shift) -- CI outage confirmed resolved; BLOCKER.md/QUEUE.md closed out
+
+Woken by a `check_suite.completed` event on PR #1005 (subscribed since the 2026-10-27T1252Z shift).
+Checked PR #1005's live state fresh rather than assuming anything from 14 days ago: `ci-verdict`
+now reports `success` (run `42786224839`, 92/92 check-runs green, including every job that was
+previously failing with `runner_id: 0` -- `classify`/`gate`/`secret-scanning`/`mutation-gate` and
+the full `*-integration` set). A separate, concurrent session was already actively driving PR #1005
+itself (merging fresh `main` in, `mergeable_state: unstable` with a new CI run in flight) -- left
+that PR untouched to avoid colliding with in-progress work; no push made there.
+
+This confirms the systemic GitHub Actions runner-provisioning outage from 2026-10-27 has cleared.
+Since my own `BLOCKER.md` LIVE entry and the unmerged docs-only PR #1012 (`claude/wizardly-fermat-
+wiu2ah`) describing it as ongoing would now be stale and misleading if left as-is, updated them
+rather than abandoning the branch: merged fresh `main` into `claude/wizardly-fermat-wiu2ah` (one
+real conflict in QUEUE.md's "Owner actions" block -- `main` had amended the unrelated FTF-0616
+line in the interim; resolved by keeping main's amended FTF-0616 line and dropping my own now-
+resolved CI-outage line entirely, since it never reached `main` and so needs no history kept
+there), and re-titled the `BLOCKER.md` entry `RESOLVED 2026-11-10T09:50Z` with the resolution
+evidence (PR #1005's own green run, cited above, plus `main` having advanced through several
+merges in the interim -- each needing its own green `ci-verdict`), preserving the original entry
+text underneath per this file's own convention rather than deleting it.
+
+STEP 3: this file, `BLOCKER.md` and `QUEUE.md` (closing out the earlier shift's own entries; no new
+item claimed, no code touched). Pushed to `claude/wizardly-fermat-wiu2ah`; PR #1012 updated to its
+fresh-based head. Will merge PR #1012 once its own `ci-verdict` reports green, then resume normal
+scheduled-shift work -- no `BLOCKER.md` entry is LIVE any longer. Certified/product-true counts
+unchanged.
+
+## 2026-11-10T11:38Z -- PR-activity wake (follow-up, continued) -- FTF-1301-F1 round 2 merged (#1005), queue.md appended
+
+Continuation of the 2026-11-10T0950Z follow-up: PR #1005's `ci-verdict` went green on a later
+fresh-base push (head `a4fece0`, from a concurrent session's own fresh-base chase, confirmed
+untouched by this session), 93/93 check runs passing, `mergeable_state: clean`, base already at
+`main`'s current tip (`1b98682`, this session's own prior merge of PR #1012). No open review
+threads. Merged as `5e0d91b4` (merge commit, repo convention).
+
+Appended the required `docs/certifications/queue.md` entry for Control plane ("## 2026-11-10T1138Z
+-- PROVISIONAL: FTF-1301-F1 round 2 merged (#1005)") summarizing the four findings closed, the
+pre-review's `FTF-1301-F1-r2 CERTIFY` verdict (evidence only, Law 4), and a note on the CI-outage
+history for the record (cross-referenced to `BLOCKER.md`'s now-`RESOLVED` entry). Restarted the
+designated branch from current `main` (the prior PR #1012 had just merged, so nothing to carry
+forward) per the normal "already merged -> restart from main" rule.
+
+STEP 3: this file and `docs/certifications/queue.md` (the one shared-file edit, appending only --
+QUEUE.md's own item 0d text is left for Control plane to process on its own review, per the
+no-shared-file-edits convention). STEP 4 stop condition: single-item outcome -- FTF-1301-F1 round 2
+(QUEUE.md item 0d) is now merged to `main`, PROVISIONAL, awaiting Control-plane L2 certification.
+No new `BLOCKER.md` entry (the only LIVE one from this session's earlier shift is now RESOLVED).
+No new "Owner actions" line. Certified count unchanged (merge != certification, Law 4);
+product-true count unchanged (this item touches no `proving_symbol`, same as its UX05/1301
+parents -- UNWIRED).
