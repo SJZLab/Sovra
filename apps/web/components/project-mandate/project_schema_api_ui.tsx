@@ -328,9 +328,7 @@ function ProjectSetupFormInner({
   const candidate = newerOf(project, saved);
   if (
     candidate !== null &&
-    (highest.current === null ||
-      candidate.id !== highest.current.id ||
-      candidate.row_version >= highest.current.row_version)
+    (highest.current === null || candidate.row_version >= highest.current.row_version)
   ) {
     highest.current = candidate;
   }

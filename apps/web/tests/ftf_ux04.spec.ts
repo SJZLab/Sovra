@@ -3121,4 +3121,49 @@ describe("[UX04-R3] review round 3 (findings 1-3 of the r1 pre-review)", () => {
     await act(async () => gets[0]!(ok(policy({ row_version: 2 }))));
     expect(text("budget-row-version")).toBe("7");
   });
+
+  // Reviewer finding: the stale-GET token must cover FAILURES and the requirements load too.
+  test("[UX04-R3-3] an older budget GET that FAILS after the newer one is ready shows no error", async () => {
+    const gets: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return Promise.resolve(ok([]));
+        if (url === BUD && init?.method === undefined) return new Promise((r) => gets.push(r));
+        throw new Error("unexpected");
+      }),
+    );
+    const view = render(
+      createElement(StrictMode, null, createElement(RequirementsPanel, panelProps())),
+    );
+    await waitFor(() => expect(gets).toHaveLength(2));
+    await act(async () => gets[1]!(ok(policy({ row_version: 7 }))));
+    await waitFor(() => expect(text("budget-row-version")).toBe("7"));
+    await act(async () => gets[0]!(refused(500)));
+    expect(text("budget-row-version")).toBe("7");
+    expect(alerts(view.container)).toHaveLength(0);
+  });
+
+  test("[UX04-R3-4] an older requirements GET that fails or returns other rows never replaces the newer one", async () => {
+    const gets: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return new Promise((r) => gets.push(r));
+        if (url === BUD && init?.method === undefined) return Promise.resolve(ok(policy()));
+        throw new Error("unexpected");
+      }),
+    );
+    const view = render(
+      createElement(StrictMode, null, createElement(RequirementsPanel, panelProps())),
+    );
+    await waitFor(() => expect(gets).toHaveLength(2));
+    await act(async () =>
+      gets[1]!(ok([requirement({ tool_definition_id: "new", name: "newer_tool" })])),
+    );
+    await waitFor(() => expect(view.container.textContent).toContain("newer_tool"));
+    await act(async () => gets[0]!(refused(500)));
+    expect(view.container.textContent).toContain("newer_tool");
+    expect(screen.queryByTestId("requirements-error")).toBeNull();
+  });
 });

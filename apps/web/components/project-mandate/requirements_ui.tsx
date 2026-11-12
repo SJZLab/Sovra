@@ -365,11 +365,15 @@ function RequirementsPanelInner({
     }
   }, [saving]);
 
+  const requirementsSeq = useRef(0);
   async function refreshRequirements(): Promise<void> {
+    const seq = ++requirementsSeq.current;
     setRequirements({ state: "loading" });
     const outcome = await requestJson(requirementsUrl(apiBaseUrl, organizationId, projectId), {
       credentials: "include",
     });
+    // Only the latest GET reports (same token as the budget load).
+    if (seq !== requirementsSeq.current) return;
     if (!outcome.ok) {
       setRequirements({ state: "failed", failure: outcome.failure });
       return;
