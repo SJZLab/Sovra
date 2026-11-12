@@ -716,6 +716,9 @@ const CONTROL = {
   maxInlineSize: "100%",
   minBlockSize: "var(--target-min)",
 } as const;
+// Adjacent actions never sit flush against each other (WCAG 2.5.8 spacing, FTF-UX02 r4 round 1):
+// an 8 px gap, wrapping at narrow widths in either direction.
+const ACTION_ROW = { display: "flex", flexWrap: "wrap", gap: "var(--space-2)" } as const;
 const BLOCK_LABEL = { display: "block", marginBlockEnd: "var(--space-1)" } as const;
 
 /** A labelled native `<select>` on UX01 spacing: block label above, minimum target size, no overflow. */
@@ -802,6 +805,12 @@ function UploadInner({
   const [phase, setPhase] = useState<Phase>("idle");
   const [resumableDraft, setResumableDraft] = useState<Draft | null>(null);
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
+  // FTF-UX02 r4 pre-review round 1 (START-OVER-NO-CONFIRM): the one confirmation dialog serves the
+  // resumable-draft "Abandon" AND "Start over" from every non-terminal screen. `finalize_retry` is a
+  // write whose outcome is unknown, so its wording says so instead of promising nothing happened.
+  const [confirmKind, setConfirmKind] = useState<"draft" | "start_over" | "start_over_unknown">(
+    "draft",
+  );
   // FTF-UX02 round-2 pre-review round 1 (CONFIRM-FOCUS-ON-CONFIRM): confirming abandon used to
   // close the dialog AND discard the whole "resumable" section (the dialog's own trigger button
   // included) in the same update, so the Dialog's close-focus had nowhere live to land and focus
@@ -823,7 +832,13 @@ function UploadInner({
   const [datasetName, setDatasetName] = useState("");
 
   const aliveRef = useRef(true);
-  const busyRef = useRef(false);
+  // The in-flight `exclusive` operation, or null. A token (not a boolean) so a call that was
+  // superseded by Back / Start over cannot release the lock of a newer one when it finally settles.
+  const busyRef = useRef<object | null>(null);
+  // FTF-UX02 r4 pre-review round 1 (STALE-CHECK-STATUS): bumped by Back and Start over. A "Check
+  // upload status" reply that lands after either belongs to a screen the user already left and is
+  // ignored (it can no longer move the phase, the session or the draft).
+  const epochRef = useRef(0);
   const originRef = useRef<string | null>(storageOrigin ?? null);
   const abandonTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -861,11 +876,12 @@ function UploadInner({
 
   async function exclusive(run: () => Promise<void>) {
     if (busyRef.current) return;
-    busyRef.current = true;
+    const mine = {};
+    busyRef.current = mine;
     try {
       await run();
     } finally {
-      busyRef.current = false;
+      if (busyRef.current === mine) busyRef.current = null;
     }
   }
 
@@ -875,7 +891,22 @@ function UploadInner({
     setNeedsFocusOnIdle(true);
   }
 
+  /** Abandon whatever request is in flight: its reply is ignored and its lock released. */
+  function supersedeInFlight() {
+    epochRef.current += 1;
+    busyRef.current = null;
+    setCheckingStatus(false);
+  }
+
+  /** "Start over" from a screen that still holds a live upload: confirm first (NN/g H3/H5). */
+  function requestStartOver(event: React.MouseEvent<HTMLElement>) {
+    abandonTriggerRef.current = event.currentTarget;
+    setConfirmKind(phase === "finalize_retry" ? "start_over_unknown" : "start_over");
+    setConfirmingAbandon(true);
+  }
+
   function resetToIdle() {
+    supersedeInFlight();
     clearDraft(storageKey);
     setResumableDraft(null);
     setSession(null);
@@ -1084,14 +1115,16 @@ function UploadInner({
     pickedFile: File | null,
     fallbackPhase: Phase,
   ): Promise<void> {
+    const epoch = epochRef.current;
+    const live = () => aliveRef.current && epoch === epochRef.current;
     const response = await fetch(
       sessionUrl(apiBaseUrl, organizationId, projectId, draft.uploadSessionId),
       { method: "GET", credentials: "include" },
     );
-    if (!aliveRef.current) return;
+    if (!live()) return;
     if (!response.ok) {
       const detail = await readDetail(response);
-      if (!aliveRef.current) return;
+      if (!live()) return;
       const failure = classifyFailure(response.status, detail, locale);
       setErrorMessage(failure.message);
       if (failure.kind === "closed") {
@@ -1108,7 +1141,7 @@ function UploadInner({
     }
     const current =
       response.status === 200 ? parseUploadSession(await response.json().catch(() => null)) : null;
-    if (!aliveRef.current) return;
+    if (!live()) return;
     if (
       current === null ||
       !sessionMatches(current, {
@@ -1185,6 +1218,8 @@ function UploadInner({
   async function checkStatus() {
     if (!session) return;
     setErrorMessage(null);
+    const epoch = epochRef.current;
+    const live = () => aliveRef.current && epoch === epochRef.current;
     setCheckingStatus(true);
     try {
       await loadSessionFromDraft(
@@ -1203,15 +1238,16 @@ function UploadInner({
         phase,
       );
     } catch (caught) {
-      if (!aliveRef.current) return;
+      if (!live()) return;
       setErrorMessage(networkErrorMessage(caught, locale));
       setPhase(phase);
     } finally {
-      if (aliveRef.current) setCheckingStatus(false);
+      if (live()) setCheckingStatus(false);
     }
   }
 
   function leaveMalformed() {
+    supersedeInFlight();
     const draft = loadDraft(storageKey, organizationId, projectId, datasetSourceConnectionId);
     setErrorMessage(null);
     setSession(null);
@@ -1368,42 +1404,6 @@ function UploadInner({
               if (picked) void exclusive(() => resumeFromDraft(picked));
             }}
           />
-          <Dialog
-            open={confirmingAbandon}
-            onOpenChange={setConfirmingAbandon}
-            title={phrase("abandonConfirmTitle", locale)}
-            description={phrase("abandonConfirmBody", locale)}
-            locale={locale}
-            data-testid="upload-abandon-confirm"
-            restoreFocusTo={abandonTriggerRef.current}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "var(--space-2)",
-                justifyContent: "flex-end",
-              }}
-            >
-              <Button
-                variant="secondary"
-                data-testid="upload-abandon-cancel-button"
-                onClick={() => setConfirmingAbandon(false)}
-              >
-                {phrase("keepDraft", locale)}
-              </Button>
-              <Button
-                variant="danger"
-                data-testid="upload-abandon-confirm-button"
-                onClick={() => {
-                  setPendingAbandon(true);
-                  setConfirmingAbandon(false);
-                }}
-              >
-                {phrase("abandonDraft", locale)}
-              </Button>
-            </div>
-          </Dialog>
           {/* Stays mounted while the dialog is open (the overlay already blocks interacting with
               it -- never `disabled` either: disabling a FOCUSED control blurs it synchronously,
               a browser behaviour, before any capture of it could run). `abandonTriggerRef`
@@ -1417,6 +1417,7 @@ function UploadInner({
               data-testid="upload-abandon-draft-button"
               onClick={(event) => {
                 abandonTriggerRef.current = event.currentTarget;
+                setConfirmKind("draft");
                 setConfirmingAbandon(true);
               }}
             >
@@ -1512,7 +1513,7 @@ function UploadInner({
             {t("interrupted", { count: uploadedCount, total: partCount })}
           </p>
           {alertFor("upload-interrupted-reason", errorMessage)}
-          <div>
+          <div style={ACTION_ROW}>
             <Button
               variant="primary"
               data-testid="upload-resume-button"
@@ -1520,7 +1521,7 @@ function UploadInner({
             >
               {t("resumeButton")}
             </Button>
-            <Button data-testid="upload-new-upload-button" onClick={startOver}>
+            <Button data-testid="upload-new-upload-button" onClick={requestStartOver}>
               {t("startOver")}
             </Button>
           </div>
@@ -1559,7 +1560,7 @@ function UploadInner({
             style={CONTROL}
             onChange={(event) => setDatasetName(event.target.value)}
           />
-          <div>
+          <div style={ACTION_ROW}>
             <Button
               variant="primary"
               data-testid="upload-finalize-button"
@@ -1569,10 +1570,12 @@ function UploadInner({
             >
               {t("finalizeButton")}
             </Button>
+            {/* One gate: `disabledReason` disables the button AND says why (a status check is in
+                flight; a Start over now would drop the screen that check reports to). */}
             <Button
               data-testid="upload-new-upload-button"
-              disabled={checkingStatus}
-              onClick={startOver}
+              disabledReason={checkingStatus ? t("startOverBusyReason") : undefined}
+              onClick={requestStartOver}
             >
               {t("startOver")}
             </Button>
@@ -1631,7 +1634,7 @@ function UploadInner({
           style={{ display: "grid", gap: "var(--space-3)", ...WRAP }}
         >
           {alertFor("upload-malformed-text", errorMessage)}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
+          <div style={ACTION_ROW}>
             {session && (
               <Button
                 variant="primary"
@@ -1676,6 +1679,52 @@ function UploadInner({
         </div>
       )}
       {phase === "storage_unavailable" && alertFor("upload-storage-unavailable-text", errorMessage)}
+      <Dialog
+        open={confirmingAbandon}
+        onOpenChange={setConfirmingAbandon}
+        title={
+          confirmKind === "draft"
+            ? phrase("abandonConfirmTitle", locale)
+            : t("startOverConfirmTitle")
+        }
+        description={
+          confirmKind === "draft"
+            ? phrase("abandonConfirmBody", locale)
+            : confirmKind === "start_over_unknown"
+              ? t("startOverUnknownBody")
+              : t("startOverConfirmBody")
+        }
+        locale={locale}
+        data-testid="upload-abandon-confirm"
+        restoreFocusTo={abandonTriggerRef.current}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "var(--space-2)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <Button
+            variant="secondary"
+            data-testid="upload-abandon-cancel-button"
+            onClick={() => setConfirmingAbandon(false)}
+          >
+            {confirmKind === "draft" ? phrase("keepDraft", locale) : t("keepUpload")}
+          </Button>
+          <Button
+            variant="danger"
+            data-testid="upload-abandon-confirm-button"
+            onClick={() => {
+              setPendingAbandon(true);
+              setConfirmingAbandon(false);
+            }}
+          >
+            {confirmKind === "draft" ? phrase("abandonDraft", locale) : t("startOver")}
+          </Button>
+        </div>
+      </Dialog>
     </section>
   );
 }

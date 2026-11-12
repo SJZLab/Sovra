@@ -61,6 +61,20 @@ const STRINGS = {
   newUpload: { en: "Start a new upload", ar: "ابدأ رفعًا جديدًا" },
   uploadAnother: { en: "Upload another dataset", ar: "ارفع مجموعة بيانات أخرى" },
   startOver: { en: "Start over", ar: "ابدأ من جديد" },
+  startOverBusyReason: {
+    en: "Wait for the status check to finish.",
+    ar: "انتظر حتى ينتهي فحص الحالة.",
+  },
+  startOverConfirmTitle: { en: "Start over?", ar: "هل تريد البدء من جديد؟" },
+  startOverConfirmBody: {
+    en: "This browser forgets this upload and its progress, and a new upload starts from the beginning. This cannot be undone.",
+    ar: "سينسى هذا المتصفح هذا الرفع وتقدمه وسيبدأ رفع جديد من البداية. لا يمكن التراجع عن ذلك.",
+  },
+  startOverUnknownBody: {
+    en: "The outcome of the last finalize request is unknown, so the dataset may already exist. Starting over makes this browser forget this upload, so you could no longer check it from here. This cannot be undone.",
+    ar: "نتيجة آخر طلب إنهاء غير معروفة، لذا قد تكون مجموعة البيانات موجودة بالفعل. البدء من جديد يجعل هذا المتصفح ينسى هذا الرفع فلن تتمكن من فحصه من هنا. لا يمكن التراجع عن ذلك.",
+  },
+  keepUpload: { en: "Keep upload", ar: "الاحتفاظ بالرفع" },
   checkingStatus: { en: "Checking upload status…", ar: "جارٍ فحص حالة الرفع…" },
   back: { en: "Back", ar: "رجوع" },
 

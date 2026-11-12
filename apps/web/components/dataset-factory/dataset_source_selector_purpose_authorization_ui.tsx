@@ -317,6 +317,12 @@ function DatasetSourceSelectorInner({
   // focus again -- never before the DOM has actually dropped `disabled` (same two-step shape as
   // the sibling FTF-0501-UI `pendingAbandon`/`needsFocusOnIdle` fix for the same bug class).
   const wasCheckingRef = useRef(false);
+  // FTF-UX02 r4 pre-review round 1 (STALE-AUTHORIZE, severity 3): an authorize reply belongs to the
+  // (connection, purpose) pair that was current when it was SENT. Every change of that pair (and
+  // every new request) bumps this counter, so a late reply for an earlier pair is ignored and can
+  // never paint "Authorized" or a denial against the pair now on screen (the same latest-request
+  // guard `DatasetIssueResolutionUI` uses for its loads).
+  const authorizeRequestRef = useRef(0);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
   // Round-3 pre-review 3 finding 1: Retry unmounts as soon as the error clears; when the retry
@@ -334,9 +340,14 @@ function DatasetSourceSelectorInner({
 
   useEffect(() => {
     if (wasCheckingRef.current && authorizeState !== "checking") {
-      document
-        .querySelector<HTMLElement>('[data-testid="dataset-source-check-authorization-button"]')
-        ?.focus();
+      // Restore focus only when the browser dropped it (the button was disabled while in flight) --
+      // never pull it off the connection or purpose control the user just moved to.
+      const active = document.activeElement;
+      if (!active || active === document.body) {
+        document
+          .querySelector<HTMLElement>('[data-testid="dataset-source-check-authorization-button"]')
+          ?.focus();
+      }
     }
     wasCheckingRef.current = authorizeState === "checking";
   }, [authorizeState]);
@@ -400,7 +411,9 @@ function DatasetSourceSelectorInner({
         failed(phrase("responseMalformedRetryable", locale));
         return;
       }
-      setConnections(body);
+      // Law 17 (advisory): a list item that belongs to another project is not this project's
+      // connection -- it is dropped, never shown or selectable here.
+      setConnections(body.filter((item) => item.project_id === projectId));
       if (options?.focusRetryOnFailure) retrySucceededFocusRef.current = true;
     } catch (caught) {
       if (!aliveRef.current) return;
@@ -499,14 +512,20 @@ function DatasetSourceSelectorInner({
       }
       const created: unknown = await response.json().catch(() => null);
       if (!aliveRef.current) return;
-      if (!isConnectionSummary(created)) {
-        // A 2xx that is not a real connection is never success (Law 17): keep the draft, say so.
+      if (
+        !isConnectionSummary(created) ||
+        created.project_id !== projectId ||
+        created.display_name.trim() !== displayName.trim()
+      ) {
+        // A 2xx that is not the connection that was asked for -- malformed, another project's, or
+        // under another name than the one sent -- is never success (Law 17): keep the draft, say so.
         setCreateError(phrase("responseMalformedRetryable", locale));
         return;
       }
       setConnections((previous) => (previous ? [...previous, created] : [created]));
       setSelectedConnectionId(created.id);
       setJustCreatedId(created.id);
+      authorizeRequestRef.current += 1;
       setAuthorizeState("idle");
       setAuthorizeMessage(null);
       resetForm();
@@ -522,6 +541,7 @@ function DatasetSourceSelectorInner({
   }
 
   function handleSelectConnection(connection: DatasetSourceConnectionSummary) {
+    authorizeRequestRef.current += 1;
     setJustCreatedId(null);
     setSelectedConnectionId(connection.id);
     setPurposeToCheck("");
@@ -534,6 +554,8 @@ function DatasetSourceSelectorInner({
       return;
     }
     const purposeSent = purposeToCheck;
+    const request = ++authorizeRequestRef.current;
+    const stale = () => !aliveRef.current || request !== authorizeRequestRef.current;
     setAuthorizeState("checking");
     setAuthorizeMessage(null);
     try {
@@ -546,7 +568,7 @@ function DatasetSourceSelectorInner({
           body: JSON.stringify({ purpose: purposeSent }),
         },
       );
-      if (!aliveRef.current) return;
+      if (stale()) return;
       if (response.status === 403) {
         setAuthorizeState("denied");
         setAuthorizeMessage(await readErrorDetail(response, locale));
@@ -560,7 +582,7 @@ function DatasetSourceSelectorInner({
       // FTF-UX02 round-3 finding 2: "Authorized" only for `{authorized: true, purpose: <sent>}`.
       // `{}`, `{"authorized": false}`, a non-JSON reply or another purpose is never a grant.
       const grant: unknown = await response.json().catch(() => null);
-      if (!aliveRef.current) return;
+      if (stale()) return;
       const g = grant as { authorized?: unknown; purpose?: unknown } | null;
       if (!g || typeof g !== "object" || g.authorized !== true || g.purpose !== purposeSent) {
         setAuthorizeState("idle");
@@ -573,7 +595,7 @@ function DatasetSourceSelectorInner({
       // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
       // here used to leave "Check authorization" disabled forever (`checking` state) with an
       // unhandled rejection and nothing announced -- now a typed, retryable, announced error.
-      if (!aliveRef.current) return;
+      if (stale()) return;
       setAuthorizeState("idle");
       setAuthorizeMessage(networkErrorMessage(caught, locale));
     }
@@ -842,7 +864,14 @@ function DatasetSourceSelectorInner({
             style={SELECT_STYLE}
             data-testid="dataset-source-purpose-to-check-select"
             value={purposeToCheck}
-            onChange={(event) => setPurposeToCheck(event.target.value as DatasetSourcePurpose | "")}
+            onChange={(event) => {
+              // A different purpose is a different question: whatever was in flight or shown for
+              // the previous one no longer applies (STALE-AUTHORIZE).
+              authorizeRequestRef.current += 1;
+              setAuthorizeState("idle");
+              setAuthorizeMessage(null);
+              setPurposeToCheck(event.target.value as DatasetSourcePurpose | "");
+            }}
           >
             <option value="">{phrase("selectPlaceholder", locale)}</option>
             {DATASET_SOURCE_PURPOSES.map((purpose) => (

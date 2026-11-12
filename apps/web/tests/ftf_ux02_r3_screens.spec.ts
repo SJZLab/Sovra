@@ -23,6 +23,7 @@ import {
 } from "../components/dataset-factory/strings_0516";
 import { ERROR_CODES, KEYS_0501, STRINGS_0501 } from "../components/dataset-factory/strings_0501";
 import { Field } from "../components/ui/Field";
+import { phrase } from "../components/ui/phrases";
 
 afterEach(() => {
   cleanup();
@@ -530,59 +531,135 @@ async function drive501(locale: "en" | "ar", target: string, finalizeName: boole
   }
 }
 
+const CONFIRM = {
+  en: {
+    title: "Start over?",
+    keep: "Keep upload",
+    body: /cannot be undone/,
+    unknown: /outcome of the last finalize request is unknown/,
+  },
+  ar: {
+    title: "هل تريد البدء من جديد؟",
+    keep: "الاحتفاظ بالرفع",
+    body: /لا يمكن التراجع عن ذلك/,
+    unknown: /نتيجة آخر طلب إنهاء غير معروفة/,
+  },
+} as const;
+
+const O1_CASES: Array<[string, Parameters<typeof stub501>[0], string, boolean, string]> = [
+  ["interrupted", { put: 403 }, "upload-interrupted", false, ""],
+  ["ready", {}, "upload-dataset-name-input", false, ""],
+  [
+    "incomplete",
+    { finalize: [409, { detail: "upload_incomplete" }] },
+    "upload-dataset-name-input",
+    true,
+    "upload-incomplete-text",
+  ],
+  [
+    "conflict",
+    { finalize: [409, { detail: "dataset_version_conflict" }] },
+    "upload-dataset-name-input",
+    true,
+    "upload-conflict-text",
+  ],
+  [
+    "finalize_retry",
+    { finalize: [500, {}] },
+    "upload-dataset-name-input",
+    true,
+    "upload-finalize-retry-text",
+  ],
+  [
+    "storage_unavailable",
+    { finalize: [503, { detail: "storage_unavailable" }] },
+    "upload-dataset-name-input",
+    true,
+    "upload-storage-unavailable-text",
+  ],
+];
+
+async function reach501(
+  locale: "en" | "ar",
+  [, opts, first, finalizeName, then]: (typeof O1_CASES)[number],
+) {
+  stub501(opts);
+  await drive501(locale, first, finalizeName);
+  if (then) await waitFor(() => expect(screen.getByTestId(then)).toBeTruthy());
+}
+
+// Round 4 pre-review round 1, finding 2 (START-OVER-NO-CONFIRM, severity 3): "Start over" discards
+// the live upload from this browser, so it goes through the same confirmation dialog as "Abandon".
 test.each([
   ["en", "Start over"],
   ["ar", "ابدأ من جديد"],
 ] as const)(
-  "[UX02-R4-O1] [%s] interrupted / ready / incomplete / conflict / finalize_retry / storage_unavailable each offer 'Start over', which returns to a fresh form with focus on its first control",
+  "[UX02-R4-O1] [%s] interrupted / ready / incomplete / conflict / finalize_retry / storage_unavailable offer 'Start over' behind a confirm step (Keep is focused first); confirming returns to a fresh form with focus on its first control",
   async (locale, label) => {
-    const cases: Array<[string, Parameters<typeof stub501>[0], string, boolean, string]> = [
-      ["interrupted", { put: 403 }, "upload-interrupted", false, ""],
-      ["ready", {}, "upload-dataset-name-input", false, ""],
-      [
-        "incomplete",
-        { finalize: [409, { detail: "upload_incomplete" }] },
-        "upload-dataset-name-input",
-        true,
-        "upload-incomplete-text",
-      ],
-      [
-        "conflict",
-        { finalize: [409, { detail: "dataset_version_conflict" }] },
-        "upload-dataset-name-input",
-        true,
-        "upload-conflict-text",
-      ],
-      [
-        "finalize_retry",
-        { finalize: [500, {}] },
-        "upload-dataset-name-input",
-        true,
-        "upload-finalize-retry-text",
-      ],
-      [
-        "storage_unavailable",
-        { finalize: [503, { detail: "storage_unavailable" }] },
-        "upload-dataset-name-input",
-        true,
-        "upload-storage-unavailable-text",
-      ],
-    ];
-    for (const [name, opts, first, finalizeName, then] of cases) {
-      stub501(opts);
-      await drive501(locale, first, finalizeName);
-      if (then) await waitFor(() => expect(screen.getByTestId(then)).toBeTruthy());
+    for (const c of O1_CASES) {
+      const name = c[0];
+      await reach501(locale, c);
       const button = screen.getByTestId("upload-new-upload-button");
       expect(button.textContent, name).toBe(label);
       fireEvent.click(button);
-      expect(screen.getByTestId("upload-form"), name).toBeTruthy();
-      expect(document.activeElement, name).toBe(screen.getByTestId("upload-purpose-select"));
+      // Nothing is discarded by the click itself.
+      expect(screen.queryByTestId("upload-form"), name).toBeNull();
+      const dialog = await screen.findByTestId("upload-abandon-confirm");
+      expect(dialog.textContent, name).toContain(CONFIRM[locale].title);
+      expect(dialog.textContent, name).toMatch(CONFIRM[locale].body);
+      if (name === "finalize_retry") {
+        expect(dialog.textContent, name).toMatch(CONFIRM[locale].unknown);
+      } else {
+        expect(dialog.textContent, name).not.toMatch(CONFIRM[locale].unknown);
+      }
+      const keep = screen.getByTestId("upload-abandon-cancel-button");
+      expect(keep.textContent, name).toBe(CONFIRM[locale].keep);
+      await waitFor(() => expect(document.activeElement, name).toBe(keep));
+      fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+      await waitFor(() => expect(screen.getByTestId("upload-form"), name).toBeTruthy());
+      await waitFor(() =>
+        expect(document.activeElement, name).toBe(screen.getByTestId("upload-purpose-select")),
+      );
       expect(screen.queryByTestId("upload-new-upload-button"), name).toBeNull();
       cleanup();
       window.localStorage.clear();
     }
   },
 );
+
+test.each(["en", "ar"] as const)(
+  "[UX02-R4-O1b] [%s] Keep leaves the screen, the draft and the typed name untouched, focus back on Start over",
+  async (locale) => {
+    for (const c of [O1_CASES[0]!, O1_CASES[1]!, O1_CASES[4]!]) {
+      const name = c[0];
+      await reach501(locale, c);
+      const start = screen.getByTestId("upload-new-upload-button");
+      fireEvent.click(start);
+      await screen.findByTestId("upload-abandon-confirm");
+      fireEvent.click(screen.getByTestId("upload-abandon-cancel-button"));
+      await waitFor(() => expect(screen.queryByTestId("upload-abandon-confirm"), name).toBeNull());
+      expect(screen.queryByTestId("upload-form"), name).toBeNull();
+      expect(window.localStorage.length, `${name}: draft kept`).toBeGreaterThan(0);
+      if (name !== "interrupted") {
+        expect((screen.getByTestId("upload-dataset-name-input") as HTMLInputElement).value).toBe(
+          name === "ready" ? "" : "ds",
+        );
+      }
+      await waitFor(() => expect(document.activeElement, name).toBe(start));
+      cleanup();
+      window.localStorage.clear();
+    }
+  },
+);
+
+test("[UX02-R4-O1c] terminal screens (expired / rejected / accepted) still start a new upload in one click", async () => {
+  stub501({ finalize: [410, { detail: "upload_expired" }] });
+  await drive501("en", "upload-dataset-name-input", true);
+  await waitFor(() => expect(screen.getByTestId("upload-expired-text")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("upload-new-upload-button"));
+  expect(screen.getByTestId("upload-form")).toBeTruthy();
+  expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+});
 
 test.each([
   ["en", "Checking upload status…"],
@@ -650,3 +727,200 @@ test("[UX02-R3-L1] 0516 Load more on the LAST page and Reload on the first issue
   await waitFor(() => expect(screen.queryByTestId("empty-reload-button")).toBeNull());
   expect((document.activeElement as HTMLElement).getAttribute("data-testid")).toMatch(/^review-/);
 });
+
+// ---- Round 4 pre-review round 1, finding 3 (STALE-CHECK-STATUS): a late 'Check upload status' reply
+// belongs to the screen it was sent from. Each was RED without the `epochRef` guard.
+function stubLateStatus(finalize: [number, unknown]) {
+  let settle!: (reply: unknown) => void;
+  const late = new Promise((resolve) => {
+    settle = resolve;
+  });
+  let finalized = false;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const u = new URL(url);
+      const ok = (status: number, body: unknown) => ({
+        ok: status < 300,
+        status,
+        json: async () => body,
+      });
+      if (u.hostname === "storage.example") return ok(200, {});
+      if (u.pathname.endsWith("/finalize")) {
+        finalized = true;
+        return ok(finalize[0], finalize[1]);
+      }
+      if (u.pathname.endsWith("/part-urls")) {
+        return ok(200, {
+          parts: [
+            {
+              part_number: 1,
+              method: "PUT",
+              url: "https://storage.example/p1",
+              content_length: 3,
+              expires_at: "2026-10-09T00:05:00+00:00",
+            },
+          ],
+        });
+      }
+      if (u.pathname.endsWith("/parts"))
+        return ok(200, { part_size_bytes: 3, part_count: 1, parts: [] });
+      if (init?.method === "POST") return ok(201, SESSION_R4);
+      if (finalized) return late;
+      return ok(200, SESSION_R4);
+    }),
+  );
+  return {
+    rejected: () =>
+      settle(
+        (() => ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...SESSION_R4,
+            status: "rejected",
+            rejection_reason: "size_mismatch",
+          }),
+        }))(),
+      ),
+    failed: () => settle({ ok: false, status: 500, json: async () => ({}) }),
+  };
+}
+
+const flush = () =>
+  act(async () => {
+    for (let i = 0; i < 6; i += 1) await Promise.resolve();
+  });
+
+test.each(["en", "ar"] as const)(
+  "[UX02-R4-K1] [%s] a status reply that lands after Back is ignored: the draft banner stays, nothing is rejected or cleared",
+  async (locale) => {
+    const late = stubLateStatus([201, {}]);
+    await drive501(locale, "upload-dataset-name-input", true);
+    await waitFor(() => expect(screen.getByTestId("upload-malformed")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("upload-check-status-button"));
+    await flush();
+    fireEvent.click(screen.getByTestId("upload-malformed-back-button"));
+    expect(screen.getByTestId("upload-resume-banner")).toBeTruthy();
+    late.rejected();
+    await flush();
+    expect(screen.getByTestId("upload-resume-banner")).toBeTruthy();
+    expect(screen.queryByTestId("upload-rejected-text")).toBeNull();
+    expect(window.localStorage.length, "the draft is not cleared by a stale reply").toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByTestId("upload-check-status-button")).toBeNull();
+  },
+);
+
+test("[UX02-R4-K2] a status reply that lands after Back then Abandon draft (a fresh form) is ignored", async () => {
+  const late = stubLateStatus([201, {}]);
+  await drive501("en", "upload-dataset-name-input", true);
+  await waitFor(() => expect(screen.getByTestId("upload-malformed")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("upload-check-status-button"));
+  await flush();
+  fireEvent.click(screen.getByTestId("upload-malformed-back-button"));
+  fireEvent.click(screen.getByTestId("upload-abandon-draft-button"));
+  await screen.findByTestId("upload-abandon-confirm");
+  fireEvent.click(screen.getByTestId("upload-abandon-confirm-button"));
+  await waitFor(() => expect(screen.getByTestId("upload-form")).toBeTruthy());
+  // The superseded check released the lock: a new upload starts straight away, while the old
+  // status request is STILL in flight ...
+  fireEvent.change(screen.getByTestId("upload-file-input"), {
+    target: { files: [new File([new Uint8Array([1, 2, 3])], "data.jsonl")] },
+  });
+  fireEvent.click(screen.getByTestId("upload-start-button"));
+  await waitFor(() => expect(screen.getByTestId("upload-dataset-name-input")).toBeTruthy());
+  // ... and its late reply then changes nothing on the new upload's screen.
+  late.rejected();
+  await flush();
+  expect(screen.getByTestId("upload-dataset-name-input")).toBeTruthy();
+  expect(screen.queryByTestId("upload-rejected-text")).toBeNull();
+});
+
+test("[UX02-R4-K2b] NEGATIVE: with no Back, the same late reply is applied to its own screen", async () => {
+  const late = stubLateStatus([201, {}]);
+  await drive501("en", "upload-dataset-name-input", true);
+  await waitFor(() => expect(screen.getByTestId("upload-malformed")).toBeTruthy());
+  fireEvent.click(screen.getByTestId("upload-check-status-button"));
+  await flush();
+  late.rejected();
+  await waitFor(() => expect(screen.getByTestId("upload-rejected-text")).toBeTruthy());
+});
+
+test.each([
+  ["en", "Wait for the status check to finish."],
+  ["ar", "انتظر حتى ينتهي فحص الحالة."],
+] as const)(
+  "[UX02-R4-K3] [%s] Start over is disabled WITH a reason while 'Check upload status' is in flight, and usable again after",
+  async (locale, reason) => {
+    const late = stubLateStatus([500, {}]);
+    await drive501(locale, "upload-dataset-name-input", true);
+    await waitFor(() => expect(screen.getByTestId("upload-check-status-button")).toBeTruthy());
+    const start = screen.getByTestId("upload-new-upload-button") as HTMLButtonElement;
+    expect(start.disabled, "idle: usable").toBe(false);
+    fireEvent.click(screen.getByTestId("upload-check-status-button"));
+    await flush();
+    expect(start.disabled, "busy: disabled").toBe(true);
+    const shown = screen
+      .getByTestId("upload-finalize")
+      .querySelector('[data-testid="disabled-reason"]')!;
+    expect(shown.textContent).toBe(reason);
+    expect(start.getAttribute("aria-describedby")).toContain(shown.id);
+    fireEvent.click(start);
+    expect(screen.queryByTestId("upload-abandon-confirm")).toBeNull();
+    late.failed();
+    await waitFor(() => expect(start.disabled).toBe(false));
+    expect(
+      screen.getByTestId("upload-finalize").querySelector('[data-testid="disabled-reason"]'),
+    ).toBeNull();
+  },
+);
+
+// ---- Round 4 pre-review round 1, finding 4: faults that were GREEN are pinned ----------------------
+// G16: 0516 maps an HTTP status to its recovery step (sign in / access / conflict / throttled /
+// rejected / retry). Forcing every failure to "retry" sent a 401 to "check your connection".
+const RECOVERY_BY_STATUS: Array<[number, Parameters<typeof phrase>[0]]> = [
+  [401, "recoverySignIn"],
+  [403, "recoveryPermission"],
+  [409, "recoveryConflict"],
+  [429, "recoveryThrottled"],
+  [404, "recoveryRejected"],
+  [500, "errorRecoveryStep"],
+];
+test.each(
+  (["en", "ar"] as const).flatMap((locale) =>
+    RECOVERY_BY_STATUS.map(([status, key]) => [locale, status, key] as const),
+  ),
+)(
+  "[UX02-R4-G16] [%s] 0516 a %s failure shows the %s recovery step",
+  async (locale, status, key) => {
+    replies["GET quality-report"] = { ok: false, status, body: {} };
+    mount516(locale);
+    fireEvent.click(loadButton());
+    await waitFor(() => expect(screen.getByTestId("dir-error")).toBeTruthy());
+    expect(screen.getByTestId("dir-error-recovery").textContent).toBe(phrase(key, locale));
+  },
+);
+
+// G9: a finalize whose outcome is unknown (500 / unreadable 201) must say "check the state", never
+// "check your connection and try again" (a blind retry of a write that may have happened).
+test.each(["en", "ar"] as const)(
+  "[UX02-R4-G9] [%s] 0501-UI finalize_retry and malformed offer the verify-state recovery, not a blind retry",
+  async (locale) => {
+    stub501({ finalize: [500, {}] });
+    await drive501(locale, "upload-dataset-name-input", true);
+    await waitFor(() => expect(screen.getByTestId("upload-finalize-retry-text")).toBeTruthy());
+    expect(screen.getByTestId("upload-finalize-retry-text-recovery").textContent).toBe(
+      phrase("recoveryVerifyState", locale),
+    );
+    cleanup();
+    window.localStorage.clear();
+    stub501({ finalize: [201, {}] });
+    await drive501(locale, "upload-dataset-name-input", true);
+    await waitFor(() => expect(screen.getByTestId("upload-malformed-text")).toBeTruthy());
+    expect(screen.getByTestId("upload-malformed-text-recovery").textContent).toBe(
+      phrase("recoveryVerifyState", locale),
+    );
+  },
+);

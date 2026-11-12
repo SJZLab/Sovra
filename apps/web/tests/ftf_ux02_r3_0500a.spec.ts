@@ -217,7 +217,11 @@ test("[UX02-R3-A9] the empty state's 'New connection' action really moves focus 
 });
 
 test("[UX02-R3-N1] a successful create focuses the new connection's option and announces it (role=status)", async () => {
-  await createConnection({ ok: true, status: 201, json: async () => GOOD });
+  await createConnection({
+    ok: true,
+    status: 201,
+    json: async () => ({ ...GOOD, display_name: "New one" }),
+  });
   await waitFor(() => expect(screen.getByTestId("dataset-source-created-status")).toBeTruthy());
   expect(screen.getByTestId("dataset-source-created-status").getAttribute("role")).toBe("status");
   expect(document.activeElement).toBe(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
@@ -366,5 +370,219 @@ test.each([
     } finally {
       vi.useRealTimers();
     }
+  },
+);
+
+// ---------------------------------------------------------------------------------------------------
+// Round 4, pre-review round 1, finding 1 (STALE-AUTHORIZE, severity 3): an authorize reply belongs to
+// the (connection, purpose) that was current when it was SENT. Each case was RED without the
+// `authorizeRequestRef` guard (a late "Authorized" was painted against the pair now on screen).
+// ---------------------------------------------------------------------------------------------------
+const CONN_B = {
+  ...GOOD,
+  id: "44444444-4444-4444-4444-444444444444",
+  display_name: "Archive bucket",
+};
+
+function deferredAuthorize() {
+  let settle!: (reply: Reply) => void;
+  const pending = new Promise<Reply>((resolve) => {
+    settle = resolve;
+  });
+  return { pending, settle };
+}
+
+const grant = (purpose: string): Reply => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ authorized: true, purpose }),
+});
+const denied = (): Reply => ({
+  ok: false,
+  status: 403,
+  json: async () => ({ detail: "purpose is not granted for purpose 'training'" }),
+});
+
+const noAuthorizeOutput = () => {
+  expect(screen.queryByTestId("dataset-source-authorization-result-authorized")).toBeNull();
+  expect(screen.queryByTestId("dataset-source-authorization-result-denied")).toBeNull();
+  expect(screen.queryByTestId("dataset-source-authorization-error")).toBeNull();
+  // The in-flight state is cleared properly: no busy indicator left behind.
+  expect(screen.queryByText(/Checking authorization|جارٍ فحص التفويض/)).toBeNull();
+};
+
+test.each(["en", "ar"] as const)(
+  "[UX02-R4-S1] [%s] a reply that lands after switching connection A -> B is ignored and B starts clean",
+  async (locale) => {
+    const { pending, settle } = deferredAuthorize();
+    stub({ list: [GOOD, CONN_B], authorize: pending as unknown as Reply });
+    mountUi(locale);
+    await waitFor(() =>
+      expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+    fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+      target: { value: "training" },
+    });
+    fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${CONN_B.id}`));
+    await act(async () => {
+      settle(grant("training"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("dataset-source-authorization-selected-connection").textContent).toBe(
+      "Archive bucket",
+    );
+    noAuthorizeOutput();
+    // B can be checked on its own afterwards (not stuck in a stale "checking").
+    expect(
+      (screen.getByTestId("dataset-source-purpose-to-check-select") as HTMLSelectElement).value,
+    ).toBe("");
+  },
+);
+
+test.each([
+  ["a late grant", grant("training")],
+  ["a late denial", denied()],
+  ["a late failure", { ok: false, status: 500, json: async () => ({}) } as Reply],
+])(
+  "[UX02-R4-S2] %s that lands after the purpose changed is ignored; the button is usable for the new purpose",
+  async (_n, reply) => {
+    const { pending, settle } = deferredAuthorize();
+    stub({ list: [GOOD], authorize: pending as unknown as Reply });
+    mountUi();
+    await waitFor(() =>
+      expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+    fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+      target: { value: "training" },
+    });
+    fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+    screen.getByTestId("dataset-source-purpose-to-check-select").focus();
+    fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+      target: { value: "validation" },
+    });
+    await act(async () => {
+      settle(reply);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    noAuthorizeOutput();
+    expect(
+      (screen.getByTestId("dataset-source-check-authorization-button") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    // The select still shows what the user chose, and focus was not pulled off it.
+    expect(document.activeElement).toBe(
+      screen.getByTestId("dataset-source-purpose-to-check-select"),
+    );
+    expect(
+      (screen.getByTestId("dataset-source-purpose-to-check-select") as HTMLSelectElement).value,
+    ).toBe("validation");
+  },
+);
+
+test("[UX02-R4-S2b] NEGATIVE: an unchanged pair still shows its own late grant", async () => {
+  const { pending, settle } = deferredAuthorize();
+  stub({ list: [GOOD], authorize: pending as unknown as Reply });
+  mountUi();
+  await waitFor(() => expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy());
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await act(async () => {
+    settle(grant("training"));
+    await Promise.resolve();
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-result-authorized")).toBeTruthy(),
+  );
+});
+
+// G25: with the empty-value placeholder <option> removed, a browser shows the FIRST real option
+// ("Public") while the state is still "" -- the user would read a classification nobody chose.
+test.each([
+  ["en", "Select…"],
+  ["ar", "اختر…"],
+] as const)(
+  "[UX02-R4-P1] [%s] both selects visibly show the placeholder (never 'Public' / the first purpose) while the state is empty",
+  async (locale, placeholder) => {
+    stub({ list: [GOOD] });
+    mountUi(locale);
+    await waitFor(() =>
+      expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId(`dataset-source-option-${GOOD.id}`));
+    for (const id of [
+      "dataset-source-security-classification-select",
+      "dataset-source-purpose-to-check-select",
+    ]) {
+      const select = screen.getByTestId(id) as HTMLSelectElement;
+      expect(select.value, id).toBe("");
+      expect(select.selectedOptions[0]?.textContent, id).toBe(placeholder);
+    }
+  },
+);
+
+// G3 / G4 (+ the sibling security_classification): every field the row renders must be validated.
+test.each([
+  ["source_type", undefined],
+  ["connection_status", undefined],
+  ["security_classification", undefined],
+  ["source_type", "   "],
+  ["connection_status", 3],
+])(
+  "[UX02-R4-V1] a list item with %s = %s is one retryable alert, never a half-blank connection",
+  async (field, value) => {
+    stub({ list: [{ ...GOOD, [field]: value }] });
+    mountUi();
+    await waitFor(() => expect(screen.getByTestId("dataset-source-list-error")).toBeTruthy());
+    expect(screen.getByTestId("dataset-source-list-error").textContent).toBe(MALFORMED_EN);
+    expect(screen.queryByTestId(`dataset-source-option-${GOOD.id}`)).toBeNull();
+  },
+);
+
+test.each([["source_type"], ["connection_status"], ["security_classification"]])(
+  "[UX02-R4-V2] a 201 create reply without %s is one alert; nothing is appended",
+  async (field) => {
+    await createConnection({
+      ok: true,
+      status: 201,
+      json: async () => ({ ...GOOD, display_name: "New one", [field]: undefined }),
+    });
+    await waitFor(() => expect(screen.getByTestId("dataset-source-create-error")).toBeTruthy());
+    expect(screen.getByTestId("dataset-source-create-error").textContent).toBe(MALFORMED_EN);
+    expect(screen.queryByTestId("dataset-source-connection-list")?.children.length).toBe(0);
+  },
+);
+
+// Advisories (Law 17): another project's list item is dropped; a 201 under another name or project
+// is not "the connection that was asked for".
+test("[UX02-R4-V3] a list item that belongs to another project is not shown", async () => {
+  const other = { ...CONN_B, project_id: "99999999-9999-9999-9999-999999999999" };
+  stub({ list: [GOOD, other] });
+  mountUi();
+  await waitFor(() => expect(screen.getByTestId(`dataset-source-option-${GOOD.id}`)).toBeTruthy());
+  expect(screen.queryByTestId(`dataset-source-option-${CONN_B.id}`)).toBeNull();
+});
+
+test.each([
+  ["another display name", { display_name: "Something else entirely" }],
+  [
+    "another project",
+    { display_name: "New one", project_id: "99999999-9999-9999-9999-999999999999" },
+  ],
+])(
+  "[UX02-R4-V4] a 201 create reply with %s is one alert and is not selected",
+  async (_n, extra) => {
+    await createConnection({ ok: true, status: 201, json: async () => ({ ...GOOD, ...extra }) });
+    await waitFor(() => expect(screen.getByTestId("dataset-source-create-error")).toBeTruthy());
+    expect(screen.getByTestId("dataset-source-create-error").textContent).toBe(MALFORMED_EN);
+    expect(screen.queryByTestId("dataset-source-authorization-section")).toBeNull();
+    expect(screen.getByTestId("dataset-source-preview")).toBeTruthy();
   },
 );

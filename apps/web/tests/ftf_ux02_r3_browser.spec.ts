@@ -70,6 +70,7 @@ function conn(id: string, name: string, extra: Record<string, unknown> = {}) {
   };
 }
 const CONN_A = conn(CONNECTION, "Support tickets export");
+const CONN_B2 = conn("a0000000-0000-0000-0000-0000000000b2", "Archive bucket");
 const CONN_LONG = [
   conn("a0000000-0000-0000-0000-000000000001", LONG_UNBROKEN),
   conn("a0000000-0000-0000-0000-000000000002", LONG_SNAKE),
@@ -553,6 +554,87 @@ const STATES: UiState[] = [
     storageItems: { [DRAFT_KEY]: draft("data.jsonl") },
     steps: [{ click: "upload-abandon-draft-button" }],
     ready: '[data-testid="upload-abandon-confirm"]',
+  },
+  // ---- Round 4 pre-review round 1: behaviour fixtures (timing-dependent, not matrix screens) ----
+  {
+    id: "0500A authorize in flight",
+    component: "0500A",
+    props: P0500A,
+    routes: [
+      { method: "GET", path: SOURCES, body: [CONN_A, CONN_B2] },
+      {
+        method: "POST",
+        path: `${SOURCES}/${CONNECTION}/authorize`,
+        body: { authorized: true, purpose: "training" },
+        delayMs: 900,
+      },
+    ],
+    steps: [
+      { click: `dataset-source-option-${CONNECTION}` },
+      { select: ["dataset-source-purpose-to-check-select", "training"] },
+      { click: "dataset-source-check-authorization-button" },
+    ],
+    ready: '[data-testid="dataset-source-authorization-section"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI start-over dialog (ready)",
+    component: "0501-UI",
+    props: P0501,
+    routes: [...UPLOAD_BASE, ...PUTS_OK],
+    steps: [...startUpload, { click: "upload-new-upload-button" }],
+    ready: '[data-testid="upload-abandon-confirm"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI start-over dialog (finalize retry)",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 500, body: {} },
+    ],
+    steps: [...finalizeAs("my-dataset"), { click: "upload-new-upload-button" }],
+    ready: '[data-testid="upload-abandon-confirm"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI check status in flight",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 500, body: {} },
+      { method: "GET", path: SESSION_P, pending: true },
+    ],
+    steps: [...finalizeAs("my-dataset"), { click: "upload-check-status-button" }],
+    ready: '[data-testid="upload-finalize"] [data-testid="disabled-reason"]',
+    behaviourOnly: true,
+  },
+  {
+    id: "0501-UI late status after Back",
+    component: "0501-UI",
+    props: P0501,
+    routes: [
+      ...UPLOAD_BASE,
+      ...PUTS_OK,
+      { method: "POST", path: FINALIZE_P, status: 201, body: {} },
+      {
+        method: "GET",
+        path: SESSION_P,
+        body: { ...sessionBody, status: "rejected", rejection_reason: "size_mismatch" },
+        delayMs: 900,
+      },
+    ],
+    steps: [
+      ...finalizeAs("my-dataset"),
+      { click: "upload-check-status-button" },
+      { click: "upload-malformed-back-button" },
+    ],
+    ready: '[data-testid="upload-resume-banner"]',
+    behaviourOnly: true,
   },
   {
     id: "0500A created",
@@ -1164,6 +1246,18 @@ const DIALOG_CASES: DialogCase[] = [
     dialog: "upload-abandon-confirm",
     buttons: ["dialog-close", "upload-abandon-cancel-button", "upload-abandon-confirm-button"],
   },
+  {
+    label: "0501-UI start-over confirmation (ready)",
+    state: "0501-UI start-over dialog (ready)",
+    dialog: "upload-abandon-confirm",
+    buttons: ["dialog-close", "upload-abandon-cancel-button", "upload-abandon-confirm-button"],
+  },
+  {
+    label: "0501-UI start-over confirmation (finalize retry, outcome unknown)",
+    state: "0501-UI start-over dialog (finalize retry)",
+    dialog: "upload-abandon-confirm",
+    buttons: ["dialog-close", "upload-abandon-cancel-button", "upload-abandon-confirm-button"],
+  },
 ];
 
 describe("[UX02-R3-DIALOG] the Dialog and every button are in the viewport and hit-testable", () => {
@@ -1434,13 +1528,6 @@ describe("[UX02-R3-FOLLOWUP] focus after success, terminal screens, Pending indi
       "0501-UI rejected",
       "0501-UI accepted",
       "0501-UI already verified",
-      // Round 4 (finding 6): the non-terminal screens offer "Start over" too.
-      "0501-UI interrupted",
-      "0501-UI ready to finalize",
-      "0501-UI incomplete",
-      "0501-UI name conflict",
-      "0501-UI finalize retry",
-      "0501-UI storage unavailable",
     ]) {
       test(`[${id}] [${locale}] the way forward is a button; using it focuses the fresh form, never <body>`, async () => {
         const page = await openState(stateOf(id), locale, "light", { width: 320, height: 640 });
@@ -1458,6 +1545,176 @@ describe("[UX02-R3-FOLLOWUP] focus after success, terminal screens, Pending indi
         }
       });
     }
+
+    // Round 4 pre-review round 1 (START-OVER-NO-CONFIRM): the screens that still hold a live
+    // upload put "Start over" behind the confirmation dialog, operated by keyboard alone.
+    for (const id of [
+      "0501-UI interrupted",
+      "0501-UI ready to finalize",
+      "0501-UI incomplete",
+      "0501-UI name conflict",
+      "0501-UI finalize retry",
+      "0501-UI storage unavailable",
+    ]) {
+      test(`[${id}] [${locale}] Start over asks first (Keep focused); Keep changes nothing; confirming by keyboard focuses the fresh form`, async () => {
+        const page = await openState(stateOf(id), locale, "light", { width: 320, height: 640 });
+        try {
+          const focusId = () =>
+            page.evaluate(() => document.activeElement?.getAttribute("data-testid") ?? "<body>");
+          await page.getByTestId("upload-new-upload-button").focus();
+          await page.keyboard.press("Enter");
+          await page.waitForSelector('[data-testid="upload-abandon-confirm"]', {
+            state: "visible",
+          });
+          expect(await page.getByTestId("upload-form").count(), "nothing discarded yet").toBe(0);
+          await page.waitForTimeout(100);
+          expect(await focusId(), "first focus is Keep").toBe("upload-abandon-cancel-button");
+          // Keep (Enter) closes it, focus back on Start over, screen unchanged.
+          await page.keyboard.press("Enter");
+          await page.waitForSelector('[data-testid="upload-abandon-confirm"]', {
+            state: "detached",
+          });
+          await page.waitForTimeout(100);
+          expect(await focusId(), "focus returns to Start over").toBe("upload-new-upload-button");
+          expect(await page.getByTestId("upload-form").count()).toBe(0);
+          // Ask again and confirm with Tab + Enter.
+          await page.keyboard.press("Enter");
+          await page.waitForSelector('[data-testid="upload-abandon-confirm"]', {
+            state: "visible",
+          });
+          await page.waitForTimeout(100);
+          await page.keyboard.press("Tab");
+          expect(await focusId()).toBe("upload-abandon-confirm-button");
+          await page.keyboard.press("Enter");
+          await page.waitForSelector('[data-testid="upload-form"]', { state: "visible" });
+          await page.waitForTimeout(100);
+          expect(await focusId()).toBe("upload-purpose-select");
+        } finally {
+          await page.close();
+        }
+      });
+    }
+  }
+
+  // Round 4 pre-review round 1: "Start over" is never flush against its neighbour at 320 px.
+  for (const id of ["0501-UI interrupted", "0501-UI ready to finalize"]) {
+    for (const locale of ["en", "ar"] as Locale[]) {
+      test(`[${id}] [${locale}] Start over has at least 8 px of space from the adjacent action at 320 px`, async () => {
+        const page = await openState(stateOf(id), locale, "light", { width: 320, height: 640 });
+        try {
+          const gap = await page.evaluate(
+            (neighbour) => {
+              const a = document.querySelector<HTMLElement>(`[data-testid="${neighbour}"]`)!;
+              const b = document.querySelector<HTMLElement>(
+                '[data-testid="upload-new-upload-button"]',
+              )!;
+              const r1 = a.getBoundingClientRect();
+              const r2 = b.getBoundingClientRect();
+              return Math.max(
+                r2.left - r1.right,
+                r1.left - r2.right,
+                r2.top - r1.bottom,
+                r1.top - r2.bottom,
+              );
+            },
+            id === "0501-UI interrupted" ? "upload-resume-button" : "upload-finalize-button",
+          );
+          expect(gap).toBeGreaterThanOrEqual(7.5);
+        } finally {
+          await page.close();
+        }
+      });
+    }
+  }
+
+  // STALE-AUTHORIZE in real Chromium: A -> B switch, and a purpose change, while the reply is in flight.
+  for (const locale of ["en", "ar"] as Locale[]) {
+    for (const change of ["connection", "purpose"] as const) {
+      test(`[0500A] [${locale}] an authorize reply that lands after the ${change} changed is not shown`, async () => {
+        const page = await openState(stateOf("0500A authorize in flight"), locale, "light");
+        try {
+          if (change === "connection") {
+            await page.getByTestId(`dataset-source-option-${CONN_B2.id}`).click();
+          } else {
+            await page
+              .getByTestId("dataset-source-purpose-to-check-select")
+              .selectOption("validation");
+          }
+          await page.waitForTimeout(1300);
+          const res = await page.evaluate(() => ({
+            ok:
+              document.querySelector(
+                '[data-testid="dataset-source-authorization-result-authorized"]',
+              ) !== null,
+            err:
+              document.querySelector('[data-testid="dataset-source-authorization-error"]') !== null,
+            busy: document.querySelector('[role="status"]') !== null,
+          }));
+          expect(res).toEqual({ ok: false, err: false, busy: false });
+        } finally {
+          await page.close();
+        }
+      });
+    }
+
+    test(`[0500A] [${locale}] both selects show the placeholder, never 'Public' or the first purpose, while empty`, async () => {
+      const page = await openState(stateOf("0500A populated"), locale, "light");
+      try {
+        await page.getByTestId(`dataset-source-option-${CONNECTION}`).click();
+        const shown = await page.evaluate(() =>
+          [
+            "dataset-source-security-classification-select",
+            "dataset-source-purpose-to-check-select",
+          ].map((id) => {
+            const el = document.querySelector<HTMLSelectElement>(`[data-testid="${id}"]`)!;
+            return [el.value, el.options[el.selectedIndex]?.text ?? ""];
+          }),
+        );
+        const placeholder = locale === "ar" ? "اختر…" : "Select…";
+        expect(shown).toEqual([
+          ["", placeholder],
+          ["", placeholder],
+        ]);
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0501-UI] [${locale}] a status reply that lands after Back is ignored (banner stays)`, async () => {
+      const page = await openState(stateOf("0501-UI late status after Back"), locale, "light");
+      try {
+        await page.waitForTimeout(1300);
+        const res = await page.evaluate(() => ({
+          banner: document.querySelector('[data-testid="upload-resume-banner"]') !== null,
+          rejected: document.querySelector('[data-testid="upload-rejected-text"]') !== null,
+          draft: window.localStorage.length > 0,
+        }));
+        expect(res).toEqual({ banner: true, rejected: false, draft: true });
+      } finally {
+        await page.close();
+      }
+    });
+
+    test(`[0501-UI] [${locale}] Start over is disabled with its reason while 'Check upload status' is in flight`, async () => {
+      const page = await openState(stateOf("0501-UI check status in flight"), locale, "light");
+      try {
+        const res = await page.evaluate(() => {
+          const b = document.querySelector<HTMLButtonElement>(
+            '[data-testid="upload-new-upload-button"]',
+          )!;
+          const reason = document.querySelector(
+            '[data-testid="upload-finalize"] [data-testid="disabled-reason"]',
+          );
+          return { disabled: b.disabled, reason: reason?.textContent ?? "" };
+        });
+        expect(res.disabled).toBe(true);
+        expect(res.reason).toBe(
+          locale === "ar" ? "انتظر حتى ينتهي فحص الحالة." : "Wait for the status check to finish.",
+        );
+      } finally {
+        await page.close();
+      }
+    });
   }
 
   test("[0501-UI uploading] the progress indicator is a determinate progressbar inside a status region", async () => {
