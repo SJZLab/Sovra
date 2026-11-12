@@ -50,6 +50,7 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
             aria-valuenow={determinate ? percent : undefined}
             data-testid="progress-track"
             style={{
+              boxSizing: "border-box",
               blockSize: "8px",
               inlineSize: "100%",
               background: "var(--color-surface-2)",

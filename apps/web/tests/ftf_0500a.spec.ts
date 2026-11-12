@@ -974,7 +974,10 @@ test("FTF-UX02 r2 pre-review r2 finding 2: a successful authorization check anno
     "fetch",
     mockFetch({
       list: () => ({ ok: true, json: async () => [existing] }),
-      onAuthorize: () => ({ ok: true, json: async () => ({ authorized: true }) }),
+      onAuthorize: () => ({
+        ok: true,
+        json: async () => ({ authorized: true, purpose: "training" }),
+      }),
     }),
   );
   render(
@@ -1309,7 +1312,10 @@ test("FTF-UX02 r2 pre-review r2 finding 5 (AUTH-RESULT-SILENT-AND-FOCUS-LOST): t
     "fetch",
     mockFetch({
       list: () => ({ ok: true, json: async () => [existing] }),
-      onAuthorize: () => ({ ok: true, json: async () => ({ authorized: true }) }),
+      onAuthorize: () => ({
+        ok: true,
+        json: async () => ({ authorized: true, purpose: "training" }),
+      }),
     }),
   );
   render(
