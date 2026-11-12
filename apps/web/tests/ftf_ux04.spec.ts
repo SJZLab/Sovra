@@ -3166,4 +3166,31 @@ describe("[UX04-R3] review round 3 (findings 1-3 of the r1 pre-review)", () => {
     expect(view.container.textContent).toContain("newer_tool");
     expect(screen.queryByTestId("requirements-error")).toBeNull();
   });
+
+  test("[UX04-R3-4] an older requirements GET that answers with other rows never replaces the newer rows", async () => {
+    const gets: ((v: unknown) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === REQ) return new Promise((r) => gets.push(r));
+        if (url === BUD && init?.method === undefined) return Promise.resolve(ok(policy()));
+        throw new Error("unexpected");
+      }),
+    );
+    const view = render(
+      createElement(StrictMode, null, createElement(RequirementsPanel, panelProps())),
+    );
+    await waitFor(() => expect(gets).toHaveLength(2));
+    await act(async () =>
+      gets[1]!(ok([requirement({ tool_definition_id: "new", name: "newer_tool" })])),
+    );
+    await waitFor(() => expect(view.container.textContent).toContain("newer_tool"));
+    await act(async () =>
+      gets[0]!(ok([requirement({ tool_definition_id: "old", name: "older_tool" })])),
+    );
+    expect(view.container.textContent).toContain("newer_tool");
+    expect(view.container.textContent).not.toContain("older_tool");
+    await act(async () => undefined);
+    expect(screen.queryByTestId("requirements-error")).toBeNull();
+  });
 });
