@@ -19,7 +19,7 @@ jobs:
     # .github/CODEOWNERS. This is Tier 3 / release-only (CLAUDE.md: "L4
     # gate passed before PROMOTE... relay never dispatches it") --
     # workflow_dispatch only, never triggered by an ordinary PR.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: always()
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
