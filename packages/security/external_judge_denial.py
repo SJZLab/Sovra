@@ -110,6 +110,19 @@ def _exact_text(value: object, what: str) -> str:
     return value
 
 
+def _exact_destination(value: object, what: str) -> None:
+    """None (unknown) or an exact Destination whose fields are exact str: a str subclass
+    with a lying `__eq__` must never reach `enforce_effect`'s `kind == "internal"`."""
+    if value is None:
+        return
+    if (
+        type(value) is not Destination
+        or type(value.kind) is not str
+        or type(value.provider) not in (str, type(None))
+    ):
+        raise InvalidJudgeRequestError(f"{what} must be an exact Destination or None")
+
+
 @dataclass(frozen=True)
 class FallbackAlias:
     """A fallback alias and the upstream it resolves to (`None` = unknown)."""
@@ -134,16 +147,14 @@ class JudgeRoute:
 
     def __post_init__(self) -> None:
         _exact_text(self.judge_model_id, "judge model id")
-        if self.upstream is not None and not isinstance(self.upstream, Destination):
-            raise InvalidJudgeRequestError("upstream must be a Destination or None")
+        _exact_destination(self.upstream, "upstream")
         if type(self.fallbacks) is not tuple:
             raise InvalidJudgeRequestError("fallbacks must be a tuple")
         for fallback in self.fallbacks:
             if not isinstance(fallback, FallbackAlias):
                 raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
             _exact_text(fallback.alias, "fallback alias")
-            if fallback.upstream is not None and not isinstance(fallback.upstream, Destination):
-                raise InvalidJudgeRequestError("fallback upstream must be a Destination or None")
+            _exact_destination(fallback.upstream, "fallback upstream")
         if type(self.fallbacks_enumerated) is not bool:
             raise InvalidJudgeRequestError("fallbacks_enumerated must be a bool")
 

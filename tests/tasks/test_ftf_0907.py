@@ -285,6 +285,13 @@ class _S(str):
     pass
 
 
+class _Liar(str):
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    __hash__ = str.__hash__
+
+
 def test_neg4_invalid_values() -> None:
     p = _profiles("zero_egress")
     bad: list[tuple[str, Any]] = [
@@ -315,6 +322,22 @@ def test_neg4_invalid_values() -> None:
         (
             "unknown profile at request time",
             lambda: check_judge_request(cast(Any, None), _route(), _profiles("nope")),
+        ),
+        (
+            "upstream kind str-subclass",
+            lambda: _route(upstream=Destination(cast(Any, _Liar("managed_provider")), None)),
+        ),
+        (
+            "fallback kind str-subclass",
+            lambda: _route(
+                fallbacks=(
+                    FallbackAlias("a", Destination(cast(Any, _Liar("managed_provider")), None)),
+                )
+            ),
+        ),
+        (
+            "upstream provider str-subclass",
+            lambda: _route(upstream=Destination("external", cast(Any, _Liar("acme")))),
         ),
         ("enumerated non-bool", lambda: _route(fallbacks_enumerated=cast(Any, 1))),
         ("authorization wrong type", lambda: admit_judge_route(_route(), p, cast(Any, "auth"))),
