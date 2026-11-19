@@ -10682,15 +10682,28 @@ FTF-0906:
   proving_symbol: ''
   proving_test: tests/tasks/test_ftf_0906.py
 FTF-0907:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: External judge denial
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0617, FTF-0901, FTF-0902
-  proof_state: UNPROVEN
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=CAP-14; scenarios=Q23, Q25; deps=FTF-0617, FTF-0901,
+    FTF-0902. Path: `packages/security/external_judge_denial.py`. `admit_judge_route` (admission)
+    and `check_judge_request`/`guarded_judge_call` (request time) compose FTF-0901
+    `effective_profile`/`enforce_effect` on the judge surface. On zero_egress/air_gapped every
+    non-internal upstream is denied (`external_judge_upstream_external`), an unknown upstream on
+    any profile (`external_judge_upstream_unknown`), and every fallback alias must name an
+    allowed upstream and the fallback list must be enumerated (`external_judge_fallback_denied`).
+    Request time refuses a missing, forged or replaced admission
+    (`external_judge_admission_missing`) and any route other than the admitted one
+    (`external_judge_route_changed`), re-evaluating the profile in force now; `send` is never
+    invoked on a denial. Audit reason is content-free. Clause tests: tests/tasks/test_ftf_0907.py
+    (ACC-1, NEG-1..4, NET-0, 10 fault-injected mutations). Pure decision library, no live caller
+    yet (proving_symbol blank, disclosed). Not self-certified (Law 4).
+  proof_state: L1-PROVEN
   proving_symbol: ''
-  proving_test: ''
+  proving_test: tests/tasks/test_ftf_0907.py
 FTF-0908:
   certification_state: CERTIFIED
   criticality: MUST
