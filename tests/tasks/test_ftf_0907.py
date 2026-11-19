@@ -261,6 +261,31 @@ def test_neg2_direct_path() -> None:
     check("FTF-0907-NEG-2", "send never invoked on any denial", calls == [])
 
 
+def test_neg2_authorization_fields() -> None:
+    class Lie(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+        __hash__ = str.__hash__
+
+    std = _profiles("standard")
+    ext = _route(upstream=EXTERNAL)
+    for label, auth in (
+        ("provider", RouteAuthorization(Lie("zzz"), frozenset({"judge"}), "me")),
+        ("surface", RouteAuthorization("acme", frozenset({Lie("judge")}), "me")),
+        ("account", RouteAuthorization("acme", frozenset({"judge"}), "me", cast(Any, Lie("a")))),
+    ):
+        code = _code(lambda: admit_judge_route(ext, std, auth))
+        check(
+            "FTF-0907-NEG-2",
+            f"{label} str-subclass authorization refused",
+            code == "external_judge_invalid_request",
+        )
+
+
 def test_neg2_subclasses() -> None:
     p = _profiles("zero_egress")
 

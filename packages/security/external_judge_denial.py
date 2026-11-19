@@ -223,6 +223,19 @@ def _check_destination(
         raise _deny(external_code, profile) from None
 
 
+def _exact_authorization(authorization: RouteAuthorization) -> None:
+    """Exact-typed fields: a str/frozenset subclass with lying `__eq__`/`__contains__` must
+    never reach `enforce_effect`'s provider and surface comparisons."""
+    optional = (authorization.account, authorization.region, authorization.retention_terms)
+    if (
+        type(authorization.provider) is not str
+        or type(authorization.surfaces) is not frozenset
+        or any(type(surface) is not str for surface in authorization.surfaces)
+        or any(value is not None and type(value) is not str for value in optional)
+    ):
+        raise InvalidJudgeRequestError("authorization fields must be exact types")
+
+
 def _evaluate(
     route: object,
     profiles: object,
@@ -232,6 +245,8 @@ def _evaluate(
         raise InvalidJudgeRequestError("route must be a JudgeRoute")
     if authorization is not None and type(authorization) is not RouteAuthorization:
         raise InvalidJudgeRequestError("authorization must be a RouteAuthorization")
+    if authorization is not None:
+        _exact_authorization(authorization)
     profile = _profile(profiles)
     assert isinstance(profiles, ProfilesInForce)
     _check_destination(route.upstream, profile, authorization, "external_judge_upstream_external")
