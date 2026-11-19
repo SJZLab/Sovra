@@ -307,6 +307,15 @@ def test_neg4_invalid_values() -> None:
         ("fallbacks list", lambda: _route(fallbacks=cast(Any, []))),
         ("fallback element", lambda: _route(fallbacks=cast(Any, ("x",)))),
         ("fallback alias blank", lambda: _route(fallbacks=(FallbackAlias("", INTERNAL),))),
+        (
+            "fallback upstream str",
+            lambda: _route(fallbacks=(FallbackAlias("a", cast(Any, "internal")),)),
+        ),
+        ("model id 201 chars", lambda: _route(judge_model_id="m" * 201)),
+        (
+            "unknown profile at request time",
+            lambda: check_judge_request(cast(Any, None), _route(), _profiles("nope")),
+        ),
         ("enumerated non-bool", lambda: _route(fallbacks_enumerated=cast(Any, 1))),
         ("authorization wrong type", lambda: admit_judge_route(_route(), p, cast(Any, "auth"))),
     ]
@@ -327,6 +336,14 @@ def test_neg4_invalid_values() -> None:
             )
         else:
             check("FTF-0907-NEG-4", f"{label}: must not allow", False)
+
+
+def test_boundary_length() -> None:
+    check(
+        "FTF-0907-NEG-4",
+        "200-char judge model id accepted",
+        _code(lambda: _route(judge_model_id="m" * 200)) == "allowed",
+    )
 
 
 def test_net0_no_socket() -> None:

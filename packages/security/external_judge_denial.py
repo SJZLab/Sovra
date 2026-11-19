@@ -209,8 +209,6 @@ def _check_destination(
         )
     except (RouteBlockedByProfileError, RouteNotAuthorizedError):
         raise _deny(external_code, profile) from None
-    except SecurityProfileEnforcementError:
-        raise InvalidJudgeRequestError("invalid judge destination") from None
 
 
 def _evaluate(
