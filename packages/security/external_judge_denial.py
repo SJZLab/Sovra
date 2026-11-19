@@ -27,7 +27,8 @@ Rules:
   not exactly the admitted route (`external_judge_route_changed`), and
   re-evaluate the boundary against the profile in force *now*. A caller that
   holds a raw client can only reach the judge through `guarded_judge_call`,
-  which runs the check before `send` is invoked.
+  which runs the check before `send` is invoked and passes `send` the admitted
+  route snapshot (all inputs must be exact types, never subclasses).
 * Unknown, str-subclass or unhashable values raise the module's own
   `InvalidJudgeRequestError`, never TypeError, never allow.
 
@@ -151,7 +152,7 @@ class JudgeRoute:
         if type(self.fallbacks) is not tuple:
             raise InvalidJudgeRequestError("fallbacks must be a tuple")
         for fallback in self.fallbacks:
-            if not isinstance(fallback, FallbackAlias):
+            if type(fallback) is not FallbackAlias:
                 raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
             _exact_text(fallback.alias, "fallback alias")
             _exact_destination(fallback.upstream, "fallback upstream")
@@ -187,7 +188,7 @@ def _deny(code: str, profile: str) -> ExternalJudgeDeniedError:
 
 
 def _profile(profiles: object) -> str:
-    if not isinstance(profiles, ProfilesInForce):
+    if type(profiles) is not ProfilesInForce:
         raise InvalidJudgeRequestError("profiles must be ProfilesInForce")
     for value in (profiles.organization_profile, profiles.project_profile, profiles.job_profile):
         if value is not None and type(value) is not str:
@@ -227,9 +228,9 @@ def _evaluate(
     profiles: object,
     authorization: RouteAuthorization | None,
 ) -> str:
-    if not isinstance(route, JudgeRoute):
+    if type(route) is not JudgeRoute:
         raise InvalidJudgeRequestError("route must be a JudgeRoute")
-    if authorization is not None and not isinstance(authorization, RouteAuthorization):
+    if authorization is not None and type(authorization) is not RouteAuthorization:
         raise InvalidJudgeRequestError("authorization must be a RouteAuthorization")
     profile = _profile(profiles)
     assert isinstance(profiles, ProfilesInForce)
@@ -266,23 +267,25 @@ def check_judge_request(
     route: object,
     profiles: ProfilesInForce,
     authorization: RouteAuthorization | None = None,
-) -> None:
-    """Request-time denial against the profile in force *now* and the admitted route."""
+) -> JudgeRoute:
+    """Request-time denial against the profile in force *now* and the admitted route.
+    Returns the admitted route snapshot."""
     profile = _profile(profiles)
-    if not isinstance(admission, JudgeAdmission) or admission._issued is not _ISSUER:
+    if type(admission) is not JudgeAdmission or admission._issued is not _ISSUER:
         raise _deny("external_judge_admission_missing", profile)
     if route != admission.route:
         raise _deny("external_judge_route_changed", profile)
     _evaluate(route, profiles, authorization)
+    return admission.route
 
 
 def guarded_judge_call(
     admission: object,
     route: object,
     profiles: ProfilesInForce,
-    send: Callable[[], T],
+    send: Callable[[JudgeRoute], T],
     authorization: RouteAuthorization | None = None,
 ) -> T:
     """The only supported way to reach a judge client: check first, then `send`."""
-    check_judge_request(admission, route, profiles, authorization)
-    return send()
+    # Hand over the admitted snapshot, never the caller-held object.
+    return send(check_judge_request(admission, route, profiles, authorization))

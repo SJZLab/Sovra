@@ -231,7 +231,7 @@ def test_neg2_direct_path() -> None:
     admission = admit_judge_route(_route(), p)
     calls: list[int] = []
 
-    def send() -> str:
+    def send(_route: JudgeRoute) -> str:
         calls.append(1)
         return "ok"
 
@@ -259,6 +259,74 @@ def test_neg2_direct_path() -> None:
     code = _code(lambda: guarded_judge_call(admission, _route(judge_model_id="other"), p, send))
     check("FTF-0907-NEG-2", "changed judge model refused", code == "external_judge_route_changed")
     check("FTF-0907-NEG-2", "send never invoked on any denial", calls == [])
+
+
+def test_neg2_subclasses() -> None:
+    p = _profiles("zero_egress")
+
+    class R2(JudgeRoute):
+        calls = 0
+        judge_model_id = "m"
+        fallbacks = ()
+        fallbacks_enumerated = True
+
+        def __init__(self) -> None:
+            pass
+
+        @property
+        def upstream(self) -> Destination:
+            R2.calls += 1
+            return INTERNAL if R2.calls <= 2 else EXTERNAL
+
+    class FA(FallbackAlias):
+        pass
+
+    class PF(ProfilesInForce):
+        pass
+
+    class RA(RouteAuthorization):
+        pass
+
+    class Adm(JudgeAdmission):
+        pass
+
+    check(
+        "FTF-0907-NEG-2",
+        "route subclass refused",
+        _code(lambda: admit_judge_route(R2(), p)) == "external_judge_invalid_request",
+    )
+    check(
+        "FTF-0907-NEG-2",
+        "fallback subclass refused",
+        _code(lambda: _route(fallbacks=(FA("a", INTERNAL),))) == "external_judge_invalid_request",
+    )
+    check(
+        "FTF-0907-NEG-2",
+        "profiles subclass refused",
+        _code(lambda: admit_judge_route(_route(), PF("zero_egress", "zero_egress")))
+        == "external_judge_invalid_request",
+    )
+    check(
+        "FTF-0907-NEG-2",
+        "authorization subclass refused",
+        _code(lambda: admit_judge_route(_route(), p, RA("acme", frozenset({"judge"}), "x")))
+        == "external_judge_invalid_request",
+    )
+    admission = admit_judge_route(_route(), p)
+    sub = Adm(admission.route, admission.profile)
+    object.__setattr__(sub, "_issued", admission._issued)
+    check(
+        "FTF-0907-NEG-2",
+        "admission subclass refused",
+        _code(lambda: check_judge_request(sub, _route(), p)) == "external_judge_admission_missing",
+    )
+    seen: list[JudgeRoute] = []
+    guarded_judge_call(admission, _route(), p, lambda r: seen.append(r))
+    check(
+        "FTF-0907-NEG-2",
+        "send receives the admitted snapshot",
+        len(seen) == 1 and seen[0] is admission.route,
+    )
 
 
 def test_neg3_profile_cannot_be_lowered() -> None:
@@ -427,7 +495,7 @@ out = {{
     "req_changed": code(lambda: check_judge_request(adm, route(upstream=E), P)),
     "req_fb_added": code(lambda: check_judge_request(adm, route(fallbacks=(FallbackAlias("a", I), FallbackAlias("b", E))), P)),
     "req_tightened": code(lambda: check_judge_request(sadm, route(upstream=E), P)),
-    "guard_denied": code(lambda: guarded_judge_call(None, route(), P, lambda: sent.append(1))),
+    "guard_denied": code(lambda: guarded_judge_call(None, route(), P, lambda r: sent.append(1))),
     "weak_project": code(lambda: admit_judge_route(route(upstream=E), ProfilesInForce("zero_egress", "standard"), auth)),
     "weak_job": code(lambda: admit_judge_route(route(upstream=E), ProfilesInForce("standard", "standard", "air_gapped"), auth)),
     "sent": len(sent),
@@ -498,8 +566,8 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "skip-request-evaluate",
-        r"    _evaluate\(route, profiles, authorization\)\n\n\ndef guarded_judge_call",
-        "    return\n\n\ndef guarded_judge_call",
+        r"    _evaluate\(route, profiles, authorization\)\n    return admission\.route",
+        "    return admission.route",
         ("req_tightened",),
     ),
     (
@@ -516,8 +584,8 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "guard-skips-check",
-        r"    check_judge_request\(admission, route, profiles, authorization\)\n    return send\(\)",
-        "    return send()",
+        r"    return send\(check_judge_request\(admission, route, profiles, authorization\)\)",
+        "    return send(admission.route)",
         ("guard_denied", "sent"),
     ),
     (
