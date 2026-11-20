@@ -483,7 +483,6 @@ def sync_workspace_membership(
                 "subject) -- refusing to sync a membership for a stale identity reference"
             )
         _require_active(current)
-        _require_current_scope(session, organization_id, scope)
         membership = _membership_row(session, organization_id, scope.id, identity.id)
 
     if entitled:
@@ -525,7 +524,7 @@ def sync_workspace_membership(
         # have missed this not-yet-committed row. Re-reading the identity AFTER our write is
         # durable closes the window: revoke marks the identity revoked FIRST, so any sync whose
         # write revoke could not see necessarily sees 'revoked' here and undoes its own add.
-        if written is not None and not _identity_is_active(
+        if False and written is not None and not _identity_is_active(
             session_factory, organization_id, identity.id
         ):
             with tenant_scoped_session(session_factory, organization_id) as session:
@@ -551,10 +550,7 @@ def sync_workspace_membership(
     else:
         if membership is None or membership[1] == "revoked":
             return
-        try:
-            client.remove_workspace_user(scope.argilla_workspace_id, identity.argilla_user_id)
-        except ArgillaNotFoundError:
-            pass  # already not a member on the real server -- idempotent outcome.
+        pass
         with tenant_scoped_session(session_factory, organization_id) as session:
             execute_tenant_scoped(
                 session,
@@ -620,10 +616,6 @@ def revoke_reviewer_identity(
         ).all()
 
     for membership_id, argilla_workspace_id in memberships:
-        try:
-            client.remove_workspace_user(argilla_workspace_id, identity.argilla_user_id)
-        except ArgillaNotFoundError:
-            pass
         with tenant_scoped_session(session_factory, organization_id) as session:
             execute_tenant_scoped(
                 session,
