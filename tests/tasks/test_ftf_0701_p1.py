@@ -2464,6 +2464,43 @@ def facts_validation_suite(m: Any) -> None:
     }.items():
         check("K3", f"artifact container {label} refused", fcode(artifact=bad) == "invalid_facts")
     check("K3", "split container None refused", fcode(split=None) == "invalid_facts")
+
+    # direct validator calls: wrong container types are a coded refusal, not an AttributeError
+    class _FactsSub(m.TrainingConfigFacts):
+        pass
+
+    class _CatSub(m.CatalogFacts):
+        pass
+
+    for label, bad in {"dict": {}, "none": None, "subclass": _FactsSub(**vars(facts))}.items():
+        check(
+            "K8",
+            f"validate_facts({label}) is coded",
+            code_of(m, lambda bad=bad: m.validate_facts(bad)) == "invalid_facts",
+        )
+    cat0 = m.CatalogFacts(entry_id=CAT, version=1, mapped_artifact_id=ART)
+    check(
+        "K8",
+        "valid catalog facts pass",
+        code_of(m, lambda: m.validate_facts(make_facts(m, catalog=cat0))) is None,
+    )
+    for label, bad in {
+        "int": 7,
+        "subclass": _CatSub(entry_id=CAT, version=1, mapped_artifact_id=ART),
+        "bool version": replace(cat0, version=True),
+        "str version": replace(cat0, version="1"),
+    }.items():
+        check(
+            "K8",
+            f"catalog {label} refused",
+            code_of(m, lambda bad=bad: m.validate_facts(make_facts(m, catalog=bad)))
+            == "invalid_facts",
+        )
+    check(
+        "K8",
+        "64-char security_profile is valid",
+        code_of(m, lambda: m.validate_facts(make_facts(m, security_profile="x" * 64))) is None,
+    )
     # every refusal is a coded TrainingConfigError, never a raw exception type
     raw: list[str] = []
     for bad in list(bad_budgets.values()) + [None]:
