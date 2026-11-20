@@ -3222,7 +3222,7 @@ def part_s_return3() -> None:
                 w,
                 f"a newer identical rejection on {label} still blocks reuse (exact name match)",
                 "mapping_reapproval_required",
-                lambda: w.resolve(e3),
+                lambda e3=e3: w.resolve(e3),
                 "R3-B9",
             )
     with sqlite_world() as w:
