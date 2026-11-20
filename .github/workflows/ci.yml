@@ -2130,8 +2130,8 @@ jobs:
     # missing key; FTF-R002 compute_health sees it) and (2) tests/integration/test_argilla_real_store.py,
     # which runs the review-scope / reviewer-identity / workspace-membership store against the real
     # server: annotator 403/404 across orgs and projects, narrowing, revoke, the revoke-vs-sync races
-    # and a really stopped server (`docker stop`, never a dead port). On OpenSearch the real /status
-    # route works, so the old /version workaround is no longer load-bearing for this stack.
+    # and a really stopped server (`docker stop`, never a dead port). test_argilla_real_server.py also probes the real
+    # /status on this stack, so the old /version workaround is kept or dropped on evidence.
     needs: classify
     if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-real-server-integration ')
     runs-on: ubuntu-24.04

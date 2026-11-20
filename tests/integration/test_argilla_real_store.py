@@ -143,8 +143,10 @@ class Real:
         error propagates -- 'unavailable' is never read as 'denied' (Law 17)."""
         try:
             annotator._call("GET", f"/datasets/{dataset_id}")
-        except ArgillaRejectedError:
-            return False
+        except ArgillaRejectedError as exc:
+            if "HTTP 403" in str(exc) or "HTTP 404" in str(exc):
+                return False
+            raise  # 401/400/422/... is NOT a scope refusal: never read it as 'denied'
         return True
 
     def workspaces_of(self, annotator: ArgillaClient) -> set[str]:
@@ -369,7 +371,10 @@ def section_races(world: Any, real: Real, ctx: dict[str, Any]) -> None:
     slow = real.client(real.owner_key)
     real_add = slow.add_workspace_user
 
+    entered: list[bool] = []
+
     def delayed_add(workspace_id: str, user_id: str) -> None:
+        entered.append(True)
         time.sleep(1.0)
         real_add(workspace_id, user_id)
 
