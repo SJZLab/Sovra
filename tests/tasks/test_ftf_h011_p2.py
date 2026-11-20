@@ -3208,6 +3208,43 @@ def part_s_return3() -> None:
             "a newer rejection of a DIFFERENT mapping does not block reuse",
             w.resolve(v3).reused is True,
         )
+    # exact-equality pins (r3 mutation gate: `.strip().lower()` on the name / digest survived)
+    for label, stored_name in (("a mixed-case name", "Tab Data"), ("a padded name", " tab ")):
+        with sqlite_world() as w:
+            conn = w.connection("t", ALL_PURPOSES)
+            w.schema_sha = sha("q,a")
+            e1 = w.dataset(stored_name, "training", conn, version=1, content_type="text/csv")
+            w.approve(w.propose(e1, doc))
+            e2 = w.dataset(stored_name, "training", conn, version=2, content_type="text/csv")
+            w.reject(w.propose(e2, doc))
+            e3 = w.dataset(stored_name, "training", conn, version=3, content_type="text/csv")
+            refuses(
+                w,
+                f"a newer identical rejection on {label} still blocks reuse (exact name match)",
+                "mapping_reapproval_required",
+                lambda: w.resolve(e3),
+                "R3-B9",
+            )
+    with sqlite_world() as w:
+        conn = w.connection("t", ALL_PURPOSES)
+        w.schema_sha = sha("q,a")
+        v1 = w.dataset("tab", "training", conn, version=1, content_type="text/csv")
+        a = w.propose(v1, doc)
+        w.approve(a)
+        v2 = w.dataset("tab", "training", conn, version=2, content_type="text/csv")
+        b = w.propose(v2, doc)
+        w.reject(b)
+        a.mapping_sha256 = a.mapping_sha256.upper()
+        b.mapping_sha256 = b.mapping_sha256.upper()
+        w.session.flush()
+        v3 = w.dataset("tab", "training", conn, version=3, content_type="text/csv")
+        refuses(
+            w,
+            "the digest comparison is exact: identical stored digests block reuse as stored",
+            "mapping_reapproval_required",
+            lambda: w.resolve(v3),
+            "R3-B10",
+        )
     # the rejection query's filters, one world per filter (round-2 review: each stayed GREEN)
     with sqlite_world() as w:
         conn = w.connection("t", ALL_PURPOSES)
