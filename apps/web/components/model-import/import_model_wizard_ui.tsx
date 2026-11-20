@@ -424,6 +424,17 @@ function parseJobList(v: unknown, org: string, project: string): ImportJob[] | n
   return out;
 }
 
+// Closed enums of the backing schemas (litellm_connections, artifacts, model_versions).
+const CONNECTION_STATUSES: readonly string[] = ["active", "revoked"];
+const ARTIFACT_STATUSES: readonly string[] = ["registered", "ready", "archived"];
+const SOURCE_TYPES: readonly string[] = [
+  "huggingface",
+  "private_s3",
+  "local_filesystem",
+  "private_registry",
+];
+const IMPORT_KINDS: readonly string[] = ["endpoint", "full_weight", "adapter"];
+
 interface ConnectionOpt {
   id: string;
   name: string;
@@ -434,6 +445,7 @@ function parseConnections(v: unknown): ConnectionOpt[] | null {
   for (const c of v) {
     // `base_url` is deliberately never read.
     if (!isRec(c) || !isStr(c.id) || !isStr(c.name) || !isStr(c.status)) return null;
+    if (!CONNECTION_STATUSES.includes(c.status)) return null;
     if (c.status === "active") out.push({ id: c.id, name: c.name });
   }
   return out;
@@ -476,7 +488,9 @@ function parseArtifacts(v: unknown): ArtifactOpt[] | null {
       !isStr(a.source_type) ||
       !strOrNull(a.license_id) ||
       !strOrNull(a.license_accepted_at) ||
-      !strOrNull(a.weights_digest)
+      !strOrNull(a.weights_digest) ||
+      !ARTIFACT_STATUSES.includes(a.status) ||
+      !SOURCE_TYPES.includes(a.source_type)
     )
       return null;
     out.push({
@@ -506,7 +520,8 @@ function parseBases(v: unknown): BaseOpt[] | null {
       !isStr(m.id) ||
       typeof m.version_number !== "number" ||
       !isStr(m.import_kind) ||
-      !strOrNull(m.weights_digest)
+      !strOrNull(m.weights_digest) ||
+      !IMPORT_KINDS.includes(m.import_kind)
     )
       return null;
     // Exact base only: full-weights versions; no family or name matching.
@@ -723,7 +738,8 @@ function Inner({
       delayRef.current = Math.min(delayRef.current * 2, POLL_MAX_MS);
       void loadJobs().then((list) => {
         if (!alive.current) return;
-        if (list !== null && jobSig(list) !== lastSig.current) setAnnounce(tr("polled", locale));
+        if (list !== null && jobSig(list) !== lastSig.current)
+          setAnnounce(`${tr("polled", locale)} ${list.map((j) => j.state).join(", ")}`);
         if (list !== null) lastSig.current = jobSig(list);
         // A failed poll (error shown by loadJobs) must still re-arm the backoff.
         setPollTick((n) => n + 1);
@@ -1216,6 +1232,12 @@ function Inner({
               bases,
               () => loadForOrigin("imported_adapter"),
               (all) => {
+                if (jobs === null && jobsError === null)
+                  return (
+                    <p role="status" data-testid="import-bases-loading">
+                      {tr("loading", locale)}
+                    </p>
+                  );
                 if (jobs === null || jobsError !== null)
                   return (
                     <>
@@ -1421,11 +1443,9 @@ function Inner({
   return (
     <div lang={lang} dir={dir} style={rootStyle} data-testid="import-model-wizard">
       <h2 id={headingId}>{tr("title", locale)}</h2>
-      {announce ? (
-        <p role="status" aria-live="polite" data-testid="import-announce">
-          {announce}
-        </p>
-      ) : null}
+      <p role="status" aria-live="polite" data-testid="import-announce">
+        {announce}
+      </p>
       {notice ? (
         <p role="status" data-testid="import-notice" tabIndex={-1} ref={noticeRef}>
           {tr(notice, locale)}

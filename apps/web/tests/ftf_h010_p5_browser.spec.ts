@@ -63,7 +63,7 @@ const ARTIFACTS = [
   {
     id: ART,
     display_name: LONG_NAME,
-    source_type: "local",
+    source_type: "local_filesystem",
     status: "ready",
     license_id: "apache-2.0",
     license_accepted_at: "2026-10-01T00:00:00+00:00",
@@ -157,7 +157,7 @@ const STATES: UiState[] = [
     id: "loading list",
     routes: [{ method: "GET", path: IMPORTS, pending: true }, ...CORE],
     steps: [{ wait: 200 }],
-    ready: '[role="status"]',
+    ready: '[role="status"][aria-busy="true"]',
   },
   {
     id: "populated every state with long values",

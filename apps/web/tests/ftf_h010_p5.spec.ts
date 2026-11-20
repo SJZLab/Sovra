@@ -58,7 +58,7 @@ function job(extra: Record<string, unknown> = {}) {
 const artifact = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
   display_name: `art-${id.slice(0, 2)}`,
-  source_type: "local",
+  source_type: "local_filesystem",
   status: "ready",
   license_id: "apache-2.0",
   license_accepted_at: "2026-10-01T00:00:00+00:00",
@@ -66,7 +66,13 @@ const artifact = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-type Reply = { status?: number; body?: unknown; malformed?: boolean; reject?: boolean };
+type Reply = {
+  status?: number;
+  body?: unknown;
+  malformed?: boolean;
+  reject?: boolean;
+  hang?: boolean;
+};
 type Routes = Record<string, Reply | (() => Reply)>;
 let calls: { method: string; url: string; body?: string; credentials?: RequestCredentials }[] = [];
 let routes: Routes = {};
@@ -133,6 +139,7 @@ beforeEach(() => {
         json: async () => ({ detail: "not_found" }),
       });
     if (reply.reject) return Promise.reject(new TypeError("Failed to fetch"));
+    if (reply.hang) return new Promise(() => undefined);
     const status = reply.status ?? 200;
     return Promise.resolve({
       ok: status >= 200 && status < 300,
@@ -1156,12 +1163,12 @@ test("H010P5-R2-9: 'status updated' is announced only when a job changed; a crea
     await vi.advanceTimersByTimeAsync(5000);
   });
   expect(lists).toBe(2);
-  expect(screen.queryByTestId("import-announce")).toBeNull();
+  expect(screen.getByTestId("import-announce").textContent).toBe("");
   // Second poll: the state changed -> announced.
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10000);
   });
-  expect(screen.getByTestId("import-announce")).toBeTruthy();
+  expect(screen.getByTestId("import-announce").textContent).toContain("Import status updated.");
 });
 
 test("H010P5-R2-9b: a newly created job is listed after the older ones (the server orders ascending by created_at)", async () => {
@@ -1176,4 +1183,238 @@ test("H010P5-R2-9b: a newly created job is listed after the older ones (the serv
     .map((e) => e.getAttribute("data-testid"))
     .filter((t) => t === "job-old1" || t === "job-new1");
   expect(ids).toEqual(["job-old1", "job-new1"]);
+});
+
+// ---- H010P5-R3: review round-3 blockers ------------------------------------------------------
+test("H010P5-R3-1: the live region is mounted from the start and every transition changes its text", async () => {
+  vi.useFakeTimers();
+  const seq = ["queued", "validating", "failed"];
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    const state = seq[Math.min(lists, seq.length - 1)] as string;
+    lists += 1;
+    return {
+      body: [
+        job({
+          id: "j1",
+          state,
+          failure_code: state === "failed" ? "metadata_files_unavailable" : null,
+        }),
+      ],
+    };
+  };
+  mount();
+  const region = () => screen.getByTestId("import-announce");
+  expect(region().getAttribute("role")).toBe("status");
+  expect(region().getAttribute("aria-live")).toBe("polite");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  const first = region().textContent;
+  expect(first).toContain("validating");
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+  });
+  const second = region().textContent;
+  expect(second).toContain("failed");
+  expect(second).not.toBe(first);
+});
+
+test("H010P5-R3-2: while the jobs GET is pending the adapter base list shows loading, never an invented error", async () => {
+  routes[`GET ${IMPORTS}`] = { hang: true };
+  mount();
+  fireEvent.click(radio(/Adapter/));
+  fireEvent.click(screen.getByRole("button", { name: /^Continue$/ }));
+  await settle();
+  expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  expect(screen.queryByTestId("import-bases-error")).toBeNull();
+  expect(screen.getByTestId("import-bases-loading").getAttribute("role")).toBe("status");
+});
+
+test("H010P5-R3-3: options and catalog show a loading status while their GET is pending", async () => {
+  routes[`GET ${ORG_BASE}/artifacts`] = { hang: true };
+  mount();
+  await pick(/Full weights/);
+  expect(screen.queryByTestId("import-options-error")).toBeNull();
+  expect(screen.getByText("Loading…")).toBeTruthy();
+  cleanup();
+  routes = defaults();
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = { hang: true };
+  mount();
+  await pick(/Endpoint model/);
+  fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+  await settle();
+  expect(screen.queryByTestId("import-catalog-error")).toBeNull();
+  expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+});
+
+test("H010P5-R3-4: a 5xx POST that committed is found by the verify read, not left open for a duplicate", async () => {
+  let committed = false;
+  routes[`GET ${IMPORTS}`] = () => ({ body: committed ? [job({ id: "created1" })] : [] });
+  routes[`POST ${IMPORTS}`] = () => {
+    committed = true;
+    return { status: 503, body: {} };
+  };
+  mount();
+  await toReviewEndpoint();
+  await confirmAndStart();
+  await settle();
+  await settle();
+  expect(posts()).toHaveLength(1);
+  expect(screen.getByTestId("job-created1")).toBeTruthy();
+});
+
+test("H010P5-R3-5: identity change in organization or role fully remounts and drops the draft", async () => {
+  for (const change of [
+    { organizationId: "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd" },
+    { role: "ml_engineer" },
+  ]) {
+    cleanup();
+    const { rerender } = mount();
+    await pick(/Full weights/);
+    expect(screen.getByLabelText(/Model artifact/)).toBeTruthy();
+    rerender(
+      createElement(ImportModelWizard, {
+        apiBaseUrl: API,
+        organizationId: ORG,
+        projectId: PROJECT,
+        role: "organization_admin",
+        ...change,
+      }),
+    );
+    await settle();
+    expect(screen.queryByLabelText(/Model artifact/)).toBeNull();
+    if ("role" in change)
+      expect(
+        (screen.getByRole("radio", { name: /Full weights/ }) as HTMLInputElement).checked,
+      ).toBe(false);
+  }
+});
+
+test("H010P5-R3-6: polling stops at blocked_external (terminal) and never backs off into a hammer", async () => {
+  vi.useFakeTimers();
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    return {
+      body: [job({ state: "blocked_external", failure_code: "metadata_files_unavailable" })],
+    };
+  };
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+  });
+  expect(lists).toBe(1);
+});
+
+// UI CHECKLIST (a): a generated strict-parse table over every response the wizard reads.
+const TABLE: {
+  name: string;
+  url: string;
+  open: () => Promise<void>;
+  good: unknown;
+  alertId: string;
+}[] = [
+  {
+    name: "connections",
+    url: `GET ${ORG_BASE}/connections/litellm`,
+    good: [{ id: CONN, name: "main-gw", status: "active", base_url: "https://x/" }],
+    open: async () => {
+      await pick(/Endpoint model/);
+    },
+    alertId: "import-options-error",
+  },
+  {
+    name: "artifacts",
+    url: `GET ${ORG_BASE}/artifacts`,
+    good: [artifact(ART)],
+    open: async () => {
+      await pick(/Full weights/);
+    },
+    alertId: "import-options-error",
+  },
+  {
+    name: "model-versions",
+    url: `GET ${VERSIONS}`,
+    good: [{ id: BASE, version_number: 1, import_kind: "full_weight", weights_digest: sha("b") }],
+    open: async () => {
+      await pick(/Adapter/);
+    },
+    alertId: "import-options-error",
+  },
+];
+const WRONG: unknown[] = [5, null, [], {}, true];
+const ENUM_BAD: Record<string, [string, unknown]> = {
+  connections: ["status", "paused"],
+  artifacts: ["status", "deleted"],
+  "model-versions": ["import_kind", "teleport"],
+};
+for (const t of TABLE) {
+  const first = (t.good as Record<string, unknown>[])[0] as Record<string, unknown>;
+  const mutations: [string, unknown][] = [];
+  for (const field of Object.keys(first)) {
+    if (field === "base_url") continue; // deliberately never read
+    for (const w of WRONG) {
+      if (w === 5 && field === "version_number") continue; // 5 is a valid number
+      mutations.push([field, w]);
+    }
+    mutations.push([field, undefined]);
+  }
+  mutations.push(ENUM_BAD[t.name] as [string, unknown]);
+  for (const [field, bad] of mutations) {
+    // null is a valid value for the nullable fields: skip exactly those.
+    if (bad === null && ["license_id", "license_accepted_at", "weights_digest"].includes(field))
+      continue;
+    test(`H010P5-R3-B ${t.name}.${field} = ${JSON.stringify(bad)} -> options alert, nothing offered`, async () => {
+      const item = { ...first, [field]: bad };
+      if (bad === undefined) delete (item as Record<string, unknown>)[field];
+      routes[t.url] = { body: [item] };
+      mount();
+      await t.open();
+      await settle();
+      await settle();
+      const alerts = screen.queryAllByTestId(
+        /import-(options|bases)-error|base-error|artifact-error/,
+      );
+      expect(alerts.length, `${t.name}.${field}`).toBeGreaterThan(0);
+    });
+  }
+}
+test("H010P5-R3-B catalog: wrong types / missing fields -> catalog alert", async () => {
+  for (const entry of [
+    { id: 5, status: "callable" },
+    { id: "ft:a", status: 7 },
+    { status: "callable" },
+    { id: "ft:a" },
+    null,
+  ]) {
+    cleanup();
+    routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = { body: { entries: [entry] } };
+    mount();
+    await pick(/Endpoint model/);
+    fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
+    await settle();
+    expect(screen.getByTestId("import-catalog-error")).toBeTruthy();
+  }
+});
+test("H010P5-R3-B project profile: wrong types -> profile alert path, never a silent default", async () => {
+  for (const body of [{ security_profile: 5 }, {}, null, []]) {
+    cleanup();
+    routes[`GET ${ORG_BASE}/projects/${PROJECT}`] = { body };
+    mount();
+    await toReviewEndpoint();
+    await settle();
+    expect(
+      (screen.queryByTestId("import-profile-error") ??
+        screen.queryByTestId("import-submit")?.hasAttribute("disabled"))
+        ? true
+        : false,
+    ).toBe(true);
+  }
 });
