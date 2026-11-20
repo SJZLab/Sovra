@@ -317,3 +317,140 @@ test("[UX02-R5-2] a created connection that the later list reply also carries sh
   expect(option[0]?.textContent).toContain("List copy");
   expect(option[0]?.textContent).not.toContain("Created copy");
 });
+
+// [UX02-R5-3] F3/F10: a failure or a rejected fetch from the OLD dataset's submit never shows on the new one.
+for (const mode of ["http-500", "rejected"] as const) {
+  test(`[UX02-R5-3] a ${mode} submit reply for the previous dataset paints nothing after the dataset changed`, async () => {
+    const view = await loaded();
+    review(ISSUE_OPEN);
+    type(reasonBox(), "because");
+    fireEvent.click(screen.getByLabelText("position 0"));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const NEXT = "99999999-9999-9999-9999-999999999999";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (init.method === "POST") {
+          await gate;
+          if (mode === "rejected") throw new Error("connection reset");
+          return { ok: false, status: 500, json: async () => ({ detail: "boom" }) };
+        }
+        return { ok: true, status: 200, json: async () => ({ items: [], next_after: null, url }) };
+      }),
+    );
+    await act(async () => {
+      fireEvent.click(submitButton());
+    });
+    view.rerender(
+      createElement(DatasetIssueResolutionUI, {
+        apiBaseUrl: API_BASE,
+        organizationId: ORG,
+        projectId: PROJECT,
+        datasetId: NEXT,
+      }),
+    );
+    await act(async () => {
+      release();
+      for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    });
+    expect(screen.queryByTestId("dir-error")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+}
+
+// [UX02-R5-4] LATE-CREATE-CLOBBERS-AUTHORIZED and MALFORMED-200 (a list item without project_id).
+const CONN = (id: string, name: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  organization_id: ORG,
+  project_id: PROJECT,
+  source_type: "s3",
+  display_name: name,
+  has_credential: true,
+  has_connection_config: false,
+  allowed_purposes: ["training"],
+  security_classification: "internal",
+  connection_status: "active",
+  last_validated_at: null,
+  created_by: "user-1",
+  created_at: "2026-09-01T00:00:00+00:00",
+  updated_at: "2026-09-01T00:00:00+00:00",
+  revoked_at: null,
+  ...extra,
+});
+const mount500 = () =>
+  render(
+    createElement(DatasetSourceSelectorPurposeAuthorizationUi, {
+      apiBaseUrl: API_BASE,
+      organizationId: ORG,
+      projectId: PROJECT,
+      locale: "en",
+    }),
+  );
+
+test("[UX02-R5-4a] a late create reply keeps the selection and the Authorized result the user is looking at", async () => {
+  const A = CONN("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "Existing A");
+  const NEW = CONN("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "Fresh one");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (/\/authorize$/.test(url))
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ authorized: true, purpose: "training" }),
+        };
+      if (init?.method === "POST") {
+        await gate;
+        return { ok: true, status: 201, json: async () => NEW };
+      }
+      return { ok: true, status: 200, json: async () => [A] };
+    }),
+  );
+  mount500();
+  await waitFor(() => expect(screen.getByTestId(`dataset-source-option-${A.id}`)).toBeTruthy());
+  fireEvent.change(screen.getByTestId("dataset-source-display-name-input"), {
+    target: { value: "Fresh one" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-purpose-training"));
+  fireEvent.change(screen.getByTestId("dataset-source-security-classification-select"), {
+    target: { value: "internal" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-review-button"));
+  fireEvent.click(screen.getByTestId("dataset-source-confirm-button"));
+  fireEvent.click(screen.getByTestId(`dataset-source-option-${A.id}`));
+  fireEvent.change(screen.getByTestId("dataset-source-purpose-to-check-select"), {
+    target: { value: "training" },
+  });
+  fireEvent.click(screen.getByTestId("dataset-source-check-authorization-button"));
+  await waitFor(() =>
+    expect(screen.getByTestId("dataset-source-authorization-result-authorized")).toBeTruthy(),
+  );
+  await act(async () => {
+    release();
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+  });
+  expect(screen.getByTestId(`dataset-source-option-${NEW.id}`)).toBeTruthy();
+  expect(screen.getByTestId("dataset-source-authorization-result-authorized")).toBeTruthy();
+  expect(screen.getByTestId("dataset-source-authorization-selected-connection").textContent).toBe(
+    "Existing A",
+  );
+});
+
+test("[UX02-R5-4b] a 200 list item without project_id is a malformed reply, never an empty list", async () => {
+  const bad: Record<string, unknown> = CONN("cccccccc-cccc-cccc-cccc-cccccccccccc", "No project");
+  delete bad.project_id;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({ ok: true, status: 200, json: async () => [bad] })),
+  );
+  mount500();
+  await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThan(0));
+  expect(screen.queryByTestId(`dataset-source-option-${bad.id}`)).toBeNull();
+});

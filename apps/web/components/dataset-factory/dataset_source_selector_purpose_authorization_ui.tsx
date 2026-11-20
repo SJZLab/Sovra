@@ -218,6 +218,7 @@ function isConnectionSummary(value: unknown): value is DatasetSourceConnectionSu
   const text = (x: unknown) => typeof x === "string" && x.trim().length > 0;
   return (
     text(v.id) &&
+    text(v.project_id) &&
     text(v.display_name) &&
     text(v.source_type) &&
     text(v.security_classification) &&
@@ -325,6 +326,7 @@ function DatasetSourceSelectorInner({
   const authorizeRequestRef = useRef(0);
   // Connections created here, merged back into every list reply (see refreshConnections).
   const createdRef = useRef<DatasetSourceConnectionSummary[]>([]);
+  const selectionEpochRef = useRef(0);
   const wasCreatingRef = useRef(false);
   const pendingRetryFocusRef = useRef(false);
   // Round-3 pre-review 3 finding 1: Retry unmounts as soon as the error clears; when the retry
@@ -495,6 +497,7 @@ function DatasetSourceSelectorInner({
   }
 
   async function handleConfirmCreate() {
+    const epochAtCreate = selectionEpochRef.current;
     setCreating(true);
     setCreateError(null);
     try {
@@ -534,11 +537,16 @@ function DatasetSourceSelectorInner({
       }
       createdRef.current = [...createdRef.current, created];
       setConnections((previous) => (previous ? [...previous, created] : [created]));
-      setSelectedConnectionId(created.id);
-      setJustCreatedId(created.id);
-      authorizeRequestRef.current += 1;
-      setAuthorizeState("idle");
-      setAuthorizeMessage(null);
+      // FTF-UX02 r5 (LATE-CREATE-CLOBBERS-AUTHORIZED): a create reply that lands after the user
+      // picked another connection only adds the new one to the list; it never moves the selection,
+      // focus or an "Authorized" result the user is looking at.
+      if (selectionEpochRef.current === epochAtCreate) {
+        setSelectedConnectionId(created.id);
+        setJustCreatedId(created.id);
+        authorizeRequestRef.current += 1;
+        setAuthorizeState("idle");
+        setAuthorizeMessage(null);
+      }
       resetForm();
     } catch (caught) {
       // FTF-UX02 round-2 pre-review round 1 (ERRORS-NOT-ANNOUNCED-0500A): a dropped connection
@@ -552,6 +560,7 @@ function DatasetSourceSelectorInner({
   }
 
   function handleSelectConnection(connection: DatasetSourceConnectionSummary) {
+    selectionEpochRef.current += 1;
     authorizeRequestRef.current += 1;
     setJustCreatedId(null);
     setSelectedConnectionId(connection.id);
