@@ -100,6 +100,7 @@ COLLECTION_KINDS: dict[str, str] = {
     "projects": "project",
     "dataset-sources": "dataset_source_connection",
     "datasets": "dataset",
+    "mappings": "dataset_mapping",
     "issues": "dataset_quality_issue",
     "evaluation-suites": "evaluation_suite",
     "cases": "evaluation_case",
@@ -122,6 +123,11 @@ COLLECTION_KINDS: dict[str, str] = {
 #: free text); such a slot is registered, with its reason, but the matrix
 #: does not generate foreign classes for it.
 BODY_SLOT_KINDS: dict[str, tuple[str, bool, str]] = {
+    "source_record_id": (
+        "source_column_slot",
+        False,
+        "mapping slot naming a column of the uploaded source; never a stored row id",
+    ),
     "license_id": ("license_identifier", False, "licence identifier text, not a stored row id"),
     "trainable_artifact_id": ("trainable_artifact", True, ""),
     "workspace_id": ("workspace", True, ""),
@@ -288,6 +294,13 @@ _ROWS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
     ("GET", _PP + "/datasets", (), ("after",), ()),
     ("GET", _DATASET, (), (), ()),
     ("GET", _DATASET + "/issue-resolutions", (), ("after",), ()),
+    ("GET", _DATASET + "/mappings", (), ("after",), ()),
+    ("GET", _DATASET + "/mappings/{mapping_id}", (), (), ()),
+    ("POST", _DATASET + "/mapping-preview", (), (), ("mapping.metadata.source_record_id",)),
+    ("POST", _DATASET + "/mapping-probe", (), (), ()),
+    ("POST", _DATASET + "/mappings", (), (), ("mapping.metadata.source_record_id",)),
+    ("POST", _DATASET + "/mappings/{mapping_id}/approve", (), (), ()),
+    ("POST", _DATASET + "/mappings/{mapping_id}/reject", (), (), ()),
     ("GET", _DATASET + "/issues", (), ("after",), ()),
     ("GET", _DATASET + "/issues/{issue_id}", (), (), ()),
     ("GET", _DATASET + "/quality-report", (), (), ()),
@@ -569,7 +582,7 @@ def _const_ids(node: ast.AST) -> set[str]:
     }
 
 
-_RESPONSE_SET = re.compile(r"VIEW|UUID")
+_RESPONSE_SET = re.compile(r"VIEW|UUID|_FIELD_NAMES$")
 
 
 def allow_list_id_names(source: str) -> set[str]:
