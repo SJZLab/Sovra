@@ -90,6 +90,12 @@ const CASES: Case[] = [
     click: () => fireEvent.click(screen.getByTestId("load-cases-button")),
     paths: [`${proj}/evaluation-suites/${V.suiteId}/cases`],
   },
+  {
+    slug: "suite-validation",
+    marker: "suite-lock-load-button",
+    click: () => fireEvent.click(screen.getByTestId("suite-lock-load-button")),
+    paths: [`${proj}/evaluation-suites/${V.suiteId}`],
+  },
 ];
 
 for (const c of CASES) {
