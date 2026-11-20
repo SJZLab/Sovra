@@ -336,6 +336,21 @@ const M = {
 } satisfies Record<string, Msg>;
 type MsgKey = keyof typeof M;
 
+/** Localized label of a job state, for the live-region announcement. */
+function stateLabel(state: string, locale: Locale): string {
+  const key: MsgKey =
+    state === "queued"
+      ? "queued"
+      : state === "validating"
+        ? "validating"
+        : state === "succeeded"
+          ? "succeededLabel"
+          : state === "blocked_external"
+            ? "blockedLabel"
+            : "failedLabel";
+  return tr(key, locale);
+}
+
 function tr(key: MsgKey, locale: Locale): string {
   return locale === "ar" ? M[key].ar : M[key].en;
 }
@@ -433,6 +448,7 @@ const SOURCE_TYPES: readonly string[] = [
   "local_filesystem",
   "private_registry",
 ];
+const CATALOG_STATUSES: readonly string[] = ["callable", "stale", "removed"];
 const IMPORT_KINDS: readonly string[] = ["endpoint", "full_weight", "adapter"];
 
 interface ConnectionOpt {
@@ -461,6 +477,7 @@ function parseCatalog(v: unknown): string[] | null {
   const out: string[] = [];
   for (const e of v.entries) {
     if (!isRec(e) || !isStr(e.id) || !isStr(e.status)) return null;
+    if (!CATALOG_STATUSES.includes(e.status)) return null;
     // stale / removed entries are not callable: never offered as a choice.
     if (e.status === "callable") out.push(e.id);
   }
@@ -659,6 +676,7 @@ function Inner({
   const flight = useSingleFlight();
   const idsBeforeSubmit = useRef<Set<string>>(new Set());
   const lastSent = useRef<SentBody | null>(null);
+  const catalogFor = useRef("");
   const reportedSuccess = useRef<Set<string>>(new Set());
 
   const loadJobs = useCallback(async (): Promise<ImportJob[] | null> => {
@@ -739,7 +757,9 @@ function Inner({
       void loadJobs().then((list) => {
         if (!alive.current) return;
         if (list !== null && jobSig(list) !== lastSig.current)
-          setAnnounce(`${tr("polled", locale)} ${list.map((j) => j.state).join(", ")}`);
+          setAnnounce(
+            `${tr("polled", locale)} ${list.map((j) => stateLabel(j.state, locale)).join(locale === "ar" ? "، " : ", ")}`,
+          );
         if (list !== null) lastSig.current = jobSig(list);
         // A failed poll (error shown by loadJobs) must still re-arm the backoff.
         setPollTick((n) => n + 1);
@@ -759,11 +779,13 @@ function Inner({
     set: (l: Loaded<T>) => void,
     url: string,
     parse: (v: unknown) => T | null,
+    current: () => boolean = () => true,
   ) {
     set({ state: "loading" });
     try {
       const r = await getJson(url);
-      if (!alive.current) return;
+      // An outdated reply (the user chose another connection meanwhile) is dropped.
+      if (!alive.current || !current()) return;
       if (!r.ok) {
         set({
           state: "error",
@@ -778,7 +800,7 @@ function Inner({
           : { state: "ok", data },
       );
     } catch (caught) {
-      if (alive.current) set({ state: "error", error: networkError(caught, locale) });
+      if (alive.current && current()) set({ state: "error", error: networkError(caught, locale) });
     }
   }
 
@@ -801,7 +823,14 @@ function Inner({
     setConnectionId(id);
     setCatalogChoice("");
     setCatalog({ state: "idle" });
-    if (id) void loadInto(setCatalog, catalogUrl(apiBaseUrl, organizationId, id), parseCatalog);
+    catalogFor.current = id;
+    if (id)
+      void loadInto(
+        setCatalog,
+        catalogUrl(apiBaseUrl, organizationId, id),
+        parseCatalog,
+        () => catalogFor.current === id,
+      );
   }
 
   /** Only versions a SUCCEEDED imported_weights job produced are validated bases (exact, no name matching). */

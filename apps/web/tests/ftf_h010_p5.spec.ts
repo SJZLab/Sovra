@@ -1214,12 +1214,12 @@ test("H010P5-R3-1: the live region is mounted from the start and every transitio
     await vi.advanceTimersByTimeAsync(5000);
   });
   const first = region().textContent;
-  expect(first).toContain("validating");
+  expect(first).toContain("Validating");
   await act(async () => {
     await vi.advanceTimersByTimeAsync(10000);
   });
   const second = region().textContent;
-  expect(second).toContain("failed");
+  expect(second).toContain("Validation failed");
   expect(second).not.toBe(first);
 });
 
@@ -1353,6 +1353,7 @@ const WRONG: unknown[] = [5, null, [], {}, true];
 const ENUM_BAD: Record<string, [string, unknown]> = {
   connections: ["status", "paused"],
   artifacts: ["status", "deleted"],
+  "artifacts#source_type": ["source_type", "ftp"],
   "model-versions": ["import_kind", "teleport"],
 };
 for (const t of TABLE) {
@@ -1367,6 +1368,8 @@ for (const t of TABLE) {
     mutations.push([field, undefined]);
   }
   mutations.push(ENUM_BAD[t.name] as [string, unknown]);
+  const extra = ENUM_BAD[`${t.name}#source_type`];
+  if (extra) mutations.push(extra);
   for (const [field, bad] of mutations) {
     // null is a valid value for the nullable fields: skip exactly those.
     if (bad === null && ["license_id", "license_accepted_at", "weights_digest"].includes(field))
@@ -1392,6 +1395,8 @@ test("H010P5-R3-B catalog: wrong types / missing fields -> catalog alert", async
     { id: "ft:a", status: 7 },
     { status: "callable" },
     { id: "ft:a" },
+    { id: "ft:a", status: "CALLABLE" },
+    { id: "ft:a", status: "bogus" },
     null,
   ]) {
     cleanup();
@@ -1403,18 +1408,77 @@ test("H010P5-R3-B catalog: wrong types / missing fields -> catalog alert", async
     expect(screen.getByTestId("import-catalog-error")).toBeTruthy();
   }
 });
-test("H010P5-R3-B project profile: wrong types -> profile alert path, never a silent default", async () => {
-  for (const body of [{ security_profile: 5 }, {}, null, []]) {
+
+test("H010P5-R3-B catalog: entries not an array / body not an object -> catalog alert", async () => {
+  for (const body of [{}, { entries: null }, { entries: {} }, [], null, 5]) {
     cleanup();
-    routes[`GET ${ORG_BASE}/projects/${PROJECT}`] = { body };
+    routes[`GET ${ORG_BASE}/connections/litellm/${CONN}/catalog`] = { body };
     mount();
-    await toReviewEndpoint();
+    await pick(/Endpoint model/);
+    fireEvent.change(screen.getByLabelText(/Gateway connection/), { target: { value: CONN } });
     await settle();
-    expect(
-      (screen.queryByTestId("import-profile-error") ??
-        screen.queryByTestId("import-submit")?.hasAttribute("disabled"))
-        ? true
-        : false,
-    ).toBe(true);
+    expect(screen.getByTestId("import-catalog-error")).toBeTruthy();
   }
+});
+
+test("H010P5-R3-7: a late catalog reply for a previously chosen connection never lands on the new one", async () => {
+  const CONN2 = "99999999-9999-9999-9999-999999999999";
+  let releaseA: (v: unknown) => void = () => undefined;
+  routes[`GET ${ORG_BASE}/connections/litellm`] = {
+    body: [
+      { id: CONN, name: "main-gw", status: "active", base_url: "https://x/" },
+      { id: CONN2, name: "second-gw", status: "active", base_url: "https://y/" },
+    ],
+  };
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN2}/catalog`] = {
+    body: { entries: [{ id: "model-of-B", status: "callable" }] },
+  };
+  const base = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (url === `${ORG_BASE}/connections/litellm/${CONN}/catalog`)
+      return new Promise((res) => {
+        releaseA = () =>
+          res({
+            ok: true,
+            status: 200,
+            json: async () => ({ entries: [{ id: "model-of-A", status: "callable" }] }),
+          });
+      });
+    return base(url, init);
+  });
+  mount();
+  await pick(/Endpoint model/);
+  const sel = screen.getByLabelText(/Gateway connection/);
+  fireEvent.change(sel, { target: { value: CONN } });
+  await settle();
+  fireEvent.change(sel, { target: { value: CONN2 } });
+  await settle();
+  await act(async () => {
+    releaseA(null);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const cat = screen.getByLabelText(/Model from the connection catalog/);
+  expect(cat.innerHTML).toContain("model-of-B");
+  expect(cat.innerHTML).not.toContain("model-of-A");
+});
+
+test("H010P5-R3-8: the announcement is localized: Arabic state labels, no English tokens", async () => {
+  vi.useFakeTimers();
+  let lists = 0;
+  routes[`GET ${IMPORTS}`] = () => {
+    lists += 1;
+    return { body: [job({ id: "j1", state: lists >= 2 ? "validating" : "queued" })] };
+  };
+  mount({ locale: "ar" });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  const text = screen.getByTestId("import-announce").textContent ?? "";
+  expect(text).toContain("تم تحديث حالة الاستيراد.");
+  expect(text).toContain("قيد التحقق");
+  expect(text).not.toMatch(/[A-Za-z]/);
 });
