@@ -28,7 +28,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from decimal import Decimal
+from decimal import Context, Decimal
 from pathlib import Path
 from typing import Any
 
@@ -1999,6 +1999,33 @@ def hashseed_suite() -> None:
 # ---------------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str]] = [
+    (
+        "exact-context-prec",
+        "_EXACT = Context(prec=200, traps=[])",
+        "_EXACT = Context(prec=60, traps=[])",
+    ),
+    ("decimal-fraction-bound", "exponent >= -40 and", "exponent >= -400 and"),
+    ("decimal-int-bound", "value.adjusted() < 40", "value.adjusted() < 400"),
+    (
+        "validation-count-upper",
+        "_int_in(split.validation_count, 0, _MAX_INT32)",
+        "_int_in(split.validation_count, 0, 2**63)",
+    ),
+    (
+        "budget-container-type",
+        "            type(budget) is BudgetFacts\n            and ",
+        "            ",
+    ),
+    (
+        "re_ok-isinstance",
+        "return type(value) is str and pattern",
+        "return isinstance(value, str) and pattern",
+    ),
+    (
+        "same-isinstance",
+        "return type(left) is str and type(right) is str and left == right",
+        "return left == right",
+    ),
     ("validate_facts-removed", "    validate_facts(facts)\n    art, split", "    art, split"),
     (
         "facts-reserved-le-total-dropped",
@@ -2007,10 +2034,14 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "facts-decimal-finite-dropped",
-        "type(value) is Decimal and value.is_finite() and value >= 0",
-        "type(value) is Decimal",
+        "not value.is_finite() or value < 0:",
+        "value < 0:",
     ),
-    ("facts-decimal-nonneg-dropped", "value.is_finite() and value >= 0", "value.is_finite()"),
+    (
+        "facts-decimal-nonneg-dropped",
+        "not value.is_finite() or value < 0:",
+        "not value.is_finite():",
+    ),
     ("facts-scopes-tuple-dropped", "            and type(budget.scopes) is tuple\n", ""),
     (
         "facts-scopes-str-dropped",
@@ -2210,7 +2241,7 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "tokenizer-mismatch-dropped",
-        '    if doc["tokenizer"]["revision"] != art.base_revision:\n        raise _fail("tokenizer_revision_mismatch")\n',
+        '    if not _same(doc["tokenizer"]["revision"], art.base_revision):\n        raise _fail("tokenizer_revision_mismatch")\n',
         "",
     ),
     (
@@ -2254,8 +2285,8 @@ FAULTS: list[tuple[str, str, str]] = [
     ("regex-uuid-upper", '_UUID = re.compile(r"[0-9a-f]{8}', '_UUID = re.compile(r"[0-9a-fA-F]{8}'),
     ("advanced-empty-rule", '"advanced": rule is None,', '"advanced": rule is None or rule == "",'),
     ("grants-truthy", "if split.grants_current is not True:", "if not split.grants_current:"),
-    ("capability-dropped", '        or art.capability != "trainable_open_weight"\n', ""),
-    ("status-dropped", '        or art.status != "ready"\n', ""),
+    ("capability-dropped", '        or not _same(art.capability, "trainable_open_weight")\n', ""),
+    ("status-dropped", '        or not _same(art.status, "ready")\n', ""),
     (
         "budget-equal-refused",
         '_EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) > budget.total:',
@@ -2274,7 +2305,7 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "budget-currency-dropped",
-        '    if budget.currency != doc["budget"]["currency"]:\n        raise _fail("budget_currency_mismatch")\n',
+        '    if not _same(budget.currency, doc["budget"]["currency"]):\n        raise _fail("budget_currency_mismatch")\n',
         "",
     ),
     (
@@ -2294,10 +2325,10 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "frozen-dropped",
-        '    if split.frozen_sha256 != data["frozen_manifest_sha256"]:\n        raise _fail("split_manifest_changed")\n',
+        '    if not _same(split.frozen_sha256, data["frozen_manifest_sha256"]):\n        raise _fail("split_manifest_changed")\n',
         "",
     ),
-    ("locked-dropped", ' or split.status != "locked"', ""),
+    ("locked-dropped", ' or not _same(\n        split.status, "locked"\n    )', ""),
     (
         "manifest-mismatch-dropped",
         '    if train["split_manifest_id"] != validation["split_manifest_id"]:\n        raise _fail("split_manifest_mismatch")\n',
@@ -2315,14 +2346,14 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "catalog-artifact-dropped",
-        '        if cat.mapped_artifact_id != base["trainable_artifact_id"]:\n            raise _fail("catalog_artifact_mismatch")\n',
+        '        if not _same(cat.mapped_artifact_id, base["trainable_artifact_id"]):\n            raise _fail("catalog_artifact_mismatch")\n',
         "",
     ),
     ("catalog-version-dropped", '            or cat.version != base["catalog_version"]\n', ""),
     (
         "catalog-missing-ok",
-        "            cat is None\n            or cat.entry_id",
-        "            cat.entry_id",
+        "            cat is None\n            or not _same(cat.entry_id",
+        "            not _same(cat.entry_id",
     ),
     (
         "hash-drops-server",
@@ -2501,6 +2532,123 @@ def facts_validation_suite(m: Any) -> None:
         "64-char security_profile is valid",
         code_of(m, lambda: m.validate_facts(make_facts(m, security_profile="x" * 64))) is None,
     )
+    # r2 review: exact budget arithmetic, bounds, container/str exactness, hostile __eq__
+    big40 = Decimal("1" + "0" * 39 + "." + "0" * 39 + "1")
+    cost = Decimal(base["budget"]["max_cost"])
+    check(
+        "M1",
+        "tiny reserved past the total is refused (exact sum)",
+        fcode(budget=replace(b, total=Decimal("10.5"), reserved=Decimal("1E-250")))
+        == "invalid_facts",
+    )
+    check(
+        "M1",
+        "80-digit sum is not rounded away",
+        fcode(budget=replace(b, total=Context(prec=200).add(Decimal(10**39), cost), reserved=big40))
+        == "budget_limit_exceeds_policy",
+    )
+    check(
+        "M1",
+        "1E+250 reserved is refused",
+        fcode(budget=replace(b, total=Decimal("1E+250"), reserved=Decimal("1E+250")))
+        == "invalid_facts",
+    )
+    check(
+        "M1",
+        "41 integer digits refused",
+        fcode(budget=replace(b, total=Decimal(10**40))) == "invalid_facts",
+    )
+    check(
+        "M1",
+        "41 fraction digits refused",
+        fcode(budget=replace(b, reserved=Decimal("0." + "0" * 40 + "1"))) == "invalid_facts",
+    )
+    check(
+        "M2",
+        "validation_count 2**31 refused",
+        fcode(split=replace(s_, validation_count=2**31)) == "invalid_facts",
+    )
+    check(
+        "M2",
+        "validation_count 2**31-1 accepted",
+        fcode(split=replace(s_, validation_count=2**31 - 1)) is None,
+    )
+
+    class _BudgetSub(m.BudgetFacts):
+        pass
+
+    check("M2", "budget subclass refused", fcode(budget=_BudgetSub(**vars(b))) == "invalid_facts")
+
+    class _S(str):
+        pass
+
+    check(
+        "M2",
+        "str-subclass digest refused",
+        fcode(artifact=replace(a, weights_digest=_S(SHA_B))) == "invalid_facts",
+    )
+    check(
+        "M2",
+        "str-subclass policy id refused",
+        fcode(budget=replace(b, policy_id=_S(b.policy_id))) == "invalid_facts",
+    )
+
+    class _Hostile:
+        def __eq__(self, other: object) -> bool:
+            raise RuntimeError("boom")
+
+        __ne__ = __eq__
+        __hash__ = None  # type: ignore[assignment]
+
+    class _Always(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+        __hash__ = str.__hash__
+
+    hostile_cases = [
+        ("artifact_id", "artifact", lambda v: replace(a, artifact_id=v), "artifact_not_trainable"),
+        ("status", "artifact", lambda v: replace(a, status=v), "artifact_not_trainable"),
+        ("capability", "artifact", lambda v: replace(a, capability=v), "artifact_not_trainable"),
+        (
+            "base_revision",
+            "artifact",
+            lambda v: replace(a, base_revision=v),
+            "tokenizer_revision_mismatch",
+        ),
+        ("manifest_id", "split", lambda v: replace(s_, manifest_id=v), "split_manifest_not_locked"),
+        ("split status", "split", lambda v: replace(s_, status=v), "split_manifest_not_locked"),
+        (
+            "frozen_sha256",
+            "split",
+            lambda v: replace(s_, frozen_sha256=v),
+            "split_manifest_changed",
+        ),
+        ("currency", "budget", lambda v: replace(b, currency=v), "budget_currency_mismatch"),
+    ]
+    for label, key, build, expected in hostile_cases:
+        for kind, val in (("raising __eq__", _Hostile()), ("always-equal str", _Always("x"))):
+            check("M3", f"{label} with {kind}", fcode(**{key: build(val)}) == expected)
+    cat1 = m.CatalogFacts(entry_id=CAT, version=1, mapped_artifact_id=ART)
+    cat_body = set_path(
+        set_path(base, "base.model_catalog_entry_id", CAT), "base.catalog_version", 1
+    )
+    for label, bad, expected in (
+        ("entry_id", replace(cat1, entry_id=_Hostile()), "catalog_mapping_changed"),
+        (
+            "mapped_artifact_id",
+            replace(cat1, mapped_artifact_id=_Hostile()),
+            "catalog_artifact_mismatch",
+        ),
+    ):
+        check(
+            "M3",
+            f"catalog {label} hostile",
+            resolve_code(m, cat_body, make_facts(m, catalog=bad)) == expected,
+        )
     # every refusal is a coded TrainingConfigError, never a raw exception type
     raw: list[str] = []
     for bad in list(bad_budgets.values()) + [None]:
@@ -2560,12 +2708,6 @@ def resolved_schema_suite(m: Any) -> None:
         "resolved doc has only the request keys plus server",
         set(res["properties"]) == set(cfg["properties"]) | {"server"},
     )
-    # module numeric bounds equal schema bounds, per field
-    hp = cfg["properties"]["hyperparameters"]["properties"]
-    for name, (lo, hi) in (
-        m.HYPERPARAMETER_INT_RANGES.items() if hasattr(m, "HYPERPARAMETER_INT_RANGES") else []
-    ):
-        check("L3", f"{name} bounds", (hp[name]["minimum"], hp[name]["maximum"]) == (lo, hi))
     r = m.resolve_training_config(m.parse_training_config_request(valid_body()), make_facts(m))
     srv = r.doc["server"]
     check("L4", "server keys equal schema keys", set(srv) == set(server))

@@ -579,8 +579,18 @@ def _re_ok(value: object, pattern: re.Pattern[str]) -> bool:
     return type(value) is str and pattern.fullmatch(value) is not None
 
 
+def _same(left: object, right: object) -> bool:
+    """Equality that never calls a foreign ``__eq__``: only two exact ``str`` can be equal."""
+    return type(left) is str and type(right) is str and left == right
+
+
 def _decimal_ok(value: object) -> bool:
-    return type(value) is Decimal and value.is_finite() and value >= 0
+    # Bounded to the request decimal shape (<= 40 integer and 40 fraction digits), so the exact
+    # budget sum below always fits the 200-digit context and is never silently rounded.
+    if type(value) is not Decimal or not value.is_finite() or value < 0:
+        return False
+    exponent = value.as_tuple().exponent
+    return type(exponent) is int and exponent >= -40 and value.adjusted() < 40
 
 
 def validate_facts(facts: TrainingConfigFacts) -> None:
@@ -589,7 +599,8 @@ def validate_facts(facts: TrainingConfigFacts) -> None:
     Covers exact types, finite non-negative Decimals, ``0 <= reserved <= total``, sha256/uuid shapes
     of values copied into the resolved document, int ranges and a tuple-of-str scope list. Fields
     that stage 4 compares by equality (ids, status, flags, currency, revision) are not shape-checked
-    here: a malformed one is a mismatch and keeps its own domain refusal. Never echoes a value."""
+    here: they are compared with ``_same`` (exact ``str`` only, no foreign ``__eq__``), so a
+    malformed one is a mismatch and keeps its own domain refusal. Never echoes a value."""
     if type(facts) is not TrainingConfigFacts:
         raise _fail("invalid_facts")
     art, split, budget, cat = facts.artifact, facts.split, facts.budget, facts.catalog
@@ -665,28 +676,30 @@ def resolve_training_config(
     art, split = facts.artifact, facts.split
     base = doc["base"]
     if (
-        art.artifact_id != base["trainable_artifact_id"]
-        or art.status != "ready"
-        or art.capability != "trainable_open_weight"
+        not _same(art.artifact_id, base["trainable_artifact_id"])
+        or not _same(art.status, "ready")
+        or not _same(art.capability, "trainable_open_weight")
     ):
         raise _fail("artifact_not_trainable")
     if art.license_accepted is not True:
         raise _fail("license_not_accepted")
-    if doc["tokenizer"]["revision"] != art.base_revision:
+    if not _same(doc["tokenizer"]["revision"], art.base_revision):
         raise _fail("tokenizer_revision_mismatch")
     if base["model_catalog_entry_id"] is not None:
         cat = facts.catalog
         if (
             cat is None
-            or cat.entry_id != base["model_catalog_entry_id"]
+            or not _same(cat.entry_id, base["model_catalog_entry_id"])
             or cat.version != base["catalog_version"]
         ):
             raise _fail("catalog_mapping_changed")
-        if cat.mapped_artifact_id != base["trainable_artifact_id"]:
+        if not _same(cat.mapped_artifact_id, base["trainable_artifact_id"]):
             raise _fail("catalog_artifact_mismatch")
-    if split.manifest_id != train["split_manifest_id"] or split.status != "locked":
+    if not _same(split.manifest_id, train["split_manifest_id"]) or not _same(
+        split.status, "locked"
+    ):
         raise _fail("split_manifest_not_locked")
-    if split.frozen_sha256 != data["frozen_manifest_sha256"]:
+    if not _same(split.frozen_sha256, data["frozen_manifest_sha256"]):
         raise _fail("split_manifest_changed")
     if split.hash_verified is not True:
         raise _fail("split_manifest_tampered")
@@ -703,7 +716,7 @@ def resolve_training_config(
         raise _fail("budget_policy_missing")
     if "training" not in budget.scopes:
         raise _fail("budget_scope_not_authorized")
-    if budget.currency != doc["budget"]["currency"]:
+    if not _same(budget.currency, doc["budget"]["currency"]):
         raise _fail("budget_currency_mismatch")
     # Exact arithmetic under an explicit context: the caller's thread-local one could round.
     if _EXACT.add(Decimal(doc["budget"]["max_cost"]), budget.reserved) > budget.total:
