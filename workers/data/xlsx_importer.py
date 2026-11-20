@@ -153,8 +153,11 @@ __all__ = [
     "XlsxAborted",
     "XlsxEventStream",
     "XlsxImportOutcome",
+    "WorksheetInfo",
+    "WorksheetListing",
     "XlsxLimits",
     "decode_xml_escapes",
+    "list_worksheets",
     "run_xlsx_import",
     "xlsx_events",
 ]
@@ -896,10 +899,11 @@ def _relationships(document: bytes) -> list[dict[str, str]]:
     return found
 
 
-def _workbook_sheets(document: bytes) -> list[tuple[str, str]]:
-    """[(sheet name, relationship id)] in workbook order. The root must be a
+def _workbook_sheets(document: bytes) -> list[tuple[str, str, str]]:
+    """[(sheet name, relationship id, state)] in workbook order. `state` is the sheet's
+    `state` attribute exactly as stored (`visible` when absent). The root must be a
     transitional-namespace `workbook`."""
-    sheets: list[tuple[str, str]] = []
+    sheets: list[tuple[str, str, str]] = []
     path: list[str | None] = []
 
     def start(name: str, attrs: dict[str, str]) -> None:
@@ -911,7 +915,7 @@ def _workbook_sheets(document: bytes) -> list[tuple[str, str]]:
             sheet_name, rid = attrs.get("name"), attrs.get(f"{_DOC_REL_NS} id")
             if sheet_name is None or rid is None:
                 raise OoxmlRefused("xlsx_malformed")
-            sheets.append((sheet_name, rid))
+            sheets.append((sheet_name, rid, attrs.get("state", "visible")))
 
     def end(_name: str) -> None:
         path.pop()
@@ -920,18 +924,20 @@ def _workbook_sheets(document: bytes) -> list[tuple[str, str]]:
     return sheets
 
 
-def open_package(
-    spool: IO[bytes],
-    sheet_name: str,
-    *,
-    limits: XlsxLimits,
-    max_shared_strings_bytes: int,
-    max_cell_chars: int,
-    tick: Callable[[], None],
-) -> _Package:
-    """Everything that must hold before a single cell is read. Raises
-    `OoxmlRefused` (mapped to a fatal code by the caller) or, for a shared-strings
-    cell that is too large, `XlsxAborted`."""
+@dataclass
+class _Workbook:
+    archive: zipfile.ZipFile
+    parts: dict[str, zipfile.ZipInfo]
+    sheets: list[tuple[str, str, str]]
+    by_id: dict[str, dict[str, str]]
+    budget: PartBudget
+
+
+def _open_workbook(spool: IO[bytes], *, limits: XlsxLimits, tick: Callable[[], None]) -> _Workbook:
+    """The package-level checks (container, archive bounds, macro/external carriers,
+    content types, relationships, the workbook's sheet list, duplicate sheet names),
+    shared by `open_package` and `list_worksheets` so the two can never disagree about
+    which workbooks are safe to open. Raises `OoxmlRefused`."""
     spool.seek(0)
     head = spool.read(8)
     spool.seek(0)
@@ -989,14 +995,37 @@ def open_package(
                 raise OoxmlRefused("unsafe_workbook")
 
     sheets = _workbook_sheets(_read_small(archive, parts[_WORKBOOK_PART], budget, tick))
-    folded_names = [name.casefold() for name, _rid in sheets]
+    folded_names = [name.casefold() for name, _rid, _state in sheets]
     if len(set(folded_names)) != len(folded_names):
         raise OoxmlRefused("duplicate_sheet_name")
     workbook_rels = rels.get(_WORKBOOK_RELS_KEY)
     if workbook_rels is None:
         raise OoxmlRefused("xlsx_malformed")
     by_id = {r["Id"]: r for r in workbook_rels if "Id" in r}
-    matches = [i for i, (name, _rid) in enumerate(sheets) if name == sheet_name]
+    return _Workbook(archive, parts, sheets, by_id, budget)
+
+
+def open_package(
+    spool: IO[bytes],
+    sheet_name: str,
+    *,
+    limits: XlsxLimits,
+    max_shared_strings_bytes: int,
+    max_cell_chars: int,
+    tick: Callable[[], None],
+) -> _Package:
+    """Everything that must hold before a single cell is read. Raises
+    `OoxmlRefused` (mapped to a fatal code by the caller) or, for a shared-strings
+    cell that is too large, `XlsxAborted`."""
+    workbook = _open_workbook(spool, limits=limits, tick=tick)
+    archive, parts, sheets, by_id, budget = (
+        workbook.archive,
+        workbook.parts,
+        workbook.sheets,
+        workbook.by_id,
+        workbook.budget,
+    )
+    matches = [i for i, (name, _rid, _state) in enumerate(sheets) if name == sheet_name]
     if not matches:
         raise XlsxAborted("mapping_column_missing")
     sheet_index = matches[0]
@@ -1344,6 +1373,74 @@ def xlsx_events(
         tool_schemas=tool_schemas,
         tool_argument_validator=tool_argument_validator,
     )
+
+
+@dataclass(frozen=True)
+class WorksheetInfo:
+    """One worksheet as the workbook names it: `name` exactly as stored, `state` the
+    workbook's own `state` attribute (`visible` when absent, else `hidden` /
+    `veryHidden`), `hidden` True for anything but `visible`."""
+
+    name: str
+    state: str
+    hidden: bool
+
+
+@dataclass(frozen=True)
+class WorksheetListing:
+    """The verdict of `list_worksheets`: a refused or unreadable workbook is a visible
+    `state` / `failure_code` with no sheets, never an exception (Law 17)."""
+
+    state: str  # "completed" | "failed" | "blocked"
+    failure_code: str | None
+    sheets: tuple[WorksheetInfo, ...]
+
+
+def list_worksheets(
+    reader: ChunkReader,
+    *,
+    verified_content_type: str,
+    dataset_sha256: str,
+    limits: ImportLimits = DEFAULT_LIMITS,
+    xlsx_limits: XlsxLimits = DEFAULT_XLSX_LIMITS,
+) -> WorksheetListing:
+    """The worksheets a workbook names, in workbook order, hidden ones flagged -- for the
+    mapping wizard's sheet picker. Goes through the same gates the importer does (content
+    type, the declared hash, `_open_workbook`'s package checks), so a workbook the importer
+    would refuse is refused here with the same code, and a sheet is never listed from a
+    package that was not safe to open. Reads the workbook part only; no cell is read."""
+    if type(verified_content_type) is not str or verified_content_type not in XLSX_CONTENT_TYPES:
+        return WorksheetListing("failed", "content_type_not_supported_by_importer", ())
+    if (
+        type(dataset_sha256) is not str
+        or not _SHA256_PATTERN.fullmatch(dataset_sha256)
+        or not hmac.compare_digest(reader._expected_sha256, dataset_sha256)
+    ):
+        return WorksheetListing("failed", "source_changed", ())
+    try:
+        with tempfile.TemporaryFile() as spool:
+            try:
+                for chunk in reader:
+                    spool.write(chunk)
+                spool.flush()
+            except OSError:
+                raise ImportAborted("blocked", "source_unavailable") from None
+            workbook = _open_workbook(spool, limits=xlsx_limits, tick=reader.deadline.check)
+            try:
+                return WorksheetListing(
+                    "completed",
+                    None,
+                    tuple(
+                        WorksheetInfo(name, state, state != "visible")
+                        for name, _rid, state in workbook.sheets
+                    ),
+                )
+            finally:
+                workbook.archive.close()
+    except OoxmlRefused as exc:
+        return WorksheetListing("failed", exc.code, ())
+    except ImportAborted as exc:
+        return WorksheetListing(exc.state, exc.failure_code, ())
 
 
 def run_xlsx_import(
