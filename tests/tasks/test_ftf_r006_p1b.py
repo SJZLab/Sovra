@@ -1045,7 +1045,7 @@ def test_r11b_stale_guard_write_is_undone_by_the_post_write_recheck(env: Env) ->
             )
         return real_exec(session, org, statement, params)
 
-    store.execute_tenant_scoped = stale_guard
+    store.execute_tenant_scoped = stale_guard  # type: ignore[assignment]
     try:
         refused = raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident)
     finally:

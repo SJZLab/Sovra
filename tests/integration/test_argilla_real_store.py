@@ -560,7 +560,7 @@ def main() -> None:
     try:
         base._wait_for_bao_health()
         openbao = OpenBaoConfig(address=base.BAO_ADDRESS, token=base.BAO_ROOT_TOKEN)
-        world = base._seed(migration_url, app_password, openbao, None)
+        world = base._seed(migration_url, app_password, openbao, None)  # type: ignore[arg-type]
         real = Real(base_url, owner_key)
         ctx = section_scope_and_isolation(world, real)
         section_races(world, real, ctx)
