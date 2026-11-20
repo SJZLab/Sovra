@@ -1048,6 +1048,21 @@ const STATES: UiState[] = [
     behaviourOnly: true,
   },
   {
+    id: "0516 submit in flight",
+    component: "0516",
+    props: P0516,
+    routes: [...R516, { ...posted(), delayMs: 1500 }],
+    steps: [
+      LOAD,
+      { click: `review-${ISSUE_OPEN}` },
+      { click: "position-0" },
+      { fill: ["resolution-rationale", "because"] },
+      { click: "resolution-submit" },
+    ],
+    ready: `[data-testid="review-${ISSUE_WARN}"][disabled]`,
+    behaviourOnly: true,
+  },
+  {
     id: "0516 paged",
     component: "0516",
     props: P0516,
@@ -2230,6 +2245,57 @@ describe("[UX02-R4R2] stale bodies, late rejections, create vs list, busy finali
         expect(res).toEqual({ finalize: false, focusOnBody: false });
       } finally {
         await settled.close();
+      }
+    });
+  }
+});
+
+// FTF-UX02 r5, pre-review round 3 (STALE-SUBMIT-REVIEW, 0516): while a decision is in flight no other
+// issue can be opened, so its late reply can never land on another issue's form. Real Chromium.
+describe("[UX02-R5] 0516 stale submit review", () => {
+  for (const locale of ["en", "ar"] as Locale[]) {
+    test(`[0516] [${locale}] every Review button is disabled while the decision is in flight and a click opens nothing`, async () => {
+      const page = await openState(
+        STATES.find((st) => st.id === "0516 submit in flight")!,
+        locale,
+        "light",
+      );
+      try {
+        const disabled = await page
+          .locator('[data-testid^="review-"]')
+          .evaluateAll((els) => els.map((el) => (el as HTMLButtonElement).disabled));
+        expect(disabled.length).toBeGreaterThan(1);
+        expect(disabled.every((d) => d)).toBe(true);
+        await page.getByTestId(`review-${ISSUE_WARN}`).click({ force: true });
+        expect(await page.getByTestId("resolution-rationale").inputValue()).toBe("because");
+        await page.waitForTimeout(2000);
+        const after = await page
+          .locator('[data-testid^="review-"]')
+          .evaluateAll((els) => els.map((el) => (el as HTMLButtonElement).disabled));
+        expect(after.some((d) => d)).toBe(false);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const locale of ["en", "ar"] as Locale[]) {
+    test(`[0500A] [${locale}] BA4: focus returns to Check authorization after the authorize reply lands`, async () => {
+      const page = await openState(
+        STATES.find((st) => st.id === "0500A authorize slow 200 body")!,
+        locale,
+        "light",
+      );
+      try {
+        await page
+          .locator('[data-testid="dataset-source-authorization-result-authorized"]')
+          .waitFor();
+        expect(
+          await page.evaluate(
+            () => document.activeElement?.getAttribute("data-testid") ?? "<body>",
+          ),
+        ).toBe("dataset-source-check-authorization-button");
+      } finally {
+        await page.close();
       }
     });
   }

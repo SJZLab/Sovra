@@ -1008,6 +1008,8 @@ export function DatasetIssueResolutionUI({
                   <div>
                     <Button
                       data-testid={`review-${entry.issue_id}`}
+                      // A reply for the issue being submitted must never land on another issue's form.
+                      disabled={submitting}
                       onClick={() => {
                         setSelected(entry.issue_id);
                         setDraft({ ...EMPTY_DRAFT, action: allowedActions(entry)[0] ?? "exclude" });
