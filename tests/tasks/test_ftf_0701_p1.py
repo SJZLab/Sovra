@@ -1999,6 +1999,36 @@ def hashseed_suite() -> None:
 # ---------------------------------------------------------------------------------------------
 
 FAULTS: list[tuple[str, str, str]] = [
+    ("validate_facts-removed", "    validate_facts(facts)\n    art, split", "    art, split"),
+    (
+        "facts-reserved-le-total-dropped",
+        "            and budget.reserved <= budget.total\n",
+        "",
+    ),
+    (
+        "facts-decimal-finite-dropped",
+        "type(value) is Decimal and value.is_finite() and value >= 0",
+        "type(value) is Decimal",
+    ),
+    ("facts-decimal-nonneg-dropped", "value.is_finite() and value >= 0", "value.is_finite()"),
+    ("facts-scopes-tuple-dropped", "            and type(budget.scopes) is tuple\n", ""),
+    (
+        "facts-scopes-str-dropped",
+        "            and all(type(x) is str for x in budget.scopes)\n",
+        "",
+    ),
+    (
+        "facts-count-upper-dropped",
+        "_int_in(split.train_count, 0, _MAX_INT32)",
+        "_int_in(split.train_count, 0, 2**63)",
+    ),
+    (
+        "facts-row-version-dropped",
+        "            and _int_in(budget.row_version, 0, _MAX_INT32)\n",
+        "",
+    ),
+    ("facts-digest-dropped", "        and _re_ok(split.validation_role_sha256, _SHA256)\n", ""),
+    ("facts-security-profile-dropped", "        and type(facts.security_profile) is str\n", ""),
     ("epochs-max+1", '"epochs": (1, 20)', '"epochs": (1, 21)'),
     ("epochs-min-1", '"epochs": (1, 20)', '"epochs": (0, 20)'),
     ("micro_batch+1", '"micro_batch_size": (1, 128)', '"micro_batch_size": (1, 129)'),
@@ -2350,6 +2380,180 @@ FAULTS: list[tuple[str, str, str]] = [
 ]
 
 
+def facts_validation_suite(m: Any) -> None:
+    """r2 findings 1-2: malformed server-built facts are refused with a coded error, never a raw
+    exception and never resolved. Runs the real default resolve path with the attack input."""
+    base = valid_body()
+    facts = make_facts(m)
+    a, s_, b = facts.artifact, facts.split, facts.budget
+
+    def fcode(**over: Any) -> str | None:
+        return resolve_code(m, base, make_facts(m, **over))
+
+    big = Decimal(2**31)
+    bad_budgets = {
+        "nan total": replace(b, total=Decimal("NaN")),
+        "inf total": replace(b, total=Decimal("Infinity")),
+        "nan reserved": replace(b, reserved=Decimal("NaN")),
+        "snan reserved": replace(b, reserved=Decimal("sNaN")),
+        "-inf reserved": replace(b, reserved=Decimal("-Infinity")),
+        "negative total": replace(b, total=Decimal("-1")),
+        "negative reserved": replace(b, reserved=Decimal("-0.5")),
+        "reserved>total": replace(b, reserved=Decimal("100.01")),
+        "float total": replace(b, total=100.0),
+        "int total": replace(b, total=100),
+        "str total": replace(b, total="100"),
+        "none reserved": replace(b, reserved=None),
+        "decimal row_version": replace(b, row_version=Decimal("3")),
+        "bytes row_version": replace(b, row_version=b"3"),
+        "bool row_version": replace(b, row_version=True),
+        "negative row_version": replace(b, row_version=-1),
+        "huge row_version": replace(b, row_version=int(big)),
+        "str scopes": replace(b, scopes="training"),
+        "list scopes": replace(b, scopes=["training"]),
+        "set scopes": replace(b, scopes=frozenset({"training"})),
+        "int in scopes": replace(b, scopes=("training", 1)),
+        "bad policy id": replace(b, policy_id="not-a-uuid"),
+        "upper policy id": replace(b, policy_id="44444444-4444-4444-8444-44444444444A"),
+    }
+    for label, bad in bad_budgets.items():
+        check("K1", f"budget fact {label} refused", fcode(budget=bad) == "invalid_facts")
+    check(
+        "K1",
+        "reserved == total still resolves to the limit refusal",
+        fcode(budget=replace(b, reserved=b.total)) == "budget_limit_exceeds_policy",
+    )
+    check(
+        "K1",
+        "zero total/reserved are valid facts",
+        fcode(budget=replace(b, total=Decimal("0"), reserved=Decimal("0")))
+        == "budget_limit_exceeds_policy",
+    )
+    bad_split = {
+        "bool train_count": replace(s_, train_count=True),
+        "bool validation_count": replace(s_, validation_count=True),
+        "str train_count": replace(s_, train_count="100"),
+        "decimal count": replace(s_, validation_count=Decimal("10")),
+        "negative count": replace(s_, train_count=-1),
+        "huge count": replace(s_, train_count=int(big)),
+        "bool manifest_version": replace(s_, manifest_version=True),
+        "zero manifest_version": replace(s_, manifest_version=0),
+        "bytes manifest_version": replace(s_, manifest_version=b"2"),
+        "empty train digest": replace(s_, train_role_sha256=""),
+        "upper train digest": replace(s_, train_role_sha256=SHA_B.upper()),
+        "none validation digest": replace(s_, validation_role_sha256=None),
+        "short validation digest": replace(s_, validation_role_sha256=SHA_C[:-1]),
+    }
+    for label, bad in bad_split.items():
+        check("K2", f"split fact {label} refused", fcode(split=bad) == "invalid_facts")
+    for label, bad in {
+        "empty weights digest": replace(a, weights_digest=""),
+        "bytes weights digest": replace(a, weights_digest=SHA_B.encode()),
+        "upper weights digest": replace(a, weights_digest=SHA_B.upper()),
+    }.items():
+        check("K2", f"artifact fact {label} refused", fcode(artifact=bad) == "invalid_facts")
+    for label, bad in {"empty": "", "none": None, "bytes": b"standard", "long": "x" * 65}.items():
+        check(
+            "K3",
+            f"security_profile {label} refused",
+            fcode(security_profile=bad) == "invalid_facts",
+        )
+    for label, bad in {
+        "dict facts": {"artifact": a},
+        "wrong artifact type": 7,
+    }.items():
+        check("K3", f"artifact container {label} refused", fcode(artifact=bad) == "invalid_facts")
+    check("K3", "split container None refused", fcode(split=None) == "invalid_facts")
+    # every refusal is a coded TrainingConfigError, never a raw exception type
+    raw: list[str] = []
+    for bad in list(bad_budgets.values()) + [None]:
+        try:
+            m.resolve_training_config(
+                m.parse_training_config_request(base), make_facts(m, budget=bad)
+            )
+        except m.TrainingConfigError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            raw.append(type(exc).__name__)
+    check("K4", "no raw exception escapes", raw == [])
+    # a valid fact set never trips the validator
+    m.validate_facts(make_facts(m))
+    check("K5", "valid facts pass validate_facts", True)
+    # request-side refusals keep priority over facts refusals (facts validate in stage 4)
+    check(
+        "K6",
+        "request error beats invalid facts",
+        resolve_code(
+            m,
+            set_path(base, "method", "bogus"),
+            make_facts(m, budget=replace(b, total=Decimal("NaN"))),
+        )
+        == "invalid_method",
+    )
+    check("K7", "invalid_facts is a 409", m.ERROR_CODES["invalid_facts"] == 409)
+
+
+def resolved_schema_suite(m: Any) -> None:
+    """r2 findings 3-4: per-field schema parity for the resolved document, typed server fields,
+    seed required in the resolved document."""
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    defs = schema["$defs"]
+    res = defs["ResolvedConfigDocument"]
+    cfg = defs["TrainingConfigV1"]
+    server = res["properties"]["server"]["properties"]
+    check("L1", "server fields all typed", all(v != {} and "type" in v for v in server.values()))
+    check(
+        "L1",
+        "seed required in resolved hyperparameters",
+        "seed" in res["properties"]["hyperparameters"]["required"],
+    )
+    check(
+        "L1",
+        "seed optional in the request schema",
+        "seed" not in cfg["properties"]["hyperparameters"]["required"],
+    )
+    # every TrainingConfigV1 property schema equals its resolved twin, field by field (except server/seed required)
+    for key, value in cfg["properties"].items():
+        twin = res["properties"][key]
+        if key == "hyperparameters":
+            value = {**value, "required": value["required"] + ["seed"]}
+        check("L2", f"resolved schema parity: {key}", value == twin)
+    check(
+        "L2",
+        "resolved doc has only the request keys plus server",
+        set(res["properties"]) == set(cfg["properties"]) | {"server"},
+    )
+    # module numeric bounds equal schema bounds, per field
+    hp = cfg["properties"]["hyperparameters"]["properties"]
+    for name, (lo, hi) in (
+        m.HYPERPARAMETER_INT_RANGES.items() if hasattr(m, "HYPERPARAMETER_INT_RANGES") else []
+    ):
+        check("L3", f"{name} bounds", (hp[name]["minimum"], hp[name]["maximum"]) == (lo, hi))
+    r = m.resolve_training_config(m.parse_training_config_request(valid_body()), make_facts(m))
+    srv = r.doc["server"]
+    check("L4", "server keys equal schema keys", set(srv) == set(server))
+    check(
+        "L4",
+        "server sha fields match the schema pattern",
+        all(
+            re.fullmatch(server[k]["pattern"][1:-1], srv[k])
+            for k in (
+                "weights_digest",
+                "frozen_manifest_sha256",
+                "train_role_sha256",
+                "validation_role_sha256",
+            )
+        ),
+    )
+    check(
+        "L4",
+        "budget policy id matches the schema pattern",
+        re.fullmatch(server["budget_policy_id"]["pattern"][1:-1], srv["budget_policy_id"])
+        is not None,
+    )
+    check("L4", "resolved doc always carries seed", "seed" in r.doc["hyperparameters"])
+
+
 def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
     _failures.clear()
     module = load_module(path, name)
@@ -2359,6 +2563,8 @@ def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
     leak_suite(module)
     facts_leak_suite(module)
     order_suite(module)
+    facts_validation_suite(module)
+    resolved_schema_suite(module)
     return list(_failures)
 
 

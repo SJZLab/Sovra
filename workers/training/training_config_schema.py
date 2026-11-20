@@ -155,6 +155,8 @@ ERROR_CODES: Final = MappingProxyType(
                 "budget_currency_mismatch",
                 "budget_limit_exceeds_policy",
                 "idempotency_key_reused",
+                # Server-built facts failed validation: refused, never resolved or crashed.
+                "invalid_facts",
             ),
             409,
         ),
@@ -570,6 +572,56 @@ class ResolvedTrainingConfig:
         return str(self.doc["method"])
 
 
+_MAX_INT32 = 2**31 - 1
+
+
+def _re_ok(value: object, pattern: re.Pattern[str]) -> bool:
+    return type(value) is str and pattern.fullmatch(value) is not None
+
+
+def _decimal_ok(value: object) -> bool:
+    return type(value) is Decimal and value.is_finite() and value >= 0
+
+
+def validate_facts(facts: TrainingConfigFacts) -> None:
+    """Fail closed on server-built facts that would otherwise escape as raw errors or resolve.
+
+    Covers exact types, finite non-negative Decimals, ``0 <= reserved <= total``, sha256/uuid shapes
+    of values copied into the resolved document, int ranges and a tuple-of-str scope list. Fields
+    that stage 4 compares by equality (ids, status, flags, currency, revision) are not shape-checked
+    here: a malformed one is a mismatch and keeps its own domain refusal. Never echoes a value."""
+    if type(facts) is not TrainingConfigFacts:
+        raise _fail("invalid_facts")
+    art, split, budget, cat = facts.artifact, facts.split, facts.budget, facts.catalog
+    ok = (
+        type(art) is ArtifactFacts
+        and _re_ok(art.weights_digest, _SHA256)
+        and type(split) is SplitFacts
+        and _int_in(split.manifest_version, 1, _MAX_INT32)
+        and _int_in(split.train_count, 0, _MAX_INT32)
+        and _int_in(split.validation_count, 0, _MAX_INT32)
+        and _re_ok(split.train_role_sha256, _SHA256)
+        and _re_ok(split.validation_role_sha256, _SHA256)
+        and type(facts.security_profile) is str
+        and 1 <= len(facts.security_profile) <= 64
+    )
+    if ok and cat is not None:
+        ok = type(cat) is CatalogFacts and type(cat.version) is int
+    if ok and budget is not None:
+        ok = (
+            type(budget) is BudgetFacts
+            and _re_ok(budget.policy_id, _UUID)
+            and _int_in(budget.row_version, 0, _MAX_INT32)
+            and type(budget.scopes) is tuple
+            and all(type(x) is str for x in budget.scopes)
+            and _decimal_ok(budget.total)
+            and _decimal_ok(budget.reserved)
+            and budget.reserved <= budget.total
+        )
+    if not ok:
+        raise _fail("invalid_facts")
+
+
 def canonical_config_json(doc: Mapping[str, Any]) -> str:
     """Key-order independent, whitespace-free JSON of a plain-JSON document."""
     return json.dumps(_thaw(doc), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -608,7 +660,8 @@ def resolve_training_config(
     if (doc["method"] == "qlora") != (doc["precision"]["quantization"] == "nf4"):
         raise _fail("method_quantization_mismatch")
 
-    # 4. Facts.
+    # 4. Facts (malformed server-built facts are refused before any comparison).
+    validate_facts(facts)
     art, split = facts.artifact, facts.split
     base = doc["base"]
     if (

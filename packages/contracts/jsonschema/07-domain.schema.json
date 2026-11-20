@@ -124,7 +124,8 @@
         "budget_scope_not_authorized",
         "budget_currency_mismatch",
         "budget_limit_exceeds_policy",
-        "idempotency_key_reused"
+        "idempotency_key_reused",
+        "invalid_facts"
       ],
       "x-http-status": {
         "invalid_body": 400,
@@ -176,7 +177,8 @@
         "budget_scope_not_authorized": 409,
         "budget_currency_mismatch": 409,
         "budget_limit_exceeds_policy": 409,
-        "idempotency_key_reused": 409
+        "idempotency_key_reused": 409,
+        "invalid_facts": 409
       }
     },
     "TrainingConfigV1": {
@@ -837,7 +839,8 @@
             "gradient_accumulation_steps",
             "gradient_checkpointing",
             "checkpoint_interval_steps",
-            "max_checkpoints"
+            "max_checkpoints",
+            "seed"
           ],
           "additionalProperties": false
         },
@@ -909,17 +912,55 @@
         "server": {
           "type": "object",
           "properties": {
-            "weights_digest": {},
-            "base_revision": {},
-            "split_manifest_version": {},
-            "frozen_manifest_sha256": {},
-            "train_role_sha256": {},
-            "validation_role_sha256": {},
-            "train_count": {},
-            "validation_count": {},
-            "budget_policy_id": {},
-            "budget_policy_row_version": {},
-            "security_profile": {}
+            "weights_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "base_revision": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            },
+            "split_manifest_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "frozen_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "train_role_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "validation_role_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "train_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "validation_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "budget_policy_id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "budget_policy_row_version": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "security_profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
           },
           "required": [
             "weights_digest",
