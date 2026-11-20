@@ -22,6 +22,7 @@ Errors carry only a stable code. No request value is ever placed in an exception
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -613,6 +614,12 @@ def _validate_facts(facts: TrainingConfigFacts) -> None:
     if type(facts) is not TrainingConfigFacts:
         raise _fail("invalid_facts")
     art, split, budget, cat = facts.artifact, facts.split, facts.budget, facts.catalog
+    # Touch every field of every facts object once, so a removed field is one coded refusal here
+    # and never an AttributeError from a later stage-4 read.
+    for part in (facts, art, split, budget, cat):
+        if dataclasses.is_dataclass(part) and not isinstance(part, type):
+            for fld in dataclasses.fields(part):
+                getattr(part, fld.name)
     ok = (
         type(art) is ArtifactFacts
         and _re_ok(art.weights_digest, _SHA256)

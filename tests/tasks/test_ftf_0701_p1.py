@@ -2623,11 +2623,48 @@ def facts_validation_suite(m: Any) -> None:
         "digest with trailing newline refused",
         fcode(artifact=replace(a, weights_digest=SHA_B + "\n")) == "invalid_facts",
     )
-    for fname, holder in (("train_count", s_), ("weights_digest", a), ("total", b)):
-        broken = copy.copy(holder)
-        object.__delattr__(broken, fname)
-        key = {"train_count": "split", "weights_digest": "artifact", "total": "budget"}[fname]
-        check("N4", f"removed field {fname} refused", fcode(**{key: broken}) == "invalid_facts")
+    import dataclasses as _dc
+
+    cat_f = m.CatalogFacts(entry_id=CAT, version=1, mapped_artifact_id=ART)
+    cat_body_n = set_path(
+        set_path(base, "base.model_catalog_entry_id", CAT), "base.catalog_version", 1
+    )
+    for key, holder in (("artifact", a), ("split", s_), ("budget", b)):
+        for fld in _dc.fields(holder):
+            broken = copy.copy(holder)
+            object.__delattr__(broken, fld.name)
+            check(
+                "N4",
+                f"removed {key}.{fld.name} is a coded refusal",
+                fcode(**{key: broken}) == "invalid_facts",
+            )
+    for fld in _dc.fields(cat_f):
+        broken = copy.copy(cat_f)
+        object.__delattr__(broken, fld.name)
+        check(
+            "N4",
+            f"removed catalog.{fld.name} is a coded refusal",
+            resolve_code(m, cat_body_n, make_facts(m, catalog=broken)) == "invalid_facts",
+        )
+
+    class _ArtSub(m.ArtifactFacts):
+        pass
+
+    class _SplitSub(m.SplitFacts):
+        pass
+
+    check("N6", "artifact subclass refused", fcode(artifact=_ArtSub(**vars(a))) == "invalid_facts")
+    check("N6", "split subclass refused", fcode(split=_SplitSub(**vars(s_))) == "invalid_facts")
+    api_src = (ROOT / "apps/api/app/services/project_security_profile.py").read_text(
+        encoding="utf-8"
+    )
+    api_levels = re.search(r"SECURITY_PROFILE_LEVELS: tuple\[str, \.\.\.\] = \(([^)]*)\)", api_src)
+    check(
+        "N7",
+        "worker security profiles equal the API levels",
+        api_levels is not None
+        and tuple(re.findall(r'"([a-z_]+)"', api_levels.group(1))) == m.SECURITY_PROFILES,
+    )
     # r2 review: exact budget arithmetic, bounds, container/str exactness, hostile __eq__
     big40 = Decimal("1" + "0" * 39 + "." + "0" * 39 + "1")
     cost = Decimal(base["budget"]["max_cost"])
