@@ -2563,6 +2563,11 @@ def facts_validation_suite(m: Any) -> None:
         == list(m.SECURITY_PROFILES),
     )
     # round-2 review: boundaries, subclasses, over-long shapes, removed fields
+    check(
+        "N5",
+        "canonical json is pure ASCII",
+        m.canonical_config_json({"a": "\u00e9\u0645"}) == '{"a":"\\u00e9\\u0645"}',
+    )
 
     class _SProfile(str):
         pass
