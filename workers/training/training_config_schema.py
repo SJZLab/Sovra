@@ -573,6 +573,8 @@ class ResolvedTrainingConfig:
 
 
 _MAX_INT32 = 2**31 - 1
+# Mirrors apps/api/app/services/project_security_profile.py SECURITY_PROFILE_LEVELS (closed set).
+SECURITY_PROFILES: Final = ("standard", "zero_egress", "air_gapped")
 
 
 def _re_ok(value: object, pattern: re.Pattern[str]) -> bool:
@@ -594,6 +596,13 @@ def _decimal_ok(value: object) -> bool:
 
 
 def validate_facts(facts: TrainingConfigFacts) -> None:
+    try:
+        _validate_facts(facts)
+    except AttributeError:  # a facts object with a field removed is malformed, not a crash
+        raise _fail("invalid_facts") from None
+
+
+def _validate_facts(facts: TrainingConfigFacts) -> None:
     """Fail closed on server-built facts that would otherwise escape as raw errors or resolve.
 
     Covers exact types, finite non-negative Decimals, ``0 <= reserved <= total``, sha256/uuid shapes
@@ -614,7 +623,7 @@ def validate_facts(facts: TrainingConfigFacts) -> None:
         and _re_ok(split.train_role_sha256, _SHA256)
         and _re_ok(split.validation_role_sha256, _SHA256)
         and type(facts.security_profile) is str
-        and 1 <= len(facts.security_profile) <= 64
+        and facts.security_profile in SECURITY_PROFILES
     )
     if ok and cat is not None:
         ok = type(cat) is CatalogFacts and type(cat.version) is int

@@ -1311,11 +1311,6 @@ def suite(m: Any) -> None:
         "scope case fact",
         fcode(budget=replace(b, scopes=("TRAINING",))) == "budget_scope_not_authorized",
     )
-    check(
-        "E13",
-        "non-ascii security profile still hashes",
-        len(sha_with(security_profile="\u00e9\u0645")) == 64,
-    )
     upper_hash = m.ResolvedTrainingConfig(doc=ok.doc, config_sha256=sha0.upper())
     check("G0", "verify rejects an upper-case hash", not m.verify_config_sha256(upper_hash))
     check(
@@ -2026,6 +2021,19 @@ FAULTS: list[tuple[str, str, str]] = [
         "return type(left) is str and type(right) is str and left == right",
         "return left == right",
     ),
+    (
+        "secprof-open-set",
+        "and facts.security_profile in SECURITY_PROFILES",
+        "and 1 <= len(facts.security_profile) <= 64",
+    ),
+    (
+        "manifest-version-upper",
+        "_int_in(split.manifest_version, 1, _MAX_INT32)",
+        "_int_in(split.manifest_version, 1, 2**63)",
+    ),
+    ("decimal-isinstance", "type(value) is not Decimal or", "not isinstance(value, Decimal) or"),
+    ("re-match-not-fullmatch", "pattern.fullmatch(value)", "pattern.match(value)"),
+    ("attribute-error-uncoded", "    except AttributeError:", "    except KeyError:"),
     ("validate_facts-removed", "    validate_facts(facts)\n    art, split", "    art, split"),
     (
         "facts-reserved-le-total-dropped",
@@ -2483,7 +2491,18 @@ def facts_validation_suite(m: Any) -> None:
         "upper weights digest": replace(a, weights_digest=SHA_B.upper()),
     }.items():
         check("K2", f"artifact fact {label} refused", fcode(artifact=bad) == "invalid_facts")
-    for label, bad in {"empty": "", "none": None, "bytes": b"standard", "long": "x" * 65}.items():
+    for label, bad in {
+        "empty": "",
+        "none": None,
+        "bytes": b"standard",
+        "long": "x" * 65,
+        "newline": "standard\n",
+        "nul": "\x00",
+        "surrogate": "\ud800",
+        "upper": "Standard",
+        "unknown": "x",
+        "unicode": "\u00e9\u0645",
+    }.items():
         check(
             "K3",
             f"security_profile {label} refused",
@@ -2529,9 +2548,81 @@ def facts_validation_suite(m: Any) -> None:
         )
     check(
         "K8",
-        "64-char security_profile is valid",
-        code_of(m, lambda: m.validate_facts(make_facts(m, security_profile="x" * 64))) is None,
+        "every closed-set security_profile is valid",
+        all(
+            code_of(m, lambda p=p: m.validate_facts(make_facts(m, security_profile=p))) is None
+            for p in ("standard", "zero_egress", "air_gapped")
+        ),
     )
+    check(
+        "K8",
+        "security profile enum parity with the schema",
+        json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]["ResolvedConfigDocument"][
+            "properties"
+        ]["server"]["properties"]["security_profile"]["enum"]
+        == list(m.SECURITY_PROFILES),
+    )
+    # round-2 review: boundaries, subclasses, over-long shapes, removed fields
+
+    class _SProfile(str):
+        pass
+
+    check(
+        "N1",
+        "str-subclass security_profile refused",
+        fcode(security_profile=_SProfile("standard")) == "invalid_facts",
+    )
+    check(
+        "N1",
+        "manifest_version 2**31 refused",
+        fcode(split=replace(s_, manifest_version=2**31)) == "invalid_facts",
+    )
+    check(
+        "N1",
+        "manifest_version 2**31-1 accepted",
+        fcode(split=replace(s_, manifest_version=2**31 - 1)) is None,
+    )
+
+    class _Dec(Decimal):
+        def __gt__(self, other: object) -> bool:
+            return False
+
+        def __lt__(self, other: object) -> bool:
+            return False
+
+        def __le__(self, other: object) -> bool:
+            return True
+
+    check(
+        "N2",
+        "Decimal subclass total refused",
+        fcode(budget=replace(b, total=_Dec("0"))) == "invalid_facts",
+    )
+    check(
+        "N2",
+        "Decimal subclass reserved refused",
+        fcode(budget=replace(b, reserved=_Dec("0"))) == "invalid_facts",
+    )
+    check(
+        "N3",
+        "65-char digest refused",
+        fcode(artifact=replace(a, weights_digest="b" * 65)) == "invalid_facts",
+    )
+    check(
+        "N3",
+        "uuid + suffix policy id refused",
+        fcode(budget=replace(b, policy_id=b.policy_id + "0")) == "invalid_facts",
+    )
+    check(
+        "N3",
+        "digest with trailing newline refused",
+        fcode(artifact=replace(a, weights_digest=SHA_B + "\n")) == "invalid_facts",
+    )
+    for fname, holder in (("train_count", s_), ("weights_digest", a), ("total", b)):
+        broken = copy.copy(holder)
+        object.__delattr__(broken, fname)
+        key = {"train_count": "split", "weights_digest": "artifact", "total": "budget"}[fname]
+        check("N4", f"removed field {fname} refused", fcode(**{key: broken}) == "invalid_facts")
     # r2 review: exact budget arithmetic, bounds, container/str exactness, hostile __eq__
     big40 = Decimal("1" + "0" * 39 + "." + "0" * 39 + "1")
     cost = Decimal(base["budget"]["max_cost"])
