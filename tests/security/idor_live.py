@@ -468,6 +468,54 @@ def seed_project_kind(
     raise IdorSuiteError(f"no project-level seeder for kind {kind!r}")
 
 
+def seed_project_extras(
+    conn: Any, tenant: dict[str, Any], project_id: Any, tag: str, ids: dict[str, Any]
+) -> None:
+    """Rows that make singleton/list project routes non-vacuous: without them
+    an own project answers the same as a missing one (empty list / 404), so a
+    positive control could not tell a working route from a missing project."""
+    org = tenant["organization_id"]
+    policy_id = _insert(
+        conn,
+        "budget_policies",
+        {
+            "organization_id": org,
+            "project_id": project_id,
+            "total_amount": 100,
+            "currency": "USD",
+            "scopes_json": "[]",
+            "created_by": "seed",
+        },
+    )
+    conn.execute(
+        text("UPDATE projects SET budget_policy_id = :b WHERE id = :p AND organization_id = :o"),
+        {"b": policy_id, "p": project_id, "o": org},
+    )
+    _insert(
+        conn,
+        "model_import_jobs",
+        {
+            "organization_id": org,
+            "project_id": project_id,
+            "requested_origin": "external_endpoint",
+            "external_provider_model_ref": marker(tag, "jobref"),
+            "litellm_connection_id": ids["litellm_connection"],
+            "created_by": "seed",
+        },
+    )
+    _insert(
+        conn,
+        "target_source_snapshots",
+        {
+            "organization_id": org,
+            "target_application_connection_id": ids["target_connection"],
+            "commit_sha": uuid.uuid4().hex,
+            "tree_hash": uuid.uuid4().hex,
+            "capture_method": "github_resolved_commit",
+        },
+    )
+
+
 def seed_kinds(owner: Engine, tenants: dict[str, dict[str, Any]]) -> None:
     """Add, per tenant, one row of every seeded kind: org-level rows, and
     project-level rows in the tenant's project and in its second project
@@ -485,6 +533,8 @@ def seed_kinds(owner: Engine, tenants: dict[str, dict[str, Any]]) -> None:
                 )
             tenant["ids"] = ids
             tenant["ids_project2"] = second
+            seed_project_extras(conn, tenant, tenant["project_id"], name, ids)
+            seed_project_extras(conn, tenant, tenant["project2_id"], name + "-p2", ids)
 
 
 # -- Matrix -----------------------------------------------------------------------
