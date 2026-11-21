@@ -12,9 +12,12 @@ the IMPORTER ORDER catalog rule allows `workers/data/import_common.py`): the tap
 row an event came from, in the same order the events themselves arrive, so this module pairs them
 one by one without re-parsing or re-implementing a single importer's own byte-level rules.
 
-XLSX is not dispatched here: Section 67.3's own values-only reading is FTF-0505 (FTF-H011-P6, "only
-after FTF-0505 is CERTIFIED"); a verified content type this module does not recognise -- XLSX
-included -- is `MappingPreviewUnavailableError` ("importer_unavailable"), never a silent fallback.
+XLSX (FTF-H011-P6, after FTF-0505 CERTIFIED) is dispatched through FTF-0505's own `xlsx_events`,
+the same way as the sibling importers: Section 67.3's values-only reading is that importer's, so a
+formula cell is shown as a rejected `formula_cell` row, never evaluated. `run_worksheet_probe` is
+the sheet picker's read (exact names, hidden sheets flagged) through FTF-0505's `list_worksheets`. A
+verified content type this module does not recognise is `MappingPreviewUnavailableError`
+("importer_unavailable"), never a silent fallback.
 
 Masking (Section 67.2 "sensitive values are masked unless the user has preview permission"):
 permission is an authorization decision this pure module cannot make (it has no identity, no DB),
@@ -61,6 +64,8 @@ from workers.data.import_common import (
 )
 from workers.data.json_importer import json_events
 from workers.data.jsonl_importer import jsonl_events
+from workers.data.ooxml_safety import XLSX_CONTENT_TYPE
+from workers.data.xlsx_importer import list_worksheets, xlsx_events
 
 __all__ = [
     "JSONL_PREVIEW_CONTENT_TYPES",
@@ -71,14 +76,16 @@ __all__ = [
     "MappingPreviewRow",
     "MappingPreviewUnavailableError",
     "ProbeResult",
+    "WorksheetProbeResult",
     "compute_tool_definitions_sha256",
     "run_mapping_preview",
     "run_mapping_probe",
+    "run_worksheet_probe",
 ]
 
 JSONL_PREVIEW_CONTENT_TYPES: Final = frozenset({"application/jsonl", "application/x-ndjson"})
 PREVIEW_CONTENT_TYPES: Final = JSONL_PREVIEW_CONTENT_TYPES | frozenset(
-    {"application/json", "text/csv"}
+    {"application/json", "text/csv", XLSX_CONTENT_TYPE}
 )
 
 # Section 67.3's own preview bound (max 20) and a short deadline: a preview is one bounded,
@@ -148,6 +155,16 @@ class MappingPreviewResult:
     tool_definitions_sha256: str
     source_schema_sha256: str | None
     preview_sha256: str
+
+
+@dataclass(frozen=True)
+class WorksheetProbeResult:
+    # Same Law 17 verdict convention as `ProbeResult`. `sheets` entries are
+    # `{"name", "state", "hidden"}` in workbook order; `name` is masked (like every
+    # other name read from the source's own data) when the caller may not reveal.
+    state: str  # "completed" | "failed" | "blocked"
+    failure_code: str | None
+    sheets: tuple[Mapping[str, object], ...]
 
 
 @dataclass(frozen=True)
@@ -293,6 +310,7 @@ _EVENTS_BY_CONTENT_TYPE: Final[dict[str, Callable[..., Iterator[PreviewEvent]]]]
     "application/x-ndjson": jsonl_events,
     "application/json": json_events,
     "text/csv": csv_events,
+    XLSX_CONTENT_TYPE: xlsx_events,
 }
 
 
@@ -356,9 +374,9 @@ def _read_top_level(slot: Slot, row: Row, headers: Sequence[str] | None) -> obje
     """A best-effort, read-only echo of `import_common._read_slot` for display only: this
     module never uses the result to build a record, only to show the user what one mapped slot
     of the raw row looked like next to its canonical value, so an approximation that cannot
-    resolve a `letters`-kind slot (spreadsheet column letters; XLSX is not dispatched by this
-    module, Section 67.3) falls back to "not found" rather than re-deriving that one additional
-    rule for a display-only path."""
+    resolve a `letters`-kind slot (spreadsheet column letters; the XLSX importer resolves its
+    own columns, Section 67.3) falls back to "not found" rather than re-deriving that one
+    additional rule for a display-only path."""
     if isinstance(row, Mapping):
         if slot.kind not in ("key", "header"):
             return _MISSING
@@ -492,6 +510,15 @@ def _raw_message_roles(
     )
 
 
+def _close_stream(stream: object) -> None:
+    """Closes an event stream that holds a resource (the XLSX stream's anonymous spool file)
+    the moment the preview stops reading, instead of leaving it to garbage collection. The
+    row-streaming importers hold nothing and have no `close`."""
+    close = getattr(stream, "close", None)
+    if callable(close):
+        close()
+
+
 def _drain_and_verify(reader: ChunkReader) -> ImportAborted | None:
     """SOURCE-CHANGED (Law 17): a preview/probe reads only up to
     `limits.preview_max_records` rows, by design fewer bytes than the whole
@@ -565,6 +592,8 @@ def run_mapping_probe(
                 raw_rows.append(_present_row(row, row_headers, reveal))
     except ImportAborted as exc:
         aborted = exc
+    finally:
+        _close_stream(stream)
     if aborted is None:
         aborted = _drain_and_verify(reader)
     state = aborted.state if aborted is not None else "completed"
@@ -574,6 +603,43 @@ def run_mapping_probe(
         None if headers is None else (tuple(headers) if reveal else _mask_names(tuple(headers)))
     )
     return ProbeResult(state, failure_code, masked_headers, tuple(raw_rows), complete)
+
+
+def run_worksheet_probe(
+    reader: ChunkReader,
+    *,
+    verified_content_type: str,
+    dataset_sha256: str,
+    reveal: bool,
+    limits: ImportLimits = PREVIEW_LIMITS,
+) -> WorksheetProbeResult:
+    """The worksheets of an XLSX source, for the wizard's sheet picker: every sheet the
+    workbook names, in workbook order, exactly as stored, with hidden and veryHidden sheets
+    flagged (`hidden: True`) so a person never maps a sheet they did not know was there. Goes
+    through FTF-0505's `list_worksheets`, so a workbook the importer refuses (macros, external
+    links, an archive bomb, duplicate sheet names, a non-zip) is the same failure code here and
+    no sheet is listed; a changed object or storage outage is the verdict `state`/
+    `failure_code`, never an exception (Law 17). A content type other than XLSX has no
+    worksheets: `MappingPreviewUnavailableError`, as for any unrecognised type. Sheet names are
+    read from the source's own data, so they are masked like headers when `reveal` is False;
+    the `hidden` flag and `state` are schema and stay."""
+    if verified_content_type != XLSX_CONTENT_TYPE:
+        raise MappingPreviewUnavailableError(verified_content_type)
+    listing = list_worksheets(
+        reader,
+        verified_content_type=verified_content_type,
+        dataset_sha256=dataset_sha256,
+        limits=limits,
+    )
+    sheets: tuple[Mapping[str, object], ...] = tuple(
+        {
+            "name": sheet.name if reveal else _mask_marker(sheet.name),
+            "state": sheet.state,
+            "hidden": sheet.hidden,
+        }
+        for sheet in listing.sheets
+    )
+    return WorksheetProbeResult(listing.state, listing.failure_code, sheets)
 
 
 def _present_row(
@@ -706,6 +772,8 @@ def run_mapping_preview(
                 )
     except ImportAborted as exc:
         aborted = exc
+    finally:
+        _close_stream(stream)
     if aborted is None:
         aborted = _drain_and_verify(reader)
     state = aborted.state if aborted is not None else "completed"
