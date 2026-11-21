@@ -29,6 +29,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -40,7 +41,16 @@ sys.path.insert(0, str(API_ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "security"))
 
 import uvicorn  # noqa: E402
-from idor_suite import IdorSuiteError, Observed, StateSnapshot  # noqa: E402
+from idor_suite import (  # noqa: E402
+    ROUTE_REGISTRY,
+    CellVerdict,
+    IdorSuiteError,
+    Observed,
+    StateSnapshot,
+    assert_digest_covers,
+    evaluate_cell,
+    evaluate_positive_control,
+)
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -49,6 +59,11 @@ ISSUER = "https://idor-suite.invalid/"
 SIGNING_KEY = "idor-suite-only-signing-key-not-a-real-secret"
 TENANTS = ("alpha", "bravo")
 ROLES = ("organization_admin",)
+#: Observed 2026-11-21 on this harness: a `workspace_admin` membership scoped to
+#: the first workspace gets 403 on every project route, including its own project,
+#: so no workspace-scoped role can serve as the `foreign_project` positive control
+#: yet. `foreign_project` is therefore not driven for an organization admin (it
+#: legitimately reaches every project of its organization).
 
 
 def required_env(name: str) -> str:
@@ -255,6 +270,21 @@ def seed_tenants(owner: Engine) -> dict[str, dict[str, Any]]:
             )
             session.add(project)
             session.flush()
+            ws2 = Workspace(organization_id=org.id, name=f"{name} ws two", slug="second")
+            session.add(ws2)
+            session.flush()
+            project2 = Project(
+                organization_id=org.id,
+                workspace_id=ws2.id,
+                name=f"{name}-project-two",
+                project_type="generic_model_tuning",
+                status="active",
+                security_profile="standard",
+                row_version=1,
+                created_by="seed",
+            )
+            session.add(project2)
+            session.flush()
             subject = f"user-{name}"
             grant_membership(
                 session,
@@ -263,14 +293,286 @@ def seed_tenants(owner: Engine) -> dict[str, dict[str, Any]]:
                 subject=subject,
                 role="organization_admin",
             )
+            ws_subject = f"user-{name}-ws"
+            grant_membership(
+                session,
+                organization_id=org.id,
+                issuer=ISSUER,
+                subject=ws_subject,
+                role="workspace_admin",
+                workspace_id=ws.id,
+            )
             out[name] = {
+                "subjects": {"organization_admin": subject, "workspace_admin": ws_subject},
                 "organization_id": org.id,
                 "workspace_id": ws.id,
                 "project_id": project.id,
+                "project2_id": project2.id,
                 "subject": subject,
             }
         session.commit()
     return out
+
+
+# -- Seeders ------------------------------------------------------------------
+#
+# One row per (tenant, kind), written as the migration owner with plain SQL
+# (RLS cannot hide or refuse the seed). Every free-text field of a row seeded
+# for tenant `bravo` carries `marker(...)`; a response to an `alpha` request
+# containing it is a leak. Kinds without a seeder are reported by
+# `unseeded_routes`, never skipped silently.
+
+ORG_KINDS = ("trainable_artifact", "litellm_connection", "cost_profile", "component_binding")
+PROJECT_KINDS = ("dataset_source_connection", "tool_definition")
+
+
+def marker(tenant: str, what: str) -> str:
+    return f"MARK-{tenant}-{what}-{uuid.uuid5(uuid.NAMESPACE_URL, tenant + what).hex[:10]}"
+
+
+def _insert(conn: Any, table: str, values: dict[str, Any]) -> uuid.UUID:
+    row_id = uuid.uuid4()
+    cols = {"id": row_id, **values}
+    names = ", ".join(f'"{c}"' for c in cols)
+    params = ", ".join(f":{c}" for c in cols)
+    conn.execute(text(f'INSERT INTO "{table}" ({names}) VALUES ({params})'), cols)  # noqa: S608
+    return row_id
+
+
+def seed_org_kind(conn: Any, kind: str, tenant: dict[str, Any], tag: str) -> uuid.UUID:
+    org = tenant["organization_id"]
+    if kind == "trainable_artifact":
+        return _insert(
+            conn,
+            "trainable_artifacts",
+            {
+                "organization_id": org,
+                "display_name": marker(tag, "artifact"),
+                "source_type": "huggingface",
+                "source_uri": f"hf://{marker(tag, 'uri')}",
+                "model_family": "llama",
+                "base_model_revision": "r1",
+                "license_id": "apache-2.0",
+            },
+        )
+    if kind == "litellm_connection":
+        return _insert(
+            conn,
+            "litellm_connections",
+            {
+                "organization_id": org,
+                "name": marker(tag, "gateway"),
+                "base_url": "https://litellm.invalid",
+                "secret_ref": marker(tag, "secretref"),
+            },
+        )
+    if kind == "cost_profile":
+        return _insert(
+            conn,
+            "cost_profiles",
+            {
+                "organization_id": org,
+                "profile_type": "provider",
+                "label": marker(tag, "cost"),
+                "rate_unit": "per_hour",
+                "rate_amount": 1,
+                "currency": "USD",
+                "source": "seed",
+                "rate_recorded_at": datetime.now(UTC),
+                "created_by": "seed",
+            },
+        )
+    if kind == "component_binding":
+        return _insert(
+            conn,
+            "component_bindings",
+            {
+                "organization_id": org,
+                "component_key": "mlflow",
+                "security_zone_scope": "org",
+                "deployment_mode": "internal_service",
+                "approved_endpoint": "https://mlflow.invalid",
+                "network_policy_identity": marker(tag, "netpol"),
+                "compatibility_lock_reference": "lock",
+            },
+        )
+    raise IdorSuiteError(f"no organization-level seeder for kind {kind!r}")
+
+
+def seed_project_kind(
+    conn: Any, kind: str, tenant: dict[str, Any], project_id: Any, tag: str
+) -> uuid.UUID:
+    org = tenant["organization_id"]
+    if kind == "dataset_source_connection":
+        return _insert(
+            conn,
+            "dataset_source_connections",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "source_type": "upload",
+                "display_name": marker(tag, "source"),
+                "allowed_purposes_json": "[]",
+                "security_classification": "internal",
+                "created_by": "seed",
+            },
+        )
+    if kind == "tool_definition":
+        return _insert(
+            conn,
+            "tool_definitions",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "name": marker(tag, "tool"),
+                "input_schema_json": "{}",
+                "output_schema_json": "{}",
+                "side_effect_class": "read_only",
+                "schema_hash": marker(tag, "hash"),
+                "created_by": "seed",
+            },
+        )
+    raise IdorSuiteError(f"no project-level seeder for kind {kind!r}")
+
+
+def seed_kinds(owner: Engine, tenants: dict[str, dict[str, Any]]) -> None:
+    """Add, per tenant, one row of every seeded kind: org-level rows, and
+    project-level rows in the tenant's project and in its second project
+    (`project2`, the `foreign_project` class)."""
+    with owner.begin() as conn:
+        for name, tenant in tenants.items():
+            ids: dict[str, Any] = {}
+            for kind in ORG_KINDS:
+                ids[kind] = seed_org_kind(conn, kind, tenant, name)
+            second: dict[str, Any] = {}
+            for kind in PROJECT_KINDS:
+                ids[kind] = seed_project_kind(conn, kind, tenant, tenant["project_id"], name)
+                second[kind] = seed_project_kind(
+                    conn, kind, tenant, tenant["project2_id"], name + "-p2"
+                )
+            tenant["ids"] = ids
+            tenant["ids_project2"] = second
+
+
+# -- Matrix -----------------------------------------------------------------------
+
+SEEDED_KINDS = frozenset(("organization", "project", *ORG_KINDS, *PROJECT_KINDS))
+
+
+def unseeded_routes() -> list[tuple[str, str]]:
+    """Route-verbs the matrix cannot yet exercise: a path kind without a
+    seeder, or a method the runner does not drive (writes need valid bodies;
+    destructive verbs need a fresh row per cell)."""
+    out = []
+    for (method, template), spec in ROUTE_REGISTRY.items():
+        kinds = {slot.kind for slot in spec.path_slots}
+        if method != "GET" or spec.destructive or not kinds <= SEEDED_KINDS or spec.query_slots:
+            out.append((method, template))
+    return out
+
+
+def _slot_value(
+    slot_kind: str, id_class: str, alpha: dict[str, Any], bravo: dict[str, Any]
+) -> str | None:
+    """Value for one path slot under an id class; None = class not defined
+    for this slot."""
+    if id_class == "missing":
+        return str(uuid.uuid4())
+    if id_class == "own":
+        own = {"organization": alpha["organization_id"], "project": alpha["project_id"]}
+        return str(own.get(slot_kind) or alpha["ids"].get(slot_kind))
+    if id_class == "foreign_org":
+        foreign = {"organization": bravo["organization_id"], "project": bravo["project_id"]}
+        return str(foreign.get(slot_kind) or bravo["ids"].get(slot_kind))
+    if id_class == "foreign_project":
+        if slot_kind == "project":
+            return str(alpha["project2_id"])
+        if slot_kind in PROJECT_KINDS:
+            return str(alpha["ids_project2"][slot_kind])
+        return None
+    return None
+
+
+def _all_ids(tenant: dict[str, Any]) -> list[str]:
+    ids = [str(v) for v in tenant["ids"].values()] + [
+        str(v) for v in tenant["ids_project2"].values()
+    ]
+    return ids + [str(tenant["organization_id"]), str(tenant["project_id"])]
+
+
+def run_live_matrix(
+    base_url: str, owner: Engine, tenants: dict[str, dict[str, Any]]
+) -> tuple[list[CellVerdict], list[tuple[str, str]]]:
+    """Every seedable GET route x path slot x foreign id class, against the
+    `missing` baseline, plus the positive control per slot. Returns the
+    verdicts and the route-verbs the matrix could not drive."""
+    alpha, bravo = tenants["alpha"], tenants["bravo"]
+    tables = enumerate_tables(owner)
+    assert_digest_covers(tables, ["audit_events"])
+    skipped = set(unseeded_routes())
+    markers = [marker("bravo", w) for w in ("artifact", "uri", "gateway", "secretref", "cost")]
+    markers += [marker("bravo", w) for w in ("netpol", "source", "tool", "hash")]
+    markers += [marker("bravo-p2", w) for w in ("source", "tool", "hash")]
+    forbidden = _all_ids(bravo)
+    verdicts: list[CellVerdict] = []
+    for (method, template), spec in ROUTE_REGISTRY.items():
+        if (method, template) in skipped:
+            continue
+        for index, slot in enumerate(spec.path_slots):
+            if not slot.resolves_row:
+                continue
+
+            def url_for(
+                id_class: str, index: int = index, template: str = template, spec: Any = spec
+            ) -> str:
+                path = template
+                for i, s in enumerate(spec.path_slots):
+                    cls = id_class if i == index else "own"
+                    value = _slot_value(s.kind, cls, alpha, bravo)
+                    if value is None:
+                        raise IdorSuiteError(f"class {id_class} undefined for kind {s.kind}")
+                    path = path.replace("{" + s.name + "}", value, 1)
+                return path
+
+            for role in ROLES:
+                subject = alpha["subjects"][role]
+
+                def sender(
+                    id_class: str,
+                    method: str = method,
+                    url_for: Any = url_for,
+                    subject: str = subject,
+                ) -> Observed:
+                    return send(base_url, method, url_for(id_class), subject=subject)
+
+                verdicts.append(
+                    evaluate_positive_control(
+                        method=method,
+                        template=template,
+                        slot=slot.name,
+                        role=role,
+                        send=sender,
+                    )
+                )
+                for id_class in ("foreign_org", "foreign_project"):
+                    if _slot_value(slot.kind, id_class, alpha, bravo) is None:
+                        continue
+                    if id_class == "foreign_project":
+                        continue  # see ROLES above; not driven, listed in the report
+                    verdicts.append(
+                        evaluate_cell(
+                            method=method,
+                            template=template,
+                            slot=slot.name,
+                            id_class=id_class,
+                            role=role,
+                            send=sender,
+                            snapshot=lambda: snapshot(owner, tables),
+                            markers=markers,
+                            forbidden=forbidden,
+                        )
+                    )
+    return verdicts, sorted(skipped)
 
 
 @contextlib.contextmanager
@@ -281,6 +583,7 @@ def live_environment() -> Iterator[tuple[str, Engine, dict[str, dict[str, Any]]]
     owner = create_engine(migration_url)
     try:
         tenants = seed_tenants(owner)
+        seed_kinds(owner, tenants)
         with serve_real_app(app_role_url(migration_url, app_password)) as base_url:
             yield base_url, owner, tenants
     finally:
@@ -312,6 +615,13 @@ def main() -> None:
         print("foreign:", foreign.status, "missing:", missing.status)
         tables = enumerate_tables(owner)
         print("digested tables:", len(tables))
+        verdicts, skipped = run_live_matrix(base_url, owner, tenants)
+        failed = [v for v in verdicts if not v.passed]
+        print(f"cells: {len(verdicts)} failed: {len(failed)} unseeded route-verbs: {len(skipped)}")
+        for v in failed:
+            print("FAIL", v.method, v.template, v.slot, v.id_class, v.status, v.problems)
+        if failed or skipped:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
