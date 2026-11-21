@@ -323,7 +323,12 @@ def seed_tenants(owner: Engine) -> dict[str, dict[str, Any]]:
 # `unseeded_routes`, never skipped silently.
 
 ORG_KINDS = ("trainable_artifact", "litellm_connection", "cost_profile", "component_binding")
-PROJECT_KINDS = ("dataset_source_connection", "tool_definition")
+PROJECT_KINDS = (
+    "dataset_source_connection",
+    "tool_definition",
+    "model_version",
+    "target_connection",
+)
 
 
 def marker(tenant: str, what: str) -> str:
@@ -429,6 +434,34 @@ def seed_project_kind(
                 "output_schema_json": "{}",
                 "side_effect_class": "read_only",
                 "schema_hash": marker(tag, "hash"),
+                "created_by": "seed",
+            },
+        )
+    if kind == "model_version":
+        return _insert(
+            conn,
+            "model_versions",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "version_number": 1,
+                "import_kind": "endpoint",
+                "origin": "external_endpoint",
+                "external_provider_model_ref": marker(tag, "modelref"),
+                "endpoint_reference": f"https://{marker(tag, 'endpoint')}.invalid",
+                "created_by": "seed",
+            },
+        )
+    if kind == "target_connection":
+        return _insert(
+            conn,
+            "target_application_connections",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "connector_type": "github",
+                "display_name": marker(tag, "target"),
+                "repository_identity": marker(tag, "repo"),
                 "created_by": "seed",
             },
         )
