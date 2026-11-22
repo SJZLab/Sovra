@@ -2041,8 +2041,13 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "request-doc-uncoded",
-        "        raw_doc = request.doc\n    except Exception:",
-        "        raw_doc = request.doc\n    except KeyError:",
+        "        thawed = _thaw(request.doc)\n    except Exception:",
+        "        thawed = _thaw(request.doc)\n    except KeyError:",
+    ),
+    (
+        "schema-version-foreign-ne",
+        'if not _same(top["schema_version"], SCHEMA_VERSION):',
+        'if top["schema_version"] != SCHEMA_VERSION:',
     ),
     ("validate_facts-removed", "    validate_facts(facts)\n    art, split", "    art, split"),
     (
@@ -2869,6 +2874,44 @@ def facts_validation_suite(m: Any) -> None:
         )
         == "invalid_facts",
     )
+    cyc: dict[str, Any] = dict(valid_body())
+    cyc["self"] = cyc
+    deep: dict[str, Any] = {}
+    cur = deep
+    for _ in range(5000):
+        cur["a"] = {}
+        cur = cur["a"]
+
+    class _BoomMap(dict):
+        def items(self) -> Any:
+            raise RuntimeError("boom")
+
+    class _BoomNe:
+        def __ne__(self, other: object) -> bool:
+            raise RuntimeError("boom")
+
+    class _FakeReq:
+        def __init__(self, doc: Any) -> None:
+            self.doc = doc
+
+    for label, doc in (("cyclic", cyc), ("deep", deep), ("raising map", _BoomMap(valid_body()))):
+        check(
+            "K9",
+            f"hostile doc {label} is invalid_body",
+            code_of(m, lambda d=doc: m.resolve_training_config(_FakeReq(d), base_facts))
+            == "invalid_body",
+        )
+    check(
+        "K9",
+        "raising __ne__ schema_version is unsupported_schema_version",
+        code_of(
+            m,
+            lambda: m.parse_training_config_request(
+                set_path(valid_body(), "schema_version", _BoomNe())
+            ),
+        )
+        == "unsupported_schema_version",
+    )
     for label, bad_req in (("None", None), ("object", object())):
         check(
             "K9",
@@ -2952,6 +2995,27 @@ def resolved_schema_suite(m: Any) -> None:
             server["budget_policy_row_version"].get("maximum"),
         )
         == (0, 2147483647),
+    )
+    rs = defs["ResolvedTrainingConfig"]
+    check(
+        "L5",
+        "server required equals server keys",
+        set(res["properties"]["server"]["required"]) == set(server),
+    )
+    check(
+        "L5",
+        "resolved doc required = request keys + server",
+        set(res["required"]) == set(cfg["required"]) | {"server"},
+    )
+    check("L5", "ResolvedConfigDocument closed", res.get("additionalProperties") is False)
+    check("L5", "ResolvedTrainingConfig closed", rs.get("additionalProperties") is False)
+    check(
+        "L5", "ResolvedTrainingConfig required", set(rs["required"]) == {"config", "config_sha256"}
+    )
+    check(
+        "L5",
+        "config refs the resolved doc",
+        rs["properties"]["config"] == {"$ref": "#/$defs/ResolvedConfigDocument"},
     )
     check(
         "L5",
@@ -3042,6 +3106,24 @@ def main() -> int:
             "server-validation-count-min-0": lambda d: srv(d)["properties"][
                 "validation_count"
             ].__setitem__("minimum", 0),
+            "server-required-key-removed": lambda d: srv(d)["required"].remove(
+                "budget_policy_row_version"
+            ),
+            "resolved-server-not-required": lambda d: d["ResolvedConfigDocument"][
+                "required"
+            ].remove("server"),
+            "resolved-doc-open": lambda d: d["ResolvedConfigDocument"].__setitem__(
+                "additionalProperties", True
+            ),
+            "resolved-config-open": lambda d: d["ResolvedTrainingConfig"].__setitem__(
+                "additionalProperties", True
+            ),
+            "resolved-sha-not-required": lambda d: d["ResolvedTrainingConfig"]["required"].remove(
+                "config_sha256"
+            ),
+            "resolved-config-ref-request": lambda d: d["ResolvedTrainingConfig"][
+                "properties"
+            ].__setitem__("config", {"$ref": "#/$defs/TrainingConfigV1"}),
             "config-sha256-pattern-dropped": lambda d: d["ResolvedTrainingConfig"]["properties"][
                 "config_sha256"
             ].pop("pattern"),

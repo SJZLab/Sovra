@@ -325,7 +325,7 @@ def parse_training_config_request(body: object) -> TrainingConfigRequest:
     budget = _exact_keys(top["budget"], BUDGET_KEYS)
 
     # 2. Identity and envelope.
-    if top["schema_version"] != "training_config.v1" or type(top["schema_version"]) is not str:
+    if not _same(top["schema_version"], SCHEMA_VERSION):
         raise _fail("unsupported_schema_version")
     mode, rule = top["mode"], top["auto_rule_version"]
     # advanced carries no rule version; auto must name one. One lookup, so the mode is read once.
@@ -667,10 +667,10 @@ def resolve_training_config(
 ) -> ResolvedTrainingConfig:
     # A hand-built request is re-parsed, so a doc that did not come from the parser fails closed.
     try:
-        raw_doc = request.doc
-    except Exception:  # noqa: BLE001  # not a request object at all
+        thawed = _thaw(request.doc)
+    except Exception:  # noqa: BLE001  # not a request object, or a hostile/cyclic doc
         raise _fail("invalid_body") from None
-    doc = parse_training_config_request(_thaw(raw_doc)).doc
+    doc = parse_training_config_request(thawed).doc
 
     # 2. Enablement (409).
     if doc["method"] not in ENABLED_METHODS:
