@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import http.client
+import json
 import os
 import socket
 import subprocess
@@ -29,7 +30,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -322,9 +323,22 @@ def seed_tenants(owner: Engine) -> dict[str, dict[str, Any]]:
 # containing it is a leak. Kinds without a seeder are reported by
 # `unseeded_routes`, never skipped silently.
 
+QUALITY_DETECTORS = (
+    "record_schema",
+    "tool_arguments",
+    "tokenization",
+    "exact_duplicate",
+    "normalized_duplicate",
+    "near_duplicate",
+    "pii_secrets",
+)
 ORG_KINDS = ("trainable_artifact", "litellm_connection", "cost_profile", "component_binding")
 PROJECT_KINDS = (
     "dataset_source_connection",
+    "upload_session",
+    "dataset",
+    "dataset_mapping",
+    "dataset_quality_issue",
     "tool_definition",
     "model_version",
     "target_connection",
@@ -349,8 +363,10 @@ def marker_sha256(tenant: str, what: str) -> str:
     return hashlib.sha256(marker(tenant, what).encode()).hexdigest()
 
 
-def _insert(conn: Any, table: str, values: dict[str, Any]) -> uuid.UUID:
-    row_id = uuid.uuid4()
+def _insert(
+    conn: Any, table: str, values: dict[str, Any], row_id: uuid.UUID | None = None
+) -> uuid.UUID:
+    row_id = row_id or uuid.uuid4()
     cols = {"id": row_id, **values}
     names = ", ".join(f'"{c}"' for c in cols)
     params = ", ".join(f":{c}" for c in cols)
@@ -440,11 +456,133 @@ def seed_project_kind(
                 "project_id": project_id,
                 "source_type": "upload",
                 "display_name": marker(tag, "source"),
-                "allowed_purposes_json": "[]",
+                "allowed_purposes_json": '["training"]',
                 "security_classification": "internal",
                 "created_by": "seed",
             },
         )
+    if kind == "upload_session":
+        session_id = uuid.uuid4()
+        now = datetime.now(UTC)
+        digest = marker_sha256(tag, "dataset")
+        _insert(
+            conn,
+            "dataset_upload_sessions",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "dataset_source_connection_id": deps["dataset_source_connection"],
+                "purpose": "training",
+                "object_key": f"tenants/{org}/projects/{project_id}/uploads/{session_id}/source",
+                "declared_size_bytes": 10,
+                "max_bytes": 100,
+                "declared_sha256": digest,
+                "declared_content_type": "text/plain",
+                "expires_at": now + timedelta(hours=1),
+                "created_by": "seed",
+            },
+            row_id=session_id,
+        )
+        # The insert guard only admits `open` sessions; verification is an UPDATE.
+        conn.execute(
+            text(
+                "UPDATE dataset_upload_sessions SET status = 'verified', "
+                "verified_size_bytes = 10, verified_sha256 = :sha, "
+                "verified_content_type = 'text/plain', finalized_at = :now "
+                "WHERE id = :id AND organization_id = :org"
+            ),
+            {"sha": digest, "now": now, "id": session_id, "org": org},
+        )
+        return session_id
+    if kind == "dataset":
+        return _insert(
+            conn,
+            "datasets",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "name": marker(tag, "dataset"),
+                "version": 1,
+                "purpose": "training",
+                "upload_session_id": deps["upload_session"],
+                "verified_sha256": marker_sha256(tag, "dataset"),
+                "verified_size_bytes": 10,
+                "created_by": "seed",
+            },
+        )
+    if kind == "dataset_mapping":
+        return _insert(
+            conn,
+            "dataset_mappings",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "dataset_id": deps["dataset"],
+                "dataset_name": marker(tag, "dataset"),
+                "dataset_purpose": "training",
+                "dataset_version": 1,
+                "dataset_sha256": marker_sha256(tag, "dataset"),
+                "dataset_source_connection_id": deps["dataset_source_connection"],
+                "mapping_version": 1,
+                "mapping_document": "{}",
+                "mapping_sha256": marker_sha256(tag, "mapsha"),
+                "importer": "jsonl",
+                "importer_version": "v1",
+                "transform_version": "v1",
+                "tool_definitions_sha256": marker_sha256(tag, "toolsha"),
+                "preview_sha256": marker_sha256(tag, "previewsha"),
+                "preview_counts": '{"seen": 1, "accepted": 1, "rejected": 0}',
+                "allowed_purposes_snapshot": ["training"],
+                "created_by": "seed",
+            },
+        )
+    if kind == "dataset_quality_issue":
+        dataset_sha = marker_sha256(tag, "dataset")
+        report_id = _insert(
+            conn,
+            "dataset_quality_reports",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "dataset_id": deps["dataset"],
+                "dataset_name": marker(tag, "dataset"),
+                "dataset_purpose": "training",
+                "dataset_version": 1,
+                "dataset_sha256": dataset_sha,
+                "report_seq": 1,
+                "report_sha256": marker_sha256(tag, "reportsha"),
+                "detector_versions": json.dumps(dict.fromkeys(QUALITY_DETECTORS, "v1")),
+                "detectors_reported": ["record_schema"],
+                "issue_count": 1,
+                "blocking_count": 0,
+                "warning_count": 1,
+                "created_by": "seed",
+            },
+        )
+        issue_hex = marker_sha256(tag, "issue")
+        _insert(
+            conn,
+            "dataset_quality_issues",
+            {
+                "organization_id": org,
+                "report_id": report_id,
+                "dataset_sha256": dataset_sha,
+                "issue_id": issue_hex,
+                "detector": "record_schema",
+                "category": "record_schema",
+                "severity": "warning",
+                "reason_code": "bad_field",
+                "message_sha256": marker_sha256(tag, "messagesha"),
+                "batch_positions": [],
+                "record_indices": [],
+                "is_detector_failure": False,
+                "has_positions": False,
+                "evidence_sha256": hashlib.sha256(
+                    f"{issue_hex}:{dataset_sha}".encode()
+                ).hexdigest(),
+            },
+        )
+        return issue_hex  # type: ignore[return-value]  # the route slot is the hex issue id
     if kind == "tool_definition":
         return _insert(
             conn,
@@ -713,10 +851,19 @@ def run_live_matrix(
     markers += [marker("bravo-p2", w) for w in ("source", "tool", "hash")]
     new_words = (
         *("commit", "tree", "candkey", "candidate", "fieldpath"),
-        *("suite", "casekey", "group", "split"),
+        *("suite", "casekey", "group", "split", "dataset"),
     )
     markers += [marker(t, w) for t in ("bravo", "bravo-p2") for w in new_words]
-    sha_words = ("splitsha", "proposal", "leaksha")
+    sha_words: tuple[str, ...] = (
+        "splitsha",
+        "proposal",
+        "leaksha",
+        "dataset",
+        "mapsha",
+        "toolsha",
+        "previewsha",
+    )
+    sha_words += ("reportsha", "issue", "messagesha")
     markers += [marker_sha256(t, w) for t in ("bravo", "bravo-p2") for w in sha_words]
     forbidden = _all_ids(bravo)
     verdicts: list[CellVerdict] = []
