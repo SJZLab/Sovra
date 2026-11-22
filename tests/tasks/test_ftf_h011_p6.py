@@ -36,6 +36,7 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 import test_ftf_0505 as t505  # noqa: E402  (the FTF-0505 workbook builders)
 import workers.data.dataset_mapping_review as rev  # noqa: E402
 from workers.data import import_common as ic  # noqa: E402
+from workers.data import ooxml_safety as ox  # noqa: E402
 from workers.data import xlsx_importer as xi  # noqa: E402
 
 FAILURES: list[str] = []
@@ -509,6 +510,413 @@ def test_unrecognised_sheet_state_is_kept_exact_and_flagged_hidden() -> None:
         "a state that is not exactly `visible` is kept verbatim and flagged hidden",
         [(s["state"], s["hidden"]) for s in result.sheets]
         == [("visible", False), ("Visible", True)],
+    )
+
+
+# --- PKG: every package-level refusal, pinned with its exact code -------------------------
+
+
+def _members(data: bytes) -> list[tuple[str, bytes]]:
+    return t505.members_of(data)
+
+
+def _swap(data: bytes, name: str, payload: bytes) -> bytes:
+    return t505.with_member(data, name, payload)
+
+
+def _wb_xml(inner: str, *, root: str = "workbook", ns: str = t505.MAIN) -> bytes:
+    return (f'{t505.XML_HEAD}<{root} xmlns="{ns}" xmlns:r="{t505.REL}">{inner}</{root}>').encode()
+
+
+def _package_cases() -> list[tuple[str, bytes, str]]:
+    rel = t505.REL
+    ole = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 600
+    ext = (
+        f'<Relationship Id="rIdX" Type="{rel}/hyperlink" Target="http://h/x"'
+        ' TargetMode="{mode}"/>'
+    )
+    vba = "http://schemas.microsoft.com/office/2006/relationships/vbaProject"
+    one = '<sheet name="Data" sheetId="1" r:id="rId1"/>'
+    cases: list[tuple[str, bytes, str]] = [
+        ("an OLE compound file", ole, "unsupported_workbook"),
+        ("not a zip at all", b"hello, not a workbook" * 40, "unsupported_workbook"),
+        ("a zip with no workbook", t505.t501._zip([("a.txt", b"hello")]), "unsupported_workbook"),
+        (
+            "no [Content_Types].xml",
+            t505.book(drop=("[Content_Types].xml",)),
+            "unsupported_workbook",
+        ),
+        (
+            "a template main type",
+            t505.book(workbook_type=t505.TEMPLATE_TYPE),
+            "unsupported_workbook",
+        ),
+        ("path traversal part", t505.with_extra(GOOD, ("../evil.xml", b"x")), "unsafe_archive"),
+        ("an absolute part", t505.with_extra(GOOD, ("/abs.xml", b"x")), "unsafe_archive"),
+        (
+            "a macro part name",
+            t505.with_extra(GOOD, ("xl/vbaProject.bin", b"x")),
+            "unsafe_workbook",
+        ),
+        (
+            "a macro part name in mixed case",
+            t505.with_extra(GOOD, ("XL/VbaProject.BIN", b"x")),
+            "unsafe_workbook",
+        ),
+        (
+            "an externalLinks part",
+            t505.with_extra(GOOD, ("xl/externalLinks/externalLink1.xml", b"<x/>")),
+            "external_link_present",
+        ),
+        (
+            "an externalLinks part in mixed case",
+            t505.with_extra(GOOD, ("XL/ExternalLinks/e.xml", b"<x/>")),
+            "external_link_present",
+        ),
+        (
+            "a queryTables part",
+            t505.with_extra(GOOD, ("xl/queryTables/q1.xml", b"<x/>")),
+            "external_link_present",
+        ),
+        ("a macro-enabled main type", t505.book(workbook_type=t505.MACRO_TYPE), "unsafe_workbook"),
+        (
+            "a declared vbaProject type in any case",
+            t505.book(
+                ct_extra=(
+                    '<Override PartName="/xl/b.bin"'
+                    ' ContentType="application/vnd.ms-office.VBAPROJECT"/>'
+                )
+            ),
+            "unsafe_workbook",
+        ),
+        (
+            "a declared macro-enabled type in any case",
+            t505.book(
+                ct_extra=(
+                    '<Override PartName="/xl/b.xml"'
+                    ' ContentType="application/x.MacroEnabled.main+xml"/>'
+                )
+            ),
+            "unsafe_workbook",
+        ),
+        (
+            "a vbaProject relationship type",
+            t505.book(rel_extra=f'<Relationship Id="v" Type="{rel}/vbaProject" Target="v.bin"/>'),
+            "unsafe_workbook",
+        ),
+        (
+            "Excel's own vbaProject relationship type",
+            t505.book(rel_extra=f'<Relationship Id="v" Type="{vba}" Target="v.bin"/>'),
+            "unsafe_workbook",
+        ),
+        (
+            "an external relationship",
+            t505.book(rel_extra=ext.format(mode="External")),
+            "external_link_present",
+        ),
+        (
+            "an external relationship, other case",
+            t505.book(rel_extra=ext.format(mode="EXTERNAL")),
+            "external_link_present",
+        ),
+        (
+            "an external relationship, padded",
+            t505.book(rel_extra=ext.format(mode=" External ")),
+            "external_link_present",
+        ),
+        (
+            "an external relationship in a part rels file",
+            t505.with_extra(
+                GOOD,
+                (
+                    "xl/worksheets/_rels/sheet1.xml.rels",
+                    (
+                        f'{t505.XML_HEAD}<Relationships xmlns="{t505.PKG}">'
+                        f'{ext.format(mode="External")}</Relationships>'
+                    ).encode(),
+                ),
+            ),
+            "external_link_present",
+        ),
+        (
+            "two sheets with one name",
+            t505.book(extra_sheets=[("Data", "rId2", None)]),
+            "duplicate_sheet_name",
+        ),
+        (
+            "two sheets differing only in case",
+            t505.book(extra_sheets=[("DATA", "rId2", None)]),
+            "duplicate_sheet_name",
+        ),
+        (
+            "two names that only casefold equates",
+            t505.book(sheet="Stra\u00dfe", extra_sheets=[("STRASSE", "rId2", None)]),
+            "duplicate_sheet_name",
+        ),
+        (
+            "no workbook relationships",
+            t505.book(drop=("xl/_rels/workbook.xml.rels",)),
+            "xlsx_malformed",
+        ),
+        (
+            "a sheet without a name",
+            _swap(
+                GOOD,
+                "xl/workbook.xml",
+                _wb_xml('<sheets><sheet sheetId="1" r:id="rId1"/></sheets>'),
+            ),
+            "xlsx_malformed",
+        ),
+        (
+            "a sheet without a relationship id",
+            _swap(
+                GOOD,
+                "xl/workbook.xml",
+                _wb_xml('<sheets><sheet name="Data" sheetId="1"/></sheets>'),
+            ),
+            "xlsx_malformed",
+        ),
+        (
+            "a root that is not a workbook",
+            _swap(GOOD, "xl/workbook.xml", _wb_xml(one, root="worksheet")),
+            "xlsx_malformed",
+        ),
+        (
+            "a root spelled Workbook",
+            _swap(GOOD, "xl/workbook.xml", _wb_xml(f"<sheets>{one}</sheets>", root="Workbook")),
+            "xlsx_malformed",
+        ),
+        (
+            "an xl/connections.xml part",
+            t505.with_extra(GOOD, ("xl/connections.xml", b"<x/>")),
+            "external_link_present",
+        ),
+        ("an OLE head over a valid zip", ole + GOOD, "unsupported_workbook"),
+        ("junk before a valid zip", b"JUNK" + GOOD, "unsupported_workbook"),
+        ("a zip head with no end record", b"PK\x03\x04" + b"\x00" * 400, "unsupported_workbook"),
+        (
+            "a corrupt central directory",
+            GOOD.replace(b"PK\x01\x02", b"PK\x01\x00", 1),
+            "unsupported_workbook",
+        ),
+        (
+            "a 'version needed to extract' past 63",
+            t505.version_needed_past_63(GOOD),
+            "xlsx_malformed",
+        ),
+        (
+            "an end record claiming more than the entry bound",
+            GOOD + t505.t501._zip64_tail(ox.MAX_ENTRIES + 1, 100, 0),
+            "unsafe_archive",
+        ),
+        (
+            "an end record claiming a directory over the byte bound",
+            GOOD + t505.t501._zip64_tail(5, ox.MAX_DIRECTORY_BYTES + 1, 0),
+            "unsafe_archive",
+        ),
+        (
+            "a part whose name only casefold maps onto a link prefix",
+            t505.with_extra(GOOD, ("xl/externalLink\u017f/e.xml", b"<x/>")),
+            "external_link_present",
+        ),
+        (
+            "a strict-namespace workbook",
+            _swap(GOOD, "xl/workbook.xml", _wb_xml(f"<sheets>{one}</sheets>", ns=t505.STRICT)),
+            "unsupported_workbook",
+        ),
+    ]
+    return cases
+
+
+def test_every_package_refusal_has_its_exact_code_in_the_listing_and_the_importer() -> None:
+    for label, data, code in _package_cases():
+        listed = xi.list_worksheets(
+            reader_for(data), verified_content_type=XLSX, dataset_sha256=sha(data)
+        )
+        check(
+            "PKG-1",
+            f"{label}: list_worksheets is failed/{code}, no sheets "
+            f"(got {listed.state}/{listed.failure_code})",
+            listed.state == "failed" and listed.failure_code == code and listed.sheets == (),
+        )
+        outcome = t505.run(data)[1]
+        check(
+            "PKG-2", f"{label}: the importer refuses with {code}", t505.failed_with(outcome, code)
+        )
+
+
+def test_the_sheet_relationship_table_is_pinned_for_the_importer() -> None:
+    rel = t505.REL
+    for label, data, code in (
+        (
+            "a relationship of another type",
+            t505.book(sheet_type="chartsheet"),
+            "unsupported_workbook",
+        ),
+        (
+            "a sheet whose relationship id has no relationship",
+            t505.book(
+                replace={"xl/workbook.xml": t505.workbook_xml([("Data", "rIdNone", None)]).encode()}
+            ),
+            "xlsx_malformed",
+        ),
+        (
+            "a worksheet relationship with no Target",
+            t505.book(
+                replace={
+                    "xl/_rels/workbook.xml.rels": (
+                        f'{t505.XML_HEAD}<Relationships xmlns="{t505.PKG}">'
+                        f'<Relationship Id="rId1" Type="{rel}/worksheet"/></Relationships>'
+                    ).encode()
+                }
+            ),
+            "xlsx_malformed",
+        ),
+        (
+            "a sheet part that is not in the package",
+            t505.book(sheet_target="worksheets/nothere.xml"),
+            "xlsx_malformed",
+        ),
+        (
+            "a sharedStrings relationship whose part is missing",
+            t505.book(drop=("xl/sharedStrings.xml",)),
+            "xlsx_malformed",
+        ),
+    ):
+        check("PKG-3", f"{label}: {code}", t505.failed_with(t505.run(data)[1], code))
+    # a missing sheet name is the importer's own typed failure, not a package refusal
+    _e, outcome = t505.run(t505.book(sheet="Other"))
+    check(
+        "PKG-4",
+        "an absent mapped sheet is mapping_column_missing",
+        t505.failed_with(outcome, "mapping_column_missing"),
+    )
+    # part names are matched by casefold both ways: a name casefold equates is found
+    for label, data in (
+        (
+            "sheet part",
+            t505.book(
+                sheet_target="worksheets/stra\u00dfe.xml",
+                replace={},
+                extra=[],
+            ),
+        ),
+    ):
+        members = [
+            (("xl/worksheets/STRASSE.xml" if n == "xl/worksheets/sheet1.xml" else n), d)
+            for n, d in _members(data)
+        ]
+        found = t505.zip_bytes(members)
+        events, outcome = t505.run(found)
+        check(
+            "PKG-5",
+            f"{label}: a casefold-equal part name is followed",
+            len(t505.accepted(events)) == 1,
+        )
+    shared_members = [
+        (("xl/STRASSE.xml" if n == "xl/sharedStrings.xml" else n), d) for n, d in _members(GOOD)
+    ]
+    shared = t505.zip_bytes(shared_members)
+    shared = _swap(
+        shared,
+        "xl/_rels/workbook.xml.rels",
+        t505.workbook_rels(extra="").replace("sharedStrings.xml", "stra\u00dfe.xml").encode(),
+    )
+    events, outcome = t505.run(shared)
+    check(
+        "PKG-6",
+        "sharedStrings part: a casefold-equal part name is followed (its strings are read)",
+        len(t505.accepted(events)) == 2 and t505.texts(t505.accepted(events)[0]) == ["hi", "there"],
+    )
+
+
+def test_an_unreadable_source_is_a_visible_blocked_listing() -> None:
+    def broken() -> Iterator[bytes]:
+        yield GOOD[:10]
+        raise OSError("storage gone")
+
+    reader = ic.ChunkReader(
+        broken(), expected_size=len(GOOD), expected_sha256=sha(GOOD), limits=rev.PREVIEW_LIMITS
+    )
+    listed = xi.list_worksheets(reader, verified_content_type=XLSX, dataset_sha256=sha(GOOD))
+    check(
+        "PKG-7",
+        "an unreadable source is blocked/source_unavailable with no sheets "
+        f"(got {listed.state}/{listed.failure_code})",
+        listed.state == "blocked"
+        and listed.failure_code == "source_unavailable"
+        and listed.sheets == (),
+    )
+
+
+def test_the_archive_bounds_are_exact_for_the_listing() -> None:
+    at_entries = GOOD + t505.t501._zip64_tail(ox.MAX_ENTRIES, 100, 0)
+    at_bytes = GOOD + t505.t501._zip64_tail(5, ox.MAX_DIRECTORY_BYTES, 0)
+    for label, data in (("10,000 claimed entries", at_entries), ("a 4 MiB directory", at_bytes)):
+        listed = xi.list_worksheets(
+            reader_for(data), verified_content_type=XLSX, dataset_sha256=sha(data)
+        )
+        check(
+            "PKG-8",
+            f"{label} is not refused by the bound (got {listed.state}/{listed.failure_code})",
+            listed.failure_code != "unsafe_archive",
+        )
+
+
+def test_padded_part_targets_are_not_silently_trimmed() -> None:
+    for label, target in (
+        ("a trailing space", "worksheets/sheet1.xml "),
+        ("a leading space", " worksheets/sheet1.xml"),
+    ):
+        data = t505.book(sheet_target=target)
+        check(
+            "PKG-9",
+            f"a sheet target with {label} is not a found part: xlsx_malformed",
+            t505.failed_with(t505.run(data)[1], "xlsx_malformed"),
+        )
+    shared = t505.workbook_rels().replace("sharedStrings.xml", "sharedStrings.xml ")
+    data = t505.book(replace={"xl/_rels/workbook.xml.rels": shared.encode()})
+    check(
+        "PKG-10",
+        "a sharedStrings target with a trailing space is not a found part: xlsx_malformed",
+        t505.failed_with(t505.run(data)[1], "xlsx_malformed"),
+    )
+    padded = t505.with_extra(GOOD, (" xl/externalLinks/e.xml", b"<x/>"))
+    listed = xi.list_worksheets(
+        reader_for(padded), verified_content_type=XLSX, dataset_sha256=sha(padded)
+    )
+    check(
+        "PKG-11",
+        "a part name with a leading space is not an externalLinks part "
+        f"(got {listed.failure_code})",
+        listed.failure_code != "external_link_present",
+    )
+    for name in (" xl/connections.xml", "xl/connections.xml "):
+        padded = t505.with_extra(GOOD, (name, b"<x/>"))
+        listed = xi.list_worksheets(
+            reader_for(padded), verified_content_type=XLSX, dataset_sha256=sha(padded)
+        )
+        check(
+            "PKG-13",
+            f"the part {name!r} is not xl/connections.xml (got {listed.failure_code})",
+            listed.failure_code != "external_link_present",
+        )
+
+
+def test_a_reader_that_fails_with_an_os_error_is_a_blocked_listing() -> None:
+    class Broken(ic.ChunkReader):
+        def __iter__(self) -> Iterator[bytes]:  # type: ignore[override]
+            raise OSError("storage gone")
+
+    reader = Broken(
+        [GOOD], expected_size=len(GOOD), expected_sha256=sha(GOOD), limits=rev.PREVIEW_LIMITS
+    )
+    listed = xi.list_worksheets(reader, verified_content_type=XLSX, dataset_sha256=sha(GOOD))
+    check(
+        "PKG-12",
+        "an OSError from the reader is blocked/source_unavailable "
+        f"(got {listed.state}/{listed.failure_code})",
+        listed.state == "blocked" and listed.failure_code == "source_unavailable",
     )
 
 
