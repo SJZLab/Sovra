@@ -328,11 +328,25 @@ PROJECT_KINDS = (
     "tool_definition",
     "model_version",
     "target_connection",
+    "target_source_snapshot",
+    "discovered_agent_candidate",
+    "agent_manifest",
+    "manifest_evidence",
+    "evaluation_suite",
+    "evaluation_case",
+    "dataset_split_manifest",
 )
 
 
 def marker(tenant: str, what: str) -> str:
     return f"MARK-{tenant}-{what}-{uuid.uuid5(uuid.NAMESPACE_URL, tenant + what).hex[:10]}"
+
+
+def marker_sha256(tenant: str, what: str) -> str:
+    """A well-formed, deterministic sha256 hex digest per (tenant, what), for
+    columns whose CHECK demands `^[0-9a-f]{64}$`; the digest itself is the
+    leak marker (`marker_sha256` is scanned for in foreign responses)."""
+    return hashlib.sha256(marker(tenant, what).encode()).hexdigest()
 
 
 def _insert(conn: Any, table: str, values: dict[str, Any]) -> uuid.UUID:
@@ -405,9 +419,18 @@ def seed_org_kind(conn: Any, kind: str, tenant: dict[str, Any], tag: str) -> uui
 
 
 def seed_project_kind(
-    conn: Any, kind: str, tenant: dict[str, Any], project_id: Any, tag: str
+    conn: Any,
+    kind: str,
+    tenant: dict[str, Any],
+    project_id: Any,
+    tag: str,
+    deps: dict[str, Any] | None = None,
 ) -> uuid.UUID:
+    """`deps` holds the ids already seeded for THIS project (kinds are seeded
+    in `PROJECT_KINDS` order), so a child row always hangs off its own
+    project's parent, never the other project's."""
     org = tenant["organization_id"]
+    deps = deps or {}
     if kind == "dataset_source_connection":
         return _insert(
             conn,
@@ -465,6 +488,109 @@ def seed_project_kind(
                 "created_by": "seed",
             },
         )
+    if kind == "target_source_snapshot":
+        return _insert(
+            conn,
+            "target_source_snapshots",
+            {
+                "organization_id": org,
+                "target_application_connection_id": deps["target_connection"],
+                "commit_sha": marker(tag, "commit"),
+                "tree_hash": marker(tag, "tree"),
+                "capture_method": "github_resolved_commit",
+            },
+        )
+    if kind == "discovered_agent_candidate":
+        return _insert(
+            conn,
+            "discovered_agent_candidates",
+            {
+                "organization_id": org,
+                "target_source_snapshot_id": deps["target_source_snapshot"],
+                "candidate_key": marker(tag, "candkey"),
+                "display_name": marker(tag, "candidate"),
+                "confidence_score": 0.5,
+            },
+        )
+    if kind == "agent_manifest":
+        return _insert(
+            conn,
+            "agent_manifests",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "target_source_snapshot_id": deps["target_source_snapshot"],
+                "version": 1,
+                "created_by": "seed",
+            },
+        )
+    if kind == "manifest_evidence":
+        return _insert(
+            conn,
+            "manifest_evidence",
+            {
+                "organization_id": org,
+                "agent_manifest_id": deps["agent_manifest"],
+                "field_path": marker(tag, "fieldpath"),
+                "evidence_type": "user_input",
+                "evidence_json": "{}",
+            },
+        )
+    if kind == "evaluation_suite":
+        return _insert(
+            conn,
+            "evaluation_suites",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "agent_manifest_id": deps["agent_manifest"],
+                "version": 1,
+                "purpose": "development",
+                "name": marker(tag, "suite"),
+                "grading_logic_version": 1,
+                "created_by": "seed",
+            },
+        )
+    if kind == "evaluation_case":
+        return _insert(
+            conn,
+            "evaluation_cases",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "suite_id": deps["evaluation_suite"],
+                "case_key": marker(tag, "casekey"),
+                "category": "general",
+                "severity": "low",
+                "language": "en",
+                "group_key": marker(tag, "group"),
+                "input_json": "{}",
+                "expected_json": '{"answer": "ok"}',
+                "grader_type": "exact_match",
+                "created_by": "seed",
+            },
+        )
+    if kind == "dataset_split_manifest":
+        return _insert(
+            conn,
+            "dataset_split_manifests",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "name": marker(tag, "split"),
+                "version": 1,
+                "strategy": "sha256_group_hash_v1",
+                "seed": "1",
+                "ratios": [70, 10, 10, 10],
+                "normalization_version": "v1",
+                "split_manifest_sha256": marker_sha256(tag, "splitsha"),
+                "proposal_sha256": marker_sha256(tag, "proposal"),
+                "leakage_report": "{}",
+                "leakage_report_sha256": marker_sha256(tag, "leaksha"),
+                "leakage_status": "clear",
+                "created_by": "seed",
+            },
+        )
     raise IdorSuiteError(f"no project-level seeder for kind {kind!r}")
 
 
@@ -503,17 +629,6 @@ def seed_project_extras(
             "created_by": "seed",
         },
     )
-    _insert(
-        conn,
-        "target_source_snapshots",
-        {
-            "organization_id": org,
-            "target_application_connection_id": ids["target_connection"],
-            "commit_sha": uuid.uuid4().hex,
-            "tree_hash": uuid.uuid4().hex,
-            "capture_method": "github_resolved_commit",
-        },
-    )
 
 
 def seed_kinds(owner: Engine, tenants: dict[str, dict[str, Any]]) -> None:
@@ -527,9 +642,9 @@ def seed_kinds(owner: Engine, tenants: dict[str, dict[str, Any]]) -> None:
                 ids[kind] = seed_org_kind(conn, kind, tenant, name)
             second: dict[str, Any] = {}
             for kind in PROJECT_KINDS:
-                ids[kind] = seed_project_kind(conn, kind, tenant, tenant["project_id"], name)
+                ids[kind] = seed_project_kind(conn, kind, tenant, tenant["project_id"], name, ids)
                 second[kind] = seed_project_kind(
-                    conn, kind, tenant, tenant["project2_id"], name + "-p2"
+                    conn, kind, tenant, tenant["project2_id"], name + "-p2", second
                 )
             tenant["ids"] = ids
             tenant["ids_project2"] = second
@@ -596,6 +711,13 @@ def run_live_matrix(
     markers = [marker("bravo", w) for w in ("artifact", "uri", "gateway", "secretref", "cost")]
     markers += [marker("bravo", w) for w in ("netpol", "source", "tool", "hash")]
     markers += [marker("bravo-p2", w) for w in ("source", "tool", "hash")]
+    new_words = (
+        *("commit", "tree", "candkey", "candidate", "fieldpath"),
+        *("suite", "casekey", "group", "split"),
+    )
+    markers += [marker(t, w) for t in ("bravo", "bravo-p2") for w in new_words]
+    sha_words = ("splitsha", "proposal", "leaksha")
+    markers += [marker_sha256(t, w) for t in ("bravo", "bravo-p2") for w in sha_words]
     forbidden = _all_ids(bravo)
     verdicts: list[CellVerdict] = []
     for (method, template), spec in ROUTE_REGISTRY.items():
