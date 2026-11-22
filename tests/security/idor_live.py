@@ -349,6 +349,7 @@ PROJECT_KINDS = (
     "evaluation_suite",
     "evaluation_case",
     "dataset_split_manifest",
+    "model_import_job",
 )
 
 
@@ -729,6 +730,18 @@ def seed_project_kind(
                 "created_by": "seed",
             },
         )
+    if kind == "model_import_job":
+        return _insert(
+            conn,
+            "model_import_jobs",
+            {
+                "organization_id": org,
+                "project_id": project_id,
+                "requested_origin": "imported_weights",
+                "state": "queued",
+                "created_by": marker(tag, "importjob"),
+            },
+        )
     raise IdorSuiteError(f"no project-level seeder for kind {kind!r}")
 
 
@@ -855,6 +868,7 @@ def run_live_matrix(
     new_words = (
         *("commit", "tree", "candkey", "candidate", "fieldpath"),
         *("suite", "casekey", "group", "split", "dataset"),
+        "importjob",
     )
     markers += [marker(t, w) for t in ("bravo", "bravo-p2") for w in new_words]
     sha_words: tuple[str, ...] = (
