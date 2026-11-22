@@ -920,6 +920,39 @@ def test_a_reader_that_fails_with_an_os_error_is_a_blocked_listing() -> None:
     )
 
 
+def test_listing_guards_are_pinned_against_type_padding_and_name_trimming() -> None:
+    for label, bad in (("None", None), ("bytes", sha(GOOD).encode()), ("63 chars", sha(GOOD)[:63])):
+        listed = xi.list_worksheets(
+            reader_for(GOOD),
+            verified_content_type=XLSX,
+            dataset_sha256=bad,  # type: ignore[arg-type]
+        )
+        check(
+            "PIN-1",
+            f"dataset_sha256 {label} is failed/source_changed, never an exception",
+            listed.state == "failed" and listed.failure_code == "source_changed",
+        )
+    padded = t505.book(sheet=" Data ")
+    listed = xi.list_worksheets(
+        reader_for(padded), verified_content_type=XLSX, dataset_sha256=sha(padded)
+    )
+    check(
+        "PIN-2",
+        "a sheet name with padding is listed exactly as stored",
+        [s.name for s in listed.sheets] == [" Data "],
+    )
+    for state in ("visible ", " hidden"):
+        data = t505.book(state=state)
+        listed = xi.list_worksheets(
+            reader_for(data), verified_content_type=XLSX, dataset_sha256=sha(data)
+        )
+        check(
+            "PIN-3",
+            f"sheet state {state!r} is kept verbatim and flagged hidden",
+            [(s.state, s.hidden) for s in listed.sheets] == [(state, True)],
+        )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
