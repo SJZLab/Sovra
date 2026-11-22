@@ -802,7 +802,10 @@ def unseeded_routes() -> list[tuple[str, str]]:
     out = []
     for (method, template), spec in ROUTE_REGISTRY.items():
         kinds = {slot.kind for slot in spec.path_slots}
-        if method != "GET" or spec.destructive or not kinds <= SEEDED_KINDS or spec.query_slots:
+        # A cursor query slot resolves no row (compared by value) and is optional, so the
+        # runner omits it; any other query slot names a row and still needs a driver.
+        row_query = [q for q in spec.query_slots if not q.cursor]
+        if method != "GET" or spec.destructive or not kinds <= SEEDED_KINDS or row_query:
             out.append((method, template))
     return out
 
