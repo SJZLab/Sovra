@@ -372,7 +372,7 @@ def test_worksheet_probe_refuses_unsafe_and_unreadable_sources() -> None:
     check(
         "SHEET-10",
         "a storage outage is a visible non-completed state, never an exception",
-        result.state in ("blocked", "failed") and result.failure_code is not None,
+        result.state == "blocked" and result.failure_code == "source_unavailable",
     )
     dup = t505.book(extra_sheets=[("data", "rId2", None)])
     result = sheets(dup)
@@ -411,7 +411,14 @@ def test_registry_is_complete_for_xlsx() -> None:
 
 
 def test_list_worksheets_own_content_type_gate() -> None:
-    for ct in ("text/csv", "", "application/vnd.ms-excel"):
+    for ct in (
+        "text/csv",
+        "",
+        "application/vnd.ms-excel",
+        XLSX.upper(),
+        f" {XLSX}",
+        f"{XLSX} ",
+    ):
         result = xi.list_worksheets(
             reader_for(GOOD), verified_content_type=ct, dataset_sha256=sha(GOOD)
         )
@@ -447,6 +454,61 @@ def test_truncated_preview_closes_the_stream() -> None:
         "CLOSE-1",
         "a truncated preview and a truncated probe each close the XLSX stream",
         result.complete is False and probed.complete is False and len(closed) == 2,
+    )
+
+
+def test_content_type_routing_is_exact() -> None:
+    import app.datasets.dataset_mapping_store as store
+
+    def refused(value: object) -> bool:
+        try:
+            store.importer_for_content_type(value)
+        except store.MappingStoreError as exc:
+            return str(exc) == "importer_unavailable"
+        return False
+
+    exact = {
+        "application/json": "json",
+        "text/csv": "csv",
+        XLSX: "xlsx",
+        **{ct: "jsonl" for ct in store.JSONL_PREVIEW_CONTENT_TYPES},
+    }
+    for ct, name in exact.items():
+        check("ROUTE-1", f"{ct!r} selects {name}", store.importer_for_content_type(ct) == name)
+        for variant in (ct.upper(), f" {ct}", f"{ct} ", ct.title()):
+            if variant in exact:
+                continue
+            check("ROUTE-2", f"{variant!r} is refused (exact match only)", refused(variant))
+    for value in (None, 7, b"text/csv", ("text/csv",), type("S", (str,), {})(XLSX), ""):
+        check("ROUTE-3", f"non-exact-str {value!r} is refused", refused(value))
+    check("ROUTE-4", "an unknown type is refused", refused("application/pdf"))
+
+
+def test_worksheet_probe_content_type_is_exact() -> None:
+    for ct in (XLSX.upper(), f" {XLSX}", f"{XLSX} ", XLSX.title(), "text/csv", ""):
+        try:
+            sheets(GOOD, content_type=ct)
+        except rev.MappingPreviewUnavailableError:
+            ok = True
+        else:
+            ok = False
+        check("SHEET-14", f"run_worksheet_probe({ct!r}) is unavailable", ok)
+
+
+def test_unrecognised_sheet_state_is_kept_exact_and_flagged_hidden() -> None:
+    # `hidden` is True for anything but the exact string `visible`; the state is never folded.
+    data = t505.book(
+        extra_sheets=[("Odd", "rId2", "Visible")],
+        rel_extra=(
+            f'<Relationship Id="rId2" Type="{t505.REL}/worksheet" Target="worksheets/sheet1.xml"/>'
+        ),
+    )
+    result = sheets(data)
+    check(
+        "SHEET-15",
+        "a state that is not exactly `visible` is kept verbatim and flagged hidden",
+        [(s["state"], s["hidden"]) for s in result.sheets]
+        == [("visible", False), ("Visible", True)],
     )
 
 
