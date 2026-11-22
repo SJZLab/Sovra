@@ -590,7 +590,7 @@ def _same(left: object, right: object) -> bool:
 def _decimal_ok(value: object) -> bool:
     # Bounded to the request decimal shape (<= 40 integer and 40 fraction digits), so the exact
     # budget sum below always fits the 200-digit context and is never silently rounded.
-    if type(value) is not Decimal or not value.is_finite() or value < 0:
+    if type(value) is not Decimal or value < 0:  # NaN raises here and is coded by validate_facts
         return False
     exponent = value.as_tuple().exponent
     return type(exponent) is int and exponent >= -40 and value.adjusted() < 40
@@ -599,7 +599,7 @@ def _decimal_ok(value: object) -> bool:
 def validate_facts(facts: TrainingConfigFacts) -> None:
     try:
         _validate_facts(facts)
-    except AttributeError:  # a facts object with a field removed is malformed, not a crash
+    except Exception:  # noqa: BLE001  # any malformed facts object (removed field, hostile subclass) is coded
         raise _fail("invalid_facts") from None
 
 
@@ -666,7 +666,11 @@ def resolve_training_config(
     request: TrainingConfigRequest, facts: TrainingConfigFacts
 ) -> ResolvedTrainingConfig:
     # A hand-built request is re-parsed, so a doc that did not come from the parser fails closed.
-    doc = parse_training_config_request(_thaw(request.doc)).doc
+    try:
+        raw_doc = request.doc
+    except Exception:  # noqa: BLE001  # not a request object at all
+        raise _fail("invalid_body") from None
+    doc = parse_training_config_request(_thaw(raw_doc)).doc
 
     # 2. Enablement (409).
     if doc["method"] not in ENABLED_METHODS:

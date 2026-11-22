@@ -20,6 +20,7 @@ Groups (criterion ids):
 from __future__ import annotations
 
 import copy
+import dataclasses
 import importlib.util
 import json
 import os
@@ -2033,7 +2034,16 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     ("decimal-isinstance", "type(value) is not Decimal or", "not isinstance(value, Decimal) or"),
     ("re-match-not-fullmatch", "pattern.fullmatch(value)", "pattern.match(value)"),
-    ("attribute-error-uncoded", "    except AttributeError:", "    except KeyError:"),
+    (
+        "attribute-error-uncoded",
+        "    except Exception:  # noqa: BLE001  # any malformed facts",
+        "    except KeyError:  # noqa: BLE001  # any malformed facts",
+    ),
+    (
+        "request-doc-uncoded",
+        "        raw_doc = request.doc\n    except Exception:",
+        "        raw_doc = request.doc\n    except KeyError:",
+    ),
     ("validate_facts-removed", "    validate_facts(facts)\n    art, split", "    art, split"),
     (
         "facts-reserved-le-total-dropped",
@@ -2041,14 +2051,9 @@ FAULTS: list[tuple[str, str, str]] = [
         "",
     ),
     (
-        "facts-decimal-finite-dropped",
-        "not value.is_finite() or value < 0:",
-        "value < 0:",
-    ),
-    (
         "facts-decimal-nonneg-dropped",
-        "not value.is_finite() or value < 0:",
-        "not value.is_finite():",
+        "type(value) is not Decimal or value < 0:",
+        "type(value) is not Decimal:",
     ),
     ("facts-scopes-tuple-dropped", "            and type(budget.scopes) is tuple\n", ""),
     (
@@ -2810,6 +2815,68 @@ def facts_validation_suite(m: Any) -> None:
     )
     check("K7", "invalid_facts is a 409", m.ERROR_CODES["invalid_facts"] == 409)
 
+    # r3 review findings 1 and 3: a hostile facts subclass or a request with no .doc is coded.
+    class _BoomSplit(m.SplitFacts):  # type: ignore[misc,name-defined]
+        def __getattribute__(self, name: str) -> Any:
+            if name == "train_count":
+                raise RuntimeError("boom")
+            return super().__getattribute__(name)
+
+    class _BoomBudget(m.BudgetFacts):  # type: ignore[misc,name-defined]
+        def __getattribute__(self, name: str) -> Any:
+            if name == "total":
+                raise TypeError("boom")
+            return super().__getattribute__(name)
+
+    base_facts = make_facts(m)
+    check(
+        "K9",
+        "raising SplitFacts subclass is invalid_facts",
+        code_of(
+            m,
+            lambda: m.resolve_training_config(
+                m.parse_training_config_request(valid_body()),
+                make_facts(
+                    m,
+                    split=_BoomSplit(
+                        **{
+                            f.name: getattr(base_facts.split, f.name)
+                            for f in dataclasses.fields(base_facts.split)
+                        }
+                    ),
+                ),
+            ),
+        )
+        == "invalid_facts",
+    )
+    check(
+        "K9",
+        "raising BudgetFacts subclass is invalid_facts",
+        code_of(
+            m,
+            lambda: m.resolve_training_config(
+                m.parse_training_config_request(valid_body()),
+                make_facts(
+                    m,
+                    budget=_BoomBudget(
+                        **{
+                            f.name: getattr(base_facts.budget, f.name)
+                            for f in dataclasses.fields(base_facts.budget)
+                        }
+                    ),
+                ),
+            ),
+        )
+        == "invalid_facts",
+    )
+    for label, bad_req in (("None", None), ("object", object())):
+        check(
+            "K9",
+            f"request {label} is invalid_body",
+            code_of(m, lambda b=bad_req: m.resolve_training_config(b, base_facts))
+            == "invalid_body",
+        )
+
 
 def resolved_schema_suite(m: Any) -> None:
     """r2 findings 3-4: per-field schema parity for the resolved document, typed server fields,
@@ -2864,6 +2931,34 @@ def resolved_schema_suite(m: Any) -> None:
         is not None,
     )
     check("L4", "resolved doc always carries seed", "seed" in r.doc["hyperparameters"])
+    # r3 review finding 2: pin the resolved server block and config_sha256 exactly.
+    check(
+        "L5",
+        "server additionalProperties closed",
+        res["properties"]["server"].get("additionalProperties") is False,
+    )
+    for key in ("train_count", "validation_count"):
+        check(
+            "L5",
+            f"server.{key} bounds",
+            (server[key].get("type"), server[key].get("minimum"), server[key].get("maximum"))
+            == ("integer", 1, 2147483647),
+        )
+    check(
+        "L5",
+        "server.budget_policy_row_version bounds",
+        (
+            server["budget_policy_row_version"].get("minimum"),
+            server["budget_policy_row_version"].get("maximum"),
+        )
+        == (0, 2147483647),
+    )
+    check(
+        "L5",
+        "config_sha256 pattern",
+        defs["ResolvedTrainingConfig"]["properties"]["config_sha256"].get("pattern")
+        == "^[0-9a-f]{64}$",
+    )
 
 
 def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
@@ -2932,6 +3027,40 @@ def main() -> int:
         if not drifted:
             print("FAIL [J] schema/module drift stayed GREEN")
             return 1
+
+        def _tamper(edit: Any) -> dict[str, Any]:
+            doc = json.loads(schema_text)
+            edit(doc["$defs"])
+            return doc
+
+        srv = lambda d: d["ResolvedConfigDocument"]["properties"]["server"]  # noqa: E731
+        schema_faults = {
+            "server-additional-open": lambda d: srv(d).__setitem__("additionalProperties", True),
+            "server-train-count-min-dropped": lambda d: srv(d)["properties"]["train_count"].pop(
+                "minimum"
+            ),
+            "server-validation-count-min-0": lambda d: srv(d)["properties"][
+                "validation_count"
+            ].__setitem__("minimum", 0),
+            "config-sha256-pattern-dropped": lambda d: d["ResolvedTrainingConfig"]["properties"][
+                "config_sha256"
+            ].pop("pattern"),
+        }
+        for fname, edit in schema_faults.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                tampered = Path(tmp) / "07-domain.schema.json"
+                tampered.write_text(json.dumps(_tamper(edit)), encoding="utf-8")
+                globals()["SCHEMA_PATH"] = tampered
+                try:
+                    _failures.clear()
+                    resolved_schema_suite(load_module(MODULE_PATH, "drift_check2"))
+                    CHECK_COUNT[0] += 1
+                    red = bool(_failures)
+                finally:
+                    globals()["SCHEMA_PATH"] = original
+            if not red:
+                print(f"FAIL [J] schema fault {fname} stayed GREEN")
+                return 1
     print(f"OK {CID}: {CHECK_COUNT[0]} checks")
     return 0
 
