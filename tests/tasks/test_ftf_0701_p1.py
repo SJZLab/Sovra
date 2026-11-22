@@ -2816,13 +2816,13 @@ def facts_validation_suite(m: Any) -> None:
     check("K7", "invalid_facts is a 409", m.ERROR_CODES["invalid_facts"] == 409)
 
     # r3 review findings 1 and 3: a hostile facts subclass or a request with no .doc is coded.
-    class _BoomSplit(m.SplitFacts):  # type: ignore[misc,name-defined]
+    class _BoomSplit(m.SplitFacts):
         def __getattribute__(self, name: str) -> Any:
             if name == "train_count":
                 raise RuntimeError("boom")
             return super().__getattribute__(name)
 
-    class _BoomBudget(m.BudgetFacts):  # type: ignore[misc,name-defined]
+    class _BoomBudget(m.BudgetFacts):
         def __getattribute__(self, name: str) -> Any:
             if name == "total":
                 raise TypeError("boom")
