@@ -339,7 +339,6 @@ def test_neg2_subclasses() -> None:
     )
     admission = admit_judge_route(_route(), p)
     sub = Adm(admission.route, admission.profile)
-    object.__setattr__(sub, "_issued", admission._issued)
     check(
         "FTF-0907-NEG-2",
         "admission subclass refused",
@@ -350,7 +349,7 @@ def test_neg2_subclasses() -> None:
     check(
         "FTF-0907-NEG-2",
         "send receives the admitted snapshot",
-        len(seen) == 1 and seen[0] is admission.route,
+        len(seen) == 1 and seen[0] == admission.route and seen[0] is not admission.route,
     )
 
 
@@ -591,19 +590,19 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "skip-request-evaluate",
-        r"    _evaluate\(route, profiles, authorization\)\n    _evaluate\(admission\.route, profiles, authorization\)\n    return admission\.route",
-        "    return admission.route",
+        r"    _evaluate\(current, profiles, authorization\)\n    _evaluate\(admitted, profiles, authorization\)\n",
+        "",
         ("req_tightened",),
     ),
     (
-        "admission-issuer-not-checked",
-        r" or admission\._issued is not _ISSUER",
-        "",
+        "admission-registry-not-checked",
+        r" or entry is None:",
+        ":",
         ("req_replaced",),
     ),
     (
         "route-change-allowed",
-        r"    if route != admission\.route:\n        raise _deny\(\"external_judge_route_changed\", profile\)\n",
+        r"    if current != admitted:\n        raise _deny\(\"external_judge_route_changed\", profile\)\n",
         "",
         ("req_changed", "req_fb_added"),
     ),
@@ -827,6 +826,116 @@ def test_r2_postinit_bypass() -> None:
         "FTF-0907-R2-4b",
         "bypassed fallback list of non-aliases raises the module's own error",
         _code(lambda: admit_judge_route(badfb, zero)) == "external_judge_invalid_request",
+    )
+
+
+def test_r3_snapshot_copy_and_missing_fields() -> None:
+    import copy
+
+    zero = _profiles("zero_egress")
+    # R3-1 TOCTOU: a caller mutating its own frozen route/destination after admission or
+    # during the call must not change what `send` receives.
+    dest = Destination("internal")
+    mine = JudgeRoute("judge-1", dest, (), True)
+    adm = admit_judge_route(mine, zero)
+    seen: list[JudgeRoute] = []
+
+    def send(route: JudgeRoute) -> None:
+        object.__setattr__(dest, "kind", "external")
+        object.__setattr__(dest, "provider", "acme")
+        seen.append(route)
+
+    guarded_judge_call(adm, mine, zero, send)
+    check(
+        "FTF-0907-R3-1",
+        "send's route is a private snapshot unaffected by caller mutation",
+        len(seen) == 1
+        and seen[0].upstream is not dest
+        and seen[0].upstream == Destination("internal"),
+    )
+    check(
+        "FTF-0907-R3-1",
+        "admission holds a private copy, not the caller's route",
+        adm.route is not mine and adm.route.upstream is not mine.upstream,
+    )
+    # R3-2: copy / swapped-route forgery of an admission is refused.
+    adm2 = admit_judge_route(_route(), zero)
+    forged = copy.copy(adm2)
+    other = _route(judge_model_id="other-judge")
+    object.__setattr__(forged, "route", other)
+    check(
+        "FTF-0907-R3-2",
+        "copy.copy admission with a swapped route is refused",
+        _code(lambda: check_judge_request(forged, other, zero))
+        == "external_judge_admission_missing",
+    )
+    check(
+        "FTF-0907-R3-2",
+        "copy.copy admission of the same route is refused too",
+        _code(lambda: check_judge_request(copy.copy(adm2), _route(), zero))
+        == "external_judge_admission_missing",
+    )
+    # R3-3: unset fields raise the module's own error.
+    bare_route = object.__new__(JudgeRoute)
+    bare_dest_route = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=object.__new__(Destination),
+        fallbacks=(),
+        fallbacks_enumerated=True,
+    )
+    bare_fb = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=INTERNAL,
+        fallbacks=(object.__new__(FallbackAlias),),
+        fallbacks_enumerated=True,
+    )
+    for label, bad in (
+        ("route", bare_route),
+        ("destination", bare_dest_route),
+        ("fallback", bare_fb),
+    ):
+        check(
+            "FTF-0907-R3-3",
+            f"unset {label} fields raise InvalidJudgeRequestError",
+            _code(lambda bad=bad: admit_judge_route(bad, zero)) == "external_judge_invalid_request",
+        )
+    check(
+        "FTF-0907-R3-3",
+        "unset ProfilesInForce fields raise InvalidJudgeRequestError",
+        _code(lambda: admit_judge_route(_route(), object.__new__(ProfilesInForce)))
+        == "external_judge_invalid_request",
+    )
+    bare_auth = object.__new__(RouteAuthorization)
+    check(
+        "FTF-0907-R3-3",
+        "unset RouteAuthorization fields raise InvalidJudgeRequestError",
+        _code(
+            lambda: admit_judge_route(_route(upstream=EXTERNAL), _profiles("standard"), bare_auth)
+        )
+        == "external_judge_invalid_request",
+    )
+    # R3-4: an external destination with an empty or missing provider is invalid, not a denial.
+    for provider in ("", None):
+        noprov = _bypass(
+            JudgeRoute,
+            judge_model_id="judge-1",
+            upstream=_bypass(Destination, kind="external", provider=provider),
+            fallbacks=(),
+            fallbacks_enumerated=True,
+        )
+        check(
+            "FTF-0907-R3-4",
+            f"external destination with provider {provider!r} is invalid",
+            _code(lambda noprov=noprov: admit_judge_route(noprov, _profiles("standard")))
+            == "external_judge_invalid_request",
+        )
+    check(
+        "FTF-0907-R3-5",
+        "non-callable send is refused before any check",
+        _code(lambda: guarded_judge_call(adm2, _route(), zero, None))  # type: ignore[arg-type]
+        == "external_judge_invalid_request",
     )
 
 

@@ -42,9 +42,11 @@ separate dependency-gated task). UNWIRED until that caller exists.
 
 from __future__ import annotations
 
+import functools
+import weakref
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import TypeVar
+from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from packages.security.security_profile_enforcement import (
     DESTINATION_KINDS,
@@ -107,12 +109,27 @@ class ExternalJudgeDeniedError(ExternalJudgeError):
         self.reason = reason
 
 
+def _fields_guard(fn: Callable[..., T]) -> Callable[..., T]:
+    """An exact-type instance built with `object.__new__` can have unset fields: that is an
+    invalid request (the module's own error), never a raw AttributeError."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        try:
+            return fn(*args, **kwargs)
+        except AttributeError:
+            raise InvalidJudgeRequestError("object has missing fields") from None
+
+    return wrapper
+
+
 def _exact_text(value: object, what: str) -> str:
     if type(value) is not str or not value or value.isspace() or len(value) > _STRING_MAX_LENGTH:
         raise InvalidJudgeRequestError(f"{what} must be a non-empty exact string")
     return value
 
 
+@_fields_guard
 def _exact_destination(value: object, what: str) -> None:
     """None (unknown) or a fully valid exact Destination. Re-asserts the FTF-0901
     invariants (known kind, provider rule) because an exact-type instance built with
@@ -137,6 +154,7 @@ def _exact_destination(value: object, what: str) -> None:
         _exact_text(value.provider, f"{what} provider")
 
 
+@_fields_guard
 def _validate_route(route: object) -> JudgeRoute:
     """Full validation of a route, independent of `__post_init__` (which an exact-type
     instance built with `object.__new__` skips). Run on every route that is evaluated."""
@@ -191,24 +209,42 @@ class ProfilesInForce:
     job_profile: str | None = None
 
 
-_ISSUER = object()
-
-
 @dataclass(frozen=True)
 class JudgeAdmission:
     """Issued only by `admit_judge_route`; never constructed by a caller."""
 
     route: JudgeRoute
     profile: str
-    # init=False: `dataclasses.replace` rebuilds through __init__, so a replaced or
-    # hand-built admission cannot carry the issuer sentinel across.
-    _issued: object = field(default=None, init=False, repr=False, compare=False)
+
+
+def _snapshot(route: JudgeRoute) -> JudgeRoute:
+    """A fresh private copy built from validated values, sharing no mutable object with
+    the caller (a caller thread mutating its own frozen object after the check cannot
+    change what `send` receives)."""
+    validated = _validate_route(route)
+
+    def dest(value: Destination | None) -> Destination | None:
+        return None if value is None else Destination(value.kind, value.provider)
+
+    return JudgeRoute(
+        validated.judge_model_id,
+        dest(validated.upstream),
+        tuple(FallbackAlias(f.alias, dest(f.upstream)) for f in validated.fallbacks),
+        validated.fallbacks_enumerated,
+    )
+
+
+# id(admission) -> (weakref to the admission, the privately held admitted snapshot). The
+# admitted route lives here, not on the admission object, so `copy.copy` / `__setattr__`
+# forgery of an admission cannot carry or swap a route.
+_ADMITTED: dict[int, tuple[weakref.ReferenceType[JudgeAdmission], JudgeRoute]] = {}
 
 
 def _deny(code: str, profile: str) -> ExternalJudgeDeniedError:
     return ExternalJudgeDeniedError(code, AuditReason(profile, JUDGE_SURFACE, code))
 
 
+@_fields_guard
 def _profile(profiles: object) -> str:
     if type(profiles) is not ProfilesInForce:
         raise InvalidJudgeRequestError("profiles must be ProfilesInForce")
@@ -245,6 +281,7 @@ def _check_destination(
         raise _deny(external_code, profile) from None
 
 
+@_fields_guard
 def _exact_authorization(authorization: RouteAuthorization) -> None:
     """Exact-typed fields: a str/frozenset subclass with lying `__eq__`/`__contains__` must
     never reach `enforce_effect`'s provider and surface comparisons."""
@@ -300,8 +337,14 @@ def admit_judge_route(
 ) -> JudgeAdmission:
     """Admission-time denial. Returns an issued admission or raises a coded error."""
     profile = _evaluate(route, profiles, authorization)
-    admission = JudgeAdmission(route, profile)
-    object.__setattr__(admission, "_issued", _ISSUER)
+    snapshot = _snapshot(route)
+    admission = JudgeAdmission(snapshot, profile)
+    key = id(admission)
+
+    def _forget(_ref: object, k: int = key) -> None:
+        _ADMITTED.pop(k, None)
+
+    _ADMITTED[key] = (weakref.ref(admission, _forget), snapshot)
     return admission
 
 
@@ -314,17 +357,20 @@ def check_judge_request(
     """Request-time denial against the profile in force *now* and the admitted route.
     Returns the admitted route snapshot."""
     profile = _profile(profiles)
-    if type(admission) is not JudgeAdmission or admission._issued is not _ISSUER:
+    entry = _ADMITTED.get(id(admission))
+    if type(admission) is not JudgeAdmission or entry is None:
         raise _deny("external_judge_admission_missing", profile)
+    admitted = entry[1]
     # Fully validate (exact types, every field) BEFORE any `==`: only then is the dataclass
     # equality trustworthy. Then evaluate the snapshot that is returned and sent, not just
     # the caller-held object.
-    _validate_route(route)
-    if route != admission.route:
+    current = _snapshot(_validate_route(route))
+    if current != admitted:
         raise _deny("external_judge_route_changed", profile)
-    _evaluate(route, profiles, authorization)
-    _evaluate(admission.route, profiles, authorization)
-    return admission.route
+    _evaluate(current, profiles, authorization)
+    _evaluate(admitted, profiles, authorization)
+    # A fresh copy: the caller holds no reference to what `send` receives.
+    return _snapshot(admitted)
 
 
 def guarded_judge_call(
@@ -335,5 +381,7 @@ def guarded_judge_call(
     authorization: RouteAuthorization | None = None,
 ) -> T:
     """The only supported way to reach a judge client: check first, then `send`."""
-    # Hand over the admitted snapshot, never the caller-held object.
+    if not callable(send):
+        raise InvalidJudgeRequestError("send must be callable")
+    # Hand over a private admitted snapshot, never the caller-held object.
     return send(check_judge_request(admission, route, profiles, authorization))
