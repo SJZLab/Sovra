@@ -579,8 +579,8 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "skip-fallback-loop",
-        r"    for fallback in route\.fallbacks:\n",
-        "    for fallback in ():\n",
+        r"    for fallback in route\.fallbacks:\n        try:\n",
+        "    for fallback in ():\n        try:\n",
         ("fb_external", "fb_unknown", "fb_second"),
     ),
     (
@@ -591,7 +591,7 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "skip-request-evaluate",
-        r"    _evaluate\(route, profiles, authorization\)\n    return admission\.route",
+        r"    _evaluate\(route, profiles, authorization\)\n    _evaluate\(admission\.route, profiles, authorization\)\n    return admission\.route",
         "    return admission.route",
         ("req_tightened",),
     ),
@@ -626,6 +626,165 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
         ("weak_project", "weak_job"),
     ),
 ]
+
+
+class _LyingKind(str):
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __ne__(self, other: object) -> bool:
+        return False
+
+    __hash__ = str.__hash__
+
+
+class _LyingDest(Destination):
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __hash__(self) -> int:
+        return 0
+
+
+class _HideList(list):
+    def __iter__(self) -> Any:
+        return iter(())
+
+
+def _bypass(cls: Any, **fields: Any) -> Any:
+    """An exact-type instance built without __post_init__ (object.__new__)."""
+    obj = object.__new__(cls)
+    for name, value in fields.items():
+        object.__setattr__(obj, name, value)
+    return obj
+
+
+def _std_auth() -> RouteAuthorization:
+    return RouteAuthorization("acme", frozenset({"judge"}), "approver")
+
+
+def test_r2_postinit_bypass() -> None:
+    from packages.security.external_judge_denial import (
+        admit_judge_route,
+        check_judge_request,
+        guarded_judge_call,
+    )
+
+    zero = _profiles("zero_egress")
+    std = _profiles("standard")
+    # R2-1: decoy route equal to the admitted one must not make the sent route external-safe.
+    adm = admit_judge_route(_route(upstream=EXTERNAL), std, _std_auth())
+    decoy = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=_bypass(_LyingDest, kind="internal", provider=None),
+        fallbacks=adm.route.fallbacks,
+        fallbacks_enumerated=True,
+    )
+    sent: list[Any] = []
+    check(
+        "FTF-0907-R2-1",
+        "decoy route cannot reach an external judge on zero_egress",
+        _code(lambda: guarded_judge_call(adm, decoy, zero, sent.append)) != "allowed" and not sent,
+    )
+    # R2-2a: hidden fallback on a __post_init__-skipped route.
+    hidden = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=INTERNAL,
+        fallbacks=_HideList([FallbackAlias("fb", EXTERNAL)]),
+        fallbacks_enumerated=True,
+    )
+    check(
+        "FTF-0907-R2-2a",
+        "hidden-fallback route (iter lies) is refused at admission",
+        _code(lambda: admit_judge_route(hidden, zero)) != "allowed",
+    )
+    # R2-2c: lying destination kind.
+    liar = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=_bypass(Destination, kind=_LyingKind("external"), provider="acme"),
+        fallbacks=(),
+        fallbacks_enumerated=True,
+    )
+    check(
+        "FTF-0907-R2-2c",
+        "lying-kind destination is refused at admission",
+        _code(lambda: admit_judge_route(liar, zero)) != "allowed",
+    )
+    # R2-3a: authorization without an approver.
+    noapprover = _bypass(
+        RouteAuthorization,
+        provider="acme",
+        surfaces=frozenset({"judge"}),
+        approved_by=None,
+        account=None,
+        region=None,
+        retention_terms=None,
+    )
+    check(
+        "FTF-0907-R2-3a",
+        "authorization without approver is refused",
+        _code(lambda: admit_judge_route(_route(upstream=EXTERNAL), std, noapprover)) != "allowed",
+    )
+    # R2-3b: unknown destination kind.
+    bogus = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=_bypass(Destination, kind="bogus", provider="acme"),
+        fallbacks=(),
+        fallbacks_enumerated=True,
+    )
+    check(
+        "FTF-0907-R2-3b",
+        "unknown destination kind is refused on standard",
+        _code(lambda: admit_judge_route(bogus, std, _std_auth())) != "allowed",
+    )
+
+    # R2-3c: unknown or empty authorization surfaces (a __post_init__-skipped grant).
+    for label, surfaces in (("unknown", frozenset({"judge", "bogus"})), ("empty", frozenset())):
+        grant = _bypass(
+            RouteAuthorization,
+            provider="acme",
+            surfaces=surfaces,
+            approved_by="approver",
+            account=None,
+            region=None,
+            retention_terms=None,
+        )
+        check(
+            "FTF-0907-R2-3c",
+            f"{label} authorization surfaces are refused",
+            _code(lambda: admit_judge_route(_route(upstream=EXTERNAL), std, grant)) != "allowed",
+        )
+
+    # R2-4: no raw exceptions from a hostile route or a bypassed fallback list.
+    class Boom:
+        def __ne__(self, other: object) -> bool:
+            raise TypeError("boom")
+
+        def __eq__(self, other: object) -> bool:
+            raise TypeError("boom")
+
+    check(
+        "FTF-0907-R2-4a",
+        "hostile route raises the module's own error",
+        _code(lambda: check_judge_request(adm, Boom(), std, _std_auth()))
+        == "external_judge_invalid_request",
+    )
+    badfb = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=INTERNAL,
+        fallbacks=(INTERNAL,),
+        fallbacks_enumerated=True,
+    )
+    check(
+        "FTF-0907-R2-4b",
+        "bypassed fallback list of non-aliases raises the module's own error",
+        _code(lambda: admit_judge_route(badfb, zero)) == "external_judge_invalid_request",
+    )
 
 
 def test_fault_injection() -> None:

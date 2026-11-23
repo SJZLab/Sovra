@@ -47,6 +47,8 @@ from dataclasses import dataclass, field
 from typing import TypeVar
 
 from packages.security.security_profile_enforcement import (
+    DESTINATION_KINDS,
+    SURFACES,
     Destination,
     EffectRequest,
     RouteAuthorization,
@@ -112,16 +114,43 @@ def _exact_text(value: object, what: str) -> str:
 
 
 def _exact_destination(value: object, what: str) -> None:
-    """None (unknown) or an exact Destination whose fields are exact str: a str subclass
-    with a lying `__eq__` must never reach `enforce_effect`'s `kind == "internal"`."""
+    """None (unknown) or a fully valid exact Destination. Re-asserts the FTF-0901
+    invariants (known kind, provider rule) because an exact-type instance built with
+    `object.__new__` skips its own `__post_init__`; a str subclass with a lying `__eq__`
+    must never reach `enforce_effect`'s `kind == "internal"`."""
     if value is None:
         return
     if (
         type(value) is not Destination
         or type(value.kind) is not str
         or type(value.provider) not in (str, type(None))
+        or value.kind not in DESTINATION_KINDS
     ):
         raise InvalidJudgeRequestError(f"{what} must be an exact Destination or None")
+    if value.kind == "internal":
+        if value.provider is not None:
+            raise InvalidJudgeRequestError(f"{what}: an internal destination has no provider")
+    else:
+        _exact_text(value.provider, f"{what} provider")
+
+
+def _validate_route(route: object) -> JudgeRoute:
+    """Full validation of a route, independent of `__post_init__` (which an exact-type
+    instance built with `object.__new__` skips). Run on every route that is evaluated."""
+    if type(route) is not JudgeRoute:
+        raise InvalidJudgeRequestError("route must be a JudgeRoute")
+    _exact_text(route.judge_model_id, "judge model id")
+    _exact_destination(route.upstream, "upstream")
+    if type(route.fallbacks) is not tuple:
+        raise InvalidJudgeRequestError("fallbacks must be a tuple")
+    for fallback in route.fallbacks:
+        if type(fallback) is not FallbackAlias:
+            raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
+        _exact_text(fallback.alias, "fallback alias")
+        _exact_destination(fallback.upstream, "fallback upstream")
+    if type(route.fallbacks_enumerated) is not bool:
+        raise InvalidJudgeRequestError("fallbacks_enumerated must be a bool")
+    return route
 
 
 @dataclass(frozen=True)
@@ -147,17 +176,7 @@ class JudgeRoute:
     fallbacks_enumerated: bool = False
 
     def __post_init__(self) -> None:
-        _exact_text(self.judge_model_id, "judge model id")
-        _exact_destination(self.upstream, "upstream")
-        if type(self.fallbacks) is not tuple:
-            raise InvalidJudgeRequestError("fallbacks must be a tuple")
-        for fallback in self.fallbacks:
-            if type(fallback) is not FallbackAlias:
-                raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
-            _exact_text(fallback.alias, "fallback alias")
-            _exact_destination(fallback.upstream, "fallback upstream")
-        if type(self.fallbacks_enumerated) is not bool:
-            raise InvalidJudgeRequestError("fallbacks_enumerated must be a bool")
+        _validate_route(self)
 
 
 @dataclass(frozen=True)
@@ -234,6 +253,13 @@ def _exact_authorization(authorization: RouteAuthorization) -> None:
         or any(value is not None and type(value) is not str for value in optional)
     ):
         raise InvalidJudgeRequestError("authorization fields must be exact types")
+    # Re-assert FTF-0901's own invariants: `object.__new__` skips its __post_init__.
+    _exact_text(authorization.provider, "authorization provider")
+    _exact_text(authorization.approved_by, "authorization approver")
+    if not authorization.surfaces or any(
+        surface not in SURFACES for surface in authorization.surfaces
+    ):
+        raise InvalidJudgeRequestError("authorization surfaces must be known and non-empty")
 
 
 def _evaluate(
@@ -241,8 +267,7 @@ def _evaluate(
     profiles: object,
     authorization: RouteAuthorization | None,
 ) -> str:
-    if type(route) is not JudgeRoute:
-        raise InvalidJudgeRequestError("route must be a JudgeRoute")
+    route = _validate_route(route)
     if authorization is not None and type(authorization) is not RouteAuthorization:
         raise InvalidJudgeRequestError("authorization must be a RouteAuthorization")
     if authorization is not None:
@@ -288,9 +313,14 @@ def check_judge_request(
     profile = _profile(profiles)
     if type(admission) is not JudgeAdmission or admission._issued is not _ISSUER:
         raise _deny("external_judge_admission_missing", profile)
+    # Fully validate (exact types, every field) BEFORE any `==`: only then is the dataclass
+    # equality trustworthy. Then evaluate the snapshot that is returned and sent, not just
+    # the caller-held object.
+    _validate_route(route)
     if route != admission.route:
         raise _deny("external_judge_route_changed", profile)
     _evaluate(route, profiles, authorization)
+    _evaluate(admission.route, profiles, authorization)
     return admission.route
 
 
