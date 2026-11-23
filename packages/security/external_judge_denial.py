@@ -124,10 +124,13 @@ def _exact_destination(value: object, what: str) -> None:
         type(value) is not Destination
         or type(value.kind) is not str
         or type(value.provider) not in (str, type(None))
-        or value.kind not in DESTINATION_KINDS
     ):
         raise InvalidJudgeRequestError(f"{what} must be an exact Destination or None")
-    if value.kind == "internal":
+    try:
+        kind_index = DESTINATION_KINDS.index(value.kind)
+    except ValueError:
+        raise InvalidJudgeRequestError(f"{what} has an unknown kind") from None
+    if DESTINATION_KINDS[kind_index] == "internal":
         if value.provider is not None:
             raise InvalidJudgeRequestError(f"{what}: an internal destination has no provider")
     else:

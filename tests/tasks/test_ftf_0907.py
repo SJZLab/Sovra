@@ -759,6 +759,49 @@ def test_r2_postinit_bypass() -> None:
             _code(lambda: admit_judge_route(_route(upstream=EXTERNAL), std, grant)) != "allowed",
         )
 
+    # R2-3d: near-miss kinds/surfaces and an internal destination carrying a provider.
+    for kind in (" internal", "Internal", "external ", "EXTERNAL"):
+        near = _bypass(
+            JudgeRoute,
+            judge_model_id="judge-1",
+            upstream=_bypass(Destination, kind=kind, provider="acme"),
+            fallbacks=(),
+            fallbacks_enumerated=True,
+        )
+        check(
+            "FTF-0907-R2-3d",
+            f"near-miss kind {kind!r} is refused",
+            _code(lambda: admit_judge_route(near, zero)) == "external_judge_invalid_request",
+        )
+    internal_p = _bypass(
+        JudgeRoute,
+        judge_model_id="judge-1",
+        upstream=_bypass(Destination, kind="internal", provider="acme"),
+        fallbacks=(),
+        fallbacks_enumerated=True,
+    )
+    check(
+        "FTF-0907-R2-3d",
+        "internal destination with a provider is refused",
+        _code(lambda: admit_judge_route(internal_p, zero)) == "external_judge_invalid_request",
+    )
+    for surface in (" judge", "Judge"):
+        grant = _bypass(
+            RouteAuthorization,
+            provider="acme",
+            surfaces=frozenset({"judge", surface}),
+            approved_by="approver",
+            account=None,
+            region=None,
+            retention_terms=None,
+        )
+        check(
+            "FTF-0907-R2-3d",
+            f"near-miss surface {surface!r} is refused",
+            _code(lambda: admit_judge_route(_route(upstream=EXTERNAL), std, grant))
+            == "external_judge_invalid_request",
+        )
+
     # R2-4: no raw exceptions from a hostile route or a bypassed fallback list.
     class Boom:
         def __ne__(self, other: object) -> bool:
