@@ -931,6 +931,21 @@ def test_r3_snapshot_copy_and_missing_fields() -> None:
             _code(lambda noprov=noprov: admit_judge_route(noprov, _profiles("standard")))
             == "external_judge_invalid_request",
         )
+    # R3-6: the private registry does not leak entries once an admission is collected.
+    import gc
+
+    from packages.security import external_judge_denial as _module
+
+    before = len(_module._ADMITTED)
+    tmp = admit_judge_route(_route(), zero)
+    check("FTF-0907-R3-6", "admission is registered", len(_module._ADMITTED) == before + 1)
+    del tmp
+    gc.collect()
+    check(
+        "FTF-0907-R3-6",
+        "registry entry dropped with the admission",
+        len(_module._ADMITTED) == before,
+    )
     check(
         "FTF-0907-R3-5",
         "non-callable send is refused before any check",
