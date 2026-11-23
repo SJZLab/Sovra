@@ -338,7 +338,7 @@ def admit_judge_route(
     """Admission-time denial. Returns an issued admission or raises a coded error."""
     profile = _evaluate(route, profiles, authorization)
     snapshot = _snapshot(route)
-    admission = JudgeAdmission(snapshot, profile)
+    admission = JudgeAdmission(_snapshot(snapshot), profile)
     key = id(admission)
 
     def _forget(_ref: object, k: int = key) -> None:
@@ -367,10 +367,11 @@ def check_judge_request(
     current = _snapshot(_validate_route(route))
     if current != admitted:
         raise _deny("external_judge_route_changed", profile)
-    _evaluate(current, profiles, authorization)
-    _evaluate(admitted, profiles, authorization)
-    # A fresh copy: the caller holds no reference to what `send` receives.
-    return _snapshot(admitted)
+    # Copy first, evaluate that very copy, return it: no gap between checking an object
+    # and reading it again (the registry snapshot is referenced by nothing else).
+    out = _snapshot(admitted)
+    _evaluate(out, profiles, authorization)
+    return out
 
 
 def guarded_judge_call(

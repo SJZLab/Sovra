@@ -590,7 +590,7 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
     ),
     (
         "skip-request-evaluate",
-        r"    _evaluate\(current, profiles, authorization\)\n    _evaluate\(admitted, profiles, authorization\)\n",
+        r"    _evaluate\(out, profiles, authorization\)\n",
         "",
         ("req_tightened",),
     ),
@@ -945,6 +945,26 @@ def test_r3_snapshot_copy_and_missing_fields() -> None:
         "FTF-0907-R3-6",
         "registry entry dropped with the admission",
         len(_module._ADMITTED) == before,
+    )
+    # R4-1: mutating adm.route (a readable attribute) cannot rebind the admitted route.
+    adm3 = admit_judge_route(_route(), zero)
+    object.__setattr__(adm3.route, "judge_model_id", "judge-EVIL")
+    sent3: list[Any] = []
+    check(
+        "FTF-0907-R4-1",
+        "swapping adm.route does not rebind the admission",
+        _code(
+            lambda: guarded_judge_call(
+                adm3, _route(judge_model_id="judge-EVIL"), zero, sent3.append
+            )
+        )
+        == "external_judge_route_changed"
+        and not sent3,
+    )
+    check(
+        "FTF-0907-R4-1",
+        "the original admitted route still passes",
+        _code(lambda: guarded_judge_call(adm3, _route(), zero, sent3.append)) == "allowed",
     )
     check(
         "FTF-0907-R3-5",
