@@ -265,6 +265,16 @@ const M = {
   },
   reviewSummary: { en: "Import summary", ar: "ملخص الاستيراد" },
   securityProfile: { en: "Project security profile", ar: "ملف أمان المشروع" },
+  artStatusRegistered: { en: "registered", ar: "مسجّل" },
+  artStatusReady: { en: "ready", ar: "جاهز" },
+  artStatusArchived: { en: "archived", ar: "مؤرشف" },
+  srcHuggingface: { en: "huggingface", ar: "Hugging Face" },
+  srcPrivateS3: { en: "private_s3", ar: "تخزين S3 خاص" },
+  srcLocalFilesystem: { en: "local_filesystem", ar: "نظام ملفات محلي" },
+  srcPrivateRegistry: { en: "private_registry", ar: "سجل خاص" },
+  profStandard: { en: "standard", ar: "قياسي" },
+  profZeroEgress: { en: "zero_egress", ar: "بلا خروج بيانات" },
+  profAirGapped: { en: "air_gapped", ar: "معزول عن الشبكة" },
   securityProfileUnavailable: { en: "Unavailable", ar: "غير متاح" },
   lineage: { en: "Expected lineage", ar: "النسب المتوقع" },
   lineageUnknown: { en: "Unknown", ar: "غير معروف" },
@@ -349,6 +359,26 @@ function stateLabel(state: string, locale: Locale): string {
             ? "blockedLabel"
             : "failedLabel";
   return tr(key, locale);
+}
+
+const ENUM_KEYS: Readonly<Record<string, MsgKey>> = {
+  registered: "artStatusRegistered",
+  ready: "artStatusReady",
+  archived: "artStatusArchived",
+  huggingface: "srcHuggingface",
+  private_s3: "srcPrivateS3",
+  local_filesystem: "srcLocalFilesystem",
+  private_registry: "srcPrivateRegistry",
+  standard: "profStandard",
+  zero_egress: "profZeroEgress",
+  air_gapped: "profAirGapped",
+};
+
+/** Localized label of a closed backing enum (artifact status, source type, security profile).
+ *  A value outside the table (an open-ended project profile name) is shown verbatim, never guessed. */
+function enumLabel(value: string, locale: Locale): string {
+  const key = Object.hasOwn(ENUM_KEYS, value) ? ENUM_KEYS[value] : undefined;
+  return key === undefined ? value : tr(key, locale);
 }
 
 function tr(key: MsgKey, locale: Locale): string {
@@ -679,25 +709,32 @@ function Inner({
   const catalogFor = useRef("");
   const reportedSuccess = useRef<Set<string>>(new Set());
 
+  // Monotonic request sequence: only the newest list request may write state, so a poll that
+  // started before the POST can never overwrite (and erase the created job from) a later list.
+  const jobsSeq = useRef(0);
   const loadJobs = useCallback(async (): Promise<ImportJob[] | null> => {
+    const seq = ++jobsSeq.current;
+    const latest = () => alive.current && seq === jobsSeq.current;
     try {
       const r = await getJson(modelImportsUrl(apiBaseUrl, organizationId, projectId));
       if (!alive.current) return null;
       if (!r.ok) {
-        setJobsError(uiError(tr("failedLoadJobs", locale), kindForStatus(r.status)));
+        if (latest()) setJobsError(uiError(tr("failedLoadJobs", locale), kindForStatus(r.status)));
         return null;
       }
       const list = parseJobList(r.body, organizationId, projectId);
       if (list === null) {
-        setJobsError(uiError(tr("malformed", locale), "retry"));
+        if (latest()) setJobsError(uiError(tr("malformed", locale), "retry"));
         return null;
       }
-      setJobsError(null);
-      setJobs(list);
+      if (latest()) {
+        setJobsError(null);
+        setJobs(list);
+      }
       return list;
     } catch (caught) {
       if (!alive.current) return null;
-      setJobsError(networkError(caught, locale));
+      if (latest()) setJobsError(networkError(caught, locale));
       return null;
     }
   }, [apiBaseUrl, organizationId, projectId, locale]);
@@ -754,8 +791,15 @@ function Inner({
     }
     const timer = setTimeout(() => {
       delayRef.current = Math.min(delayRef.current * 2, POLL_MAX_MS);
+      const mySeq = jobsSeq.current + 1;
       void loadJobs().then((list) => {
+        // A reply superseded by a newer list request (e.g. the POST's) is neither announced nor
+        // allowed to touch the polling baseline.
         if (!alive.current) return;
+        if (jobsSeq.current !== mySeq) {
+          setPollTick((n) => n + 1); // still re-arm: stopping here would end polling
+          return;
+        }
         if (list !== null && jobSig(list) !== lastSig.current)
           setAnnounce(
             `${tr("polled", locale)} ${list.map((j) => stateLabel(j.state, locale)).join(locale === "ar" ? "، " : ", ")}`,
@@ -1113,7 +1157,7 @@ function Inner({
               <dl data-testid="artifact-facts" style={{ overflowWrap: "anywhere" }}>
                 <dt>{tr("statusLabel", locale)}</dt>
                 <dd>
-                  <bdi>{chosen.status}</bdi>
+                  <bdi>{enumLabel(chosen.status, locale)}</bdi>
                 </dd>
                 <dt>{tr("licenseLabel", locale)}</dt>
                 <dd>
@@ -1124,7 +1168,7 @@ function Inner({
                 </dd>
                 <dt>{tr("sourceLabel", locale)}</dt>
                 <dd>
-                  <bdi>{chosen.sourceType}</bdi>
+                  <bdi>{enumLabel(chosen.sourceType, locale)}</bdi>
                 </dd>
                 <dt>{tr("digestLabel", locale)}</dt>
                 <dd>
@@ -1373,7 +1417,11 @@ function Inner({
           )}
           <dt>{tr("securityProfile", locale)}</dt>
           <dd data-testid="import-security-profile">
-            <bdi>{profile ?? tr("securityProfileUnavailable", locale)}</bdi>
+            <bdi>
+              {profile === null
+                ? tr("securityProfileUnavailable", locale)
+                : enumLabel(profile, locale)}
+            </bdi>
           </dd>
           <dt>{tr("lineage", locale)}</dt>
           <dd data-testid="import-expected-lineage">

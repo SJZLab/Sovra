@@ -1482,3 +1482,126 @@ test("H010P5-R3-8: the announcement is localized: Arabic state labels, no Englis
   expect(text).toContain("قيد التحقق");
   expect(text).not.toMatch(/[A-Za-z]/);
 });
+
+// ---- H010P5-R4: pre-review round 3 --------------------------------------------------------
+test("H010P5-R4-1: a poll that started before the POST cannot erase the created job or stop polling", async () => {
+  vi.useFakeTimers();
+  const NEW = "77777777-7777-7777-7777-777777777777";
+  routes[`GET ${IMPORTS}`] = { body: [job()] };
+  routes[`POST ${IMPORTS}`] = { status: 201, body: job({ id: NEW, state: "queued" }) };
+  let release: () => void = () => undefined;
+  let gets = 0;
+  const base = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (url === IMPORTS && (init?.method ?? "GET") === "GET") {
+      gets += 1;
+      if (gets === 2)
+        // The poll: started before the POST, answered after it, with the OLD list.
+        return new Promise((res) => {
+          release = () => res({ ok: true, status: 200, json: async () => [job()] });
+        });
+    }
+    return base(url, init);
+  });
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(POLL_START_MS * 2 + 1);
+  });
+  expect(gets).toBe(2); // the poll is in flight
+  await fillEndpoint();
+  await settle();
+  await confirmAndStart();
+  expect(posts()).toHaveLength(1);
+  expect(screen.getByTestId(`job-${NEW}`)).toBeTruthy();
+  await act(async () => {
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  // The stale reply (without the created job) is dropped.
+  expect(screen.getByTestId(`job-${NEW}`)).toBeTruthy();
+  // And polling is still armed: a later poll fires.
+  const before = listGets().length;
+  for (let i = 0; i < 3; i += 1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_MAX_MS);
+    });
+  expect(listGets().length).toBeGreaterThan(before);
+});
+
+test("H010P5-R4-2: artifact status, source type and security profile are localized under ar; unknown profile shown verbatim", async () => {
+  // Weights form: facts are Arabic.
+  mount({ locale: "ar", role: "ml_engineer" });
+  await settle();
+  fireEvent.click(screen.getAllByRole("radio")[1]!);
+  fireEvent.click(screen.getByRole("button", { name: /./ }));
+  await settle();
+  fireEvent.change(screen.getAllByRole("combobox")[0]!, { target: { value: ART } });
+  const facts = screen.getByTestId("artifact-facts").textContent ?? "";
+  expect(facts).toContain("جاهز");
+  expect(facts).not.toContain("huggingface");
+  expect(facts).not.toMatch(/\bready\b/);
+});
+
+test("H010P5-R4-3: the profile is localized under ar and an unknown name is shown verbatim", async () => {
+  routes[`GET ${ORG_BASE}/projects/${PROJECT}`] = { body: { security_profile: "air_gapped" } };
+  mount({ locale: "ar" });
+  await toReviewEndpointAr();
+  expect(screen.getByTestId("import-security-profile").textContent).toBe("معزول عن الشبكة");
+  cleanup();
+  routes[`GET ${ORG_BASE}/projects/${PROJECT}`] = { body: { security_profile: "custom_x" } };
+  mount({ locale: "ar" });
+  await toReviewEndpointAr();
+  expect(screen.getByTestId("import-security-profile").textContent).toBe("custom_x");
+});
+async function toReviewEndpointAr() {
+  fireEvent.click(screen.getAllByRole("radio")[0]!);
+  fireEvent.click(screen.getByRole("button", { name: /./ }));
+  await settle();
+  fireEvent.change(screen.getAllByRole("combobox")[0]!, { target: { value: CONN } });
+  await settle();
+  fireEvent.change(screen.getAllByRole("textbox")[0]!, { target: { value: "ft:my-model" } });
+  const buttons = screen.getAllByRole("button");
+  fireEvent.click(buttons[buttons.length - 1]!);
+  await settle();
+}
+
+test("H010P5-R4-4: a failed options load for a connection the user has since left is dropped, not shown", async () => {
+  const CONN2 = "99999999-9999-9999-9999-999999999999";
+  let rejectA: () => void = () => undefined;
+  routes[`GET ${ORG_BASE}/connections/litellm`] = {
+    body: [
+      { id: CONN, name: "main-gw", status: "active", base_url: "https://x/" },
+      { id: CONN2, name: "second-gw", status: "active", base_url: "https://y/" },
+    ],
+  };
+  routes[`GET ${ORG_BASE}/connections/litellm/${CONN2}/catalog`] = {
+    body: { entries: [{ id: "model-of-B", status: "callable" }] },
+  };
+  const base = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (url === `${ORG_BASE}/connections/litellm/${CONN}/catalog`)
+      return new Promise((_res, rej) => {
+        rejectA = () => rej(new TypeError("Failed to fetch"));
+      });
+    return base(url, init);
+  });
+  mount();
+  await pick(/Endpoint model/);
+  const sel = screen.getByLabelText(/Gateway connection/);
+  fireEvent.change(sel, { target: { value: CONN } });
+  await settle();
+  fireEvent.change(sel, { target: { value: CONN2 } });
+  await settle();
+  await act(async () => {
+    rejectA();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  // The late NETWORK ERROR of the abandoned connection must not replace B's catalog.
+  const cat = screen.getByLabelText(/Model from the connection catalog/);
+  expect(cat.innerHTML).toContain("model-of-B");
+  expect(screen.queryByTestId("catalog-error")).toBeNull();
+});
