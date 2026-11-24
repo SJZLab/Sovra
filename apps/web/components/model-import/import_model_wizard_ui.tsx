@@ -1039,6 +1039,8 @@ function Inner({
           bindsTo(parsed, body, organizationId, projectId)
         ) {
           const created = parsed;
+          // Any list request still in flight started before this write: drop its reply.
+          jobsSeq.current += 1;
           setJobs((cur) => [...(cur ?? []).filter((j) => j.id !== created.id), created]);
           setNotice("jobCreated");
           resetWizard();

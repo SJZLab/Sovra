@@ -1605,3 +1605,58 @@ test("H010P5-R4-4: a failed options load for a connection the user has since lef
   expect(cat.innerHTML).toContain("model-of-B");
   expect(screen.queryByTestId("catalog-error")).toBeNull();
 });
+
+test("H010P5-R4-5: a poll that starts while the POST is in flight cannot erase the created job, and its stale reply is not announced", async () => {
+  vi.useFakeTimers();
+  const NEW = "77777777-7777-7777-7777-777777777777";
+  routes[`GET ${IMPORTS}`] = { body: [job()] };
+  let releasePost: () => void = () => undefined;
+  let releasePoll: () => void = () => undefined;
+  let gets = 0;
+  const base = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    if (url === IMPORTS && method === "POST")
+      return new Promise((res) => {
+        releasePost = () =>
+          res({ ok: true, status: 201, json: async () => job({ id: NEW, state: "queued" }) });
+      });
+    if (url === IMPORTS && method === "GET") {
+      gets += 1;
+      // gets: 1 mount, 2 submit baseline, 3 = the poll that fires during the POST.
+      if (gets === 3)
+        return new Promise((res) => {
+          releasePoll = () =>
+            res({ ok: true, status: 200, json: async () => [job({ state: "validating" })] });
+        });
+    }
+    return base(url, init);
+  });
+  mount();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await fillEndpoint();
+  await settle();
+  fireEvent.click(screen.getByTestId("import-confirm"));
+  fireEvent.click(screen.getByTestId("import-submit"));
+  await settle();
+  // The POST is pending; the poll timer fires and its GET starts (the newest list request).
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(POLL_MAX_MS);
+  });
+  expect(gets).toBe(3);
+  await act(async () => {
+    releasePost();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByTestId(`job-${NEW}`)).toBeTruthy();
+  await act(async () => {
+    releasePoll();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByTestId(`job-${NEW}`)).toBeTruthy();
+  expect(screen.getByTestId("import-announce").textContent ?? "").not.toContain(
+    "Import status updated.",
+  );
+});
