@@ -1,5 +1,30 @@
 # BLOCKER.md
 
+## LIVE 2026-11-26 — no claimable item left; park PRs cannot land because stale drafts trip `relay-policy`
+
+**What stops work:** every item in QUEUE.md "Active" claim order and "Backlog" is parked, blocked,
+owner-merge or already covered by an open `[relay]` PR (checked this shift, Lane B):
+- FTF-1504 (#1081 draft; park PR #1082), FTF-0907 (#1080, parked), FTF-0603 (park PR #1066),
+  FTF-0701-P1 (#1068, parked after 3 rounds), FTF-H011-P6 (#1074; park PR #1077): the work is parked,
+  but each **park PR is red** because `relay-policy` fails a second open PR for an item that
+  stale drafts still own (#1082 fails with 18 older open FTF-1504 PRs; verified in the run log of
+  run 45394469299). So the Parked entries never reach `main`, and lanes keep reclaiming the items.
+- FTF-1301-F1-r3 and FTF-H011-P3-r3 are already merged. FTF-R006-P1b (#1051) and FTF-H010-P5 (#1083)
+  are submitted `[GOVERNANCE]` PRs the owner merges; FTF-R006-P2 and FTF-H010-P6 wait on them.
+- FTF-UX02 has open drafts #1054, #1072, #1084 (the claim rule says skip an item with an open PR).
+- FTF-0708A and FTF-1004A are BLOCKED in their own Backlog entries (deps ABSENT).
+
+**Control-plane rulings needed (relay may not do these):**
+1. Close the superseded stale drafts (FTF-1504 r1..r19, FTF-UX02 r5/r6, FTF-H011-P6 r3..r5, FTF-0603
+   r1..r4 and the like) with a reason, or tell `relay-policy` to ignore drafts whose newer round
+   exists. QUEUE.md currently says "do not close or edit the old PR".
+2. Merge the park PRs (#1082, #1066, #1077) or apply their Parked entries, then rule on the open
+   owner lines (FTF-1504 project scoping, FTF-0603 server-side lock, FTF-H011-P6 XLSX probe).
+3. Owner: review/merge #1051 and #1083.
+
+**State:** no code change this shift. `sha256sum CLAUDE.md` matched `CLAUDE.md.sha256`.
+Remove this entry when rulings 1-2 land.
+
 ## RESOLVED 2026-11-10T09:50Z — GitHub Actions runner outage (was LIVE 2026-10-27T12:52Z)
 
 **Resolution:** GitHub Actions is provisioning runners normally again. Confirmed directly: PR #1005
