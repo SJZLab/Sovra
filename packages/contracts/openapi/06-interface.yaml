@@ -195,7 +195,18 @@ paths:
         already assigned; for a `final`-purpose suite, that reviewer must
         differ from the suite's own created_by (Section 69.1: "Final
         suite creator/reviewer is independent of candidate implementer").
+        FTF-0603-F1: the body carries the reviewer's sample plan and the
+        suite_sha256 they reviewed; after FTF-0601's checks the server
+        validates the plan floors, every case and the hash, records the
+        plan (insert-only) and stores suite_sha256 on lock. Any failed rule
+        is a typed 409 and the suite stays draft.
       operationId: lockEvaluationSuite
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluationSuiteLockRequest'
       responses:
         '200':
           description: The locked evaluation suite.
@@ -214,10 +225,20 @@ paths:
             Missing, belongs to a different organization, or belongs to a
             different project than the one named in the path -- identical
             in every case.
+        '400':
+          description: >-
+            Malformed lock body: `{"detail": {"code": "invalid_lock_request",
+            "field": <field>}}`, never echoing the value.
         '409':
           description: >-
             The suite is already locked, has no reviewer_id assigned, or
-            (for a final-purpose suite) reviewer_id equals created_by.
+            (for a final-purpose suite) reviewer_id equals created_by
+            (FTF-0601, a string detail); or (FTF-0603-F1) the lock gate
+            refused it, with one typed finding per violated rule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationSuiteLockRefusal'
   /api/v1/organizations/{organization_id}/projects/{project_id}/evaluation-suites/{suite_id}/cases:
     parameters:
       - name: organization_id
@@ -496,6 +517,14 @@ components:
         created_at:
           type: string
           format: date-time
+        suite_sha256:
+          description: >-
+            FTF-0603-F1: the canonical hash the suite was locked at (null
+            while draft). Canonical JSON (keys in UTF-16 order, ECMAScript
+            numbers), UTF-8, SHA-256; shared vector
+            packages/contracts/test-vectors/evaluation-suite-sha256.json.
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
       required:
         - id
         - organization_id
@@ -511,6 +540,102 @@ components:
         - locked_at
         - created_at
       additionalProperties: false
+    EvaluationSuiteSamplePlan:
+      type: object
+      description: >-
+        FTF-0603-F1 (Section 26/69.2/69.3): the reviewer's sample plan.
+        Counts are distinct group_key values. Floors: at least one
+        category, min_independent_tasks >= 1, min_cases_per_category >= 1;
+        a final suite also needs min_independent_tasks >= 1000 and
+        min_critical_scenarios >= 100 (a below-floor plan is a 409
+        sample_plan_below_floor, not a 400).
+      properties:
+        required_categories:
+          type: array
+          maxItems: 200
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+        min_independent_tasks:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        min_critical_scenarios:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        min_cases_per_category:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+      required:
+        - required_categories
+        - min_independent_tasks
+        - min_critical_scenarios
+        - min_cases_per_category
+      additionalProperties: false
+    EvaluationSuiteLockRequest:
+      type: object
+      description: >-
+        Both fields may be absent at the shape level; an absent plan or
+        hash is a typed 409 finding (sample_plan_missing /
+        suite_sha256_required).
+      properties:
+        sample_plan:
+          oneOf:
+            - $ref: '#/components/schemas/EvaluationSuiteSamplePlan'
+            - type: 'null'
+        suite_sha256:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+      additionalProperties: false
+    EvaluationSuiteLockFinding:
+      type: object
+      description: >-
+        One violated lock rule. subject is a plan field, a category or a
+        case_key -- never an expected value.
+      properties:
+        code:
+          type: string
+          enum:
+            - sample_plan_missing
+            - sample_plan_below_floor
+            - no_cases
+            - insufficient_independent_tasks
+            - insufficient_critical_scenarios
+            - missing_critical_category
+            - insufficient_category_sample
+            - unresolved_expected_output
+            - non_canonical_number
+            - suite_sha256_required
+            - suite_sha256_mismatch
+        subject:
+          type: [string, 'null']
+        need:
+          type: [integer, 'null']
+        have:
+          type: [integer, 'null']
+      required: [code, subject, need, have]
+      additionalProperties: false
+    EvaluationSuiteLockRefusal:
+      type: object
+      properties:
+        detail:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [suite_lock_validation_failed]
+            findings:
+              type: array
+              minItems: 1
+              items:
+                $ref: '#/components/schemas/EvaluationSuiteLockFinding'
+          required: [code, findings]
+          additionalProperties: false
+      required: [detail]
     EvaluationCaseSeverity:
       type: string
       enum: [low, medium, high, critical]

@@ -64,6 +64,12 @@ from app.evaluation.evaluation_suite_crud import (
     lock_evaluation_suite,
     update_evaluation_suite,
 )
+from app.evaluation.evaluation_suite_lock_gate import (
+    LockRequestError,
+    SuiteLockValidationError,
+    parse_lock_request,
+    recorded_suite_sha256s,
+)
 from app.evaluation.evaluation_suite_schema import EvaluationSuite, EvaluationSuiteValidationError
 
 __all__ = [
@@ -94,7 +100,9 @@ _ITEM_PATH = _COLLECTION_PATH + "/{suite_id}"
 _LOCK_PATH = _ITEM_PATH + "/lock"
 
 
-def _serialize(suite: EvaluationSuite) -> dict[str, object]:
+def _serialize(suite: EvaluationSuite, suite_sha256: str | None = None) -> dict[str, object]:
+    """`suite_sha256` (FTF-0603-F1) is the hash the suite was locked at, or
+    null while it is a draft."""
     return {
         "id": str(suite.id),
         "organization_id": str(suite.organization_id),
@@ -109,6 +117,7 @@ def _serialize(suite: EvaluationSuite) -> dict[str, object]:
         "created_by": suite.created_by,
         "locked_at": suite.locked_at.isoformat() if suite.locked_at else None,
         "created_at": suite.created_at.isoformat(),
+        "suite_sha256": suite_sha256,
     }
 
 
@@ -283,7 +292,8 @@ def build_evaluation_suite_router(
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
                 suites = list_evaluation_suites(session, tenant_context, project_id)
-                body = [_serialize(s) for s in suites]
+                hashes = recorded_suite_sha256s(session, tenant_context, [s.id for s in suites])
+                body = [_serialize(s, hashes.get(s.id)) for s in suites]
         except (ProjectNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         return JSONResponse(body, status_code=200)
@@ -300,7 +310,8 @@ def build_evaluation_suite_router(
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
                 suite = get_evaluation_suite(session, tenant_context, project_id, suite_id)
-                body = _serialize(suite)
+                hashes = recorded_suite_sha256s(session, tenant_context, [suite.id])
+                body = _serialize(suite, hashes.get(suite.id))
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         return JSONResponse(body, status_code=200)
@@ -352,7 +363,13 @@ def build_evaluation_suite_router(
         ctx: AuthorizedContext = write_dependency,
     ) -> JSONResponse:
         del organization_id
-        await _read_json_body_or_empty(request)
+        payload = await _read_json_body_or_empty(request)
+        try:
+            lock_request = parse_lock_request(payload)
+        except LockRequestError as exc:
+            raise HTTPException(
+                status_code=400, detail={"code": "invalid_lock_request", "field": exc.field}
+            ) from exc
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
@@ -363,10 +380,20 @@ def build_evaluation_suite_router(
                     suite_id=suite_id,
                     actor=_actor_from(ctx, request),
                     member_lookup=_member_lookup_for(ctx, role_lookup),
+                    lock_request=lock_request,
                 )
-                body = _serialize(suite)
+                hashes = recorded_suite_sha256s(session, tenant_context, [suite.id])
+                body = _serialize(suite, hashes[suite.id])
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
+        except SuiteLockValidationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "suite_lock_validation_failed",
+                    "findings": [finding.as_dict() for finding in exc.findings],
+                },
+            ) from exc
         except (EvaluationSuiteLockedError, EvaluationSuiteIncompleteError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except EvaluationSuiteLockForbiddenError as exc:

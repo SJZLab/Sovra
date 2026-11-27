@@ -64,7 +64,7 @@ _CRUD_MODULE_PATH = API_ROOT / "app" / "evaluation" / "evaluation_suite_crud.py"
 
 import uvicorn  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
-from sqlalchemy import create_engine, func, select, text  # noqa: E402
+from sqlalchemy import create_engine, func, insert, select, text  # noqa: E402
 from sqlalchemy.exc import DBAPIError  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
@@ -77,6 +77,8 @@ from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # noqa: E402
 from app.evaluation import evaluation_suite_crud as _evaluation_suite_crud_module  # noqa: E402
 from app.evaluation import evaluation_suite_routes as _evaluation_suite_routes_module  # noqa: E402
+from app.evaluation.evaluation_case_store import EvaluationCaseRecord  # noqa: E402
+from app.evaluation.evaluation_suite_lock_gate import compute_suite_sha256  # noqa: E402
 from app.evaluation.evaluation_suite_routes import build_evaluation_suite_router  # noqa: E402
 from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
@@ -106,6 +108,66 @@ def _required_env(name: str) -> str:
         )
         sys.exit(1)
     return value
+
+
+def _valid_lock_body(
+    session_factory: Any, org_id: uuid.UUID, suite_id: object, *, final: bool
+) -> dict[str, object]:
+    """FTF-0603-F1 made the lock route validate the suite's cases, sample plan
+    and reviewed suite_sha256 (an empty suite can no longer lock). The
+    acceptance locks below are meant to lock a *valid* suite, so this seeds
+    the cases a valid suite needs -- one critical case for a development
+    suite, the Section 69.3 floors (1,000 independent tasks, 100 critical)
+    for a final one -- and returns the plan + hash body. Every FTF-0601
+    assertion is unchanged."""
+    count = 1000 if final else 1
+    sid = uuid.UUID(str(suite_id))
+    context = TenantContext(organization_id=org_id)
+    with tenant_scoped_session_for(session_factory, context) as session:
+        suite = session.get(EvaluationSuite, sid)
+        assert suite is not None
+        now = datetime.now(UTC)
+        rows = [
+            {
+                "id": uuid.uuid4(),
+                "organization_id": org_id,
+                "project_id": suite.project_id,
+                "suite_id": sid,
+                "case_key": f"case-{i:04d}",
+                "category": "prompt injection",
+                "severity": "high",
+                "critical": i < 100,
+                "language": "en",
+                "group_key": f"group-{i:04d}",
+                "input_json": {"text": f"input {i}"},
+                "expected_json": {"refused": True},
+                "grader_type": "required_refusal" if i < 100 else "exact_match",
+                "grader_config_json": {},
+                "weight": 1.0,
+                "created_by": "fixture",
+                "created_at": now,
+                "updated_at": now,
+            }
+            for i in range(count)
+        ]
+        session.execute(insert(EvaluationCaseRecord), rows)
+    with tenant_scoped_session_for(session_factory, context) as session:
+        suite = session.get(EvaluationSuite, sid)
+        cases = list(
+            session.execute(
+                select(EvaluationCaseRecord).where(EvaluationCaseRecord.suite_id == sid)
+            ).scalars()
+        )
+        sha = compute_suite_sha256(suite, cases)
+    return {
+        "sample_plan": {
+            "required_categories": ["prompt injection"],
+            "min_independent_tasks": count,
+            "min_critical_scenarios": 100 if final else 1,
+            "min_cases_per_category": 1,
+        },
+        "suite_sha256": sha,
+    }
 
 
 def _app_role_url(migration_url: str, app_password: str) -> str:
@@ -762,7 +824,11 @@ def main() -> None:
         )
 
         r = _request(
-            base_url, "POST", lock_path(org1_id, project1_id, suite1_id), principal=org1_admin
+            base_url,
+            "POST",
+            lock_path(org1_id, project1_id, suite1_id),
+            principal=org1_admin,
+            payload=_valid_lock_body(session_factory, org1_id, suite1_id, final=False),
         )
         check(
             "FTF-0601",
@@ -828,7 +894,11 @@ def main() -> None:
         check("FTF-0601", "assigning a distinct reviewer via PATCH succeeds (200)", r.status == 200)
 
         r = _request(
-            base_url, "POST", lock_path(org1_id, project1_id, suite2_id), principal=org1_admin
+            base_url,
+            "POST",
+            lock_path(org1_id, project1_id, suite2_id),
+            principal=org1_admin,
+            payload=_valid_lock_body(session_factory, org1_id, suite2_id, final=True),
         )
         check(
             "FTF-0601",
@@ -1030,6 +1100,7 @@ def main() -> None:
             f19_session.add(f19_suite)
             f19_session.flush()
             f19_suite_id = f19_suite.id
+        f19_lock_body = _valid_lock_body(session_factory, org1_id, f19_suite_id, final=True)
 
         def _lock_f19_suite_via_fresh_router() -> _Response:
             # Rebuilds the router fresh from whatever is currently loaded
@@ -1059,6 +1130,7 @@ def main() -> None:
                     "POST",
                     lock_path(org1_id, project1_id, f19_suite_id),
                     principal="f19-probe",
+                    payload=f19_lock_body,
                 )
 
         baseline_response = _lock_f19_suite_via_fresh_router()

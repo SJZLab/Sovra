@@ -565,6 +565,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0310.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
+      - name: FTF-0603-F1 negative-test proof (server-side suite lock gate -- plan floors, typed 409 per clause, suite_sha256 shared vector, migration 0039 shape, real routes over the real CRUD on SQLite, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0603_f1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501_p1.py
       - name: FTF-0501-P2 negative-test proof (upload-session hardening migration 0025 -- trigger shape, offline upgrade/downgrade SQL, shape-fault table, no DB required)
@@ -3194,6 +3196,47 @@ jobs:
       - name: Prove the real evaluation case evidence against the live database
         run: uv run python3 tests/integration/test_ftf_0602_p1_evaluation_cases.py
 
+  evaluation-suite-lock-gate-integration:
+    # FTF-0603-F1: real Postgres evidence for the server-side suite lock gate
+    # (migration 0039): single head and downgrade/upgrade round trip, ENABLE+
+    # FORCE RLS and a non-allow-all tenant policy on
+    # evaluation_suite_sample_plans, SELECT/INSERT only for the app role, the
+    # assigned reviewer's direct POST /lock on an all-TBD suite refused for
+    # each clause with the suite left draft, each clause alone refused and
+    # turned into a lock by a fault injected into its guard (restored
+    # byte-identical), a valid lock recording one plan row + hash + audit
+    # event, cross-tenant reads/writes of a plan refused by RLS and grants,
+    # and the CHECK / unique key / composite foreign key refusing raw writes --
+    # tests/integration/test_ftf_0603_f1_suite_lock_gate.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' evaluation-suite-lock-gate-integration ')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0603f1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0603f1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0603f1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the server-side suite lock gate against the live database
+        run: uv run python3 tests/integration/test_ftf_0603_f1_suite_lock_gate.py
+
   dataset-upload-integration:
     # FTF-0501-P1: real Postgres evidence for dataset version + upload-session
     # persistence (migration 0024): upgrade/downgrade/upgrade with one head,
@@ -4489,6 +4532,7 @@ jobs:
       - xlsx-import-integration
       - egress-verification-integration
       - development-suite-import-integration
+      - evaluation-suite-lock-gate-integration
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
