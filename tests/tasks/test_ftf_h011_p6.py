@@ -1286,6 +1286,68 @@ def test_review_probe_guards_its_options_and_verdicts() -> None:
     check("GUARD-3", "a completed verdict is still returned", not isinstance(ok, str))
 
 
+def test_only_read_columns_resolves_slots_exactly() -> None:
+    row = ("r0", "r1", "r2")
+    heads = ["Q", " q ", "z"]
+
+    def kept(slots: list[Any], headers: Any = heads, r: Any = row) -> Any:
+        values, names = rev._only_read_columns(r, headers, slots)
+        return values, None if names is None else list(names)
+
+    Slot = ic.Slot
+    check("COLS-1", "letters", kept([Slot("letters", "C")]) == (("r2",), ["z"]))
+    check("COLS-2", "index", kept([Slot("index", 1)]) == (("r1",), [" q "]))
+    check("COLS-3", "header exact", kept([Slot("header", "Q")]) == (("r0",), ["Q"]))
+    check("COLS-4", "header is not folded or trimmed", kept([Slot("header", "q")]) == ((), []))
+    check(
+        "COLS-5",
+        "a header slot with no headers keeps nothing",
+        kept([Slot("header", "Q")], None) == ((), None),
+    )
+    for kind, value in (
+        ("LETTERS", "A"),
+        (" letters", "A"),
+        ("Index", 0),
+        ("index ", 0),
+        ("Header", "Q"),
+    ):
+        check(
+            "COLS-6", f"slot kind {kind!r} selects nothing", kept([Slot(kind, value)]) == ((), [])
+        )
+    wide = kept([Slot("letters", "C")], ["Q", "a"], row)
+    check(
+        "COLS-7",
+        "a mapped column past the headers has no header and no crash",
+        wide == (("r2",), []),
+    )
+
+
+def test_the_xlsx_probe_restriction_uses_the_constant_exactly() -> None:
+    odd = f" {XLSX.title()} "
+    saved_const = rev.XLSX_CONTENT_TYPE
+    rev.XLSX_CONTENT_TYPE = odd
+    rev._EVENTS_BY_CONTENT_TYPE[odd] = lambda reader, mapping, **kw: xi.xlsx_events(
+        reader, mapping, **{**kw, "verified_content_type": XLSX}
+    )
+    try:
+        data = t505.book([[S("q"), S("a")], [S("hi"), S("there")]])
+        result = rev.run_mapping_probe(
+            reader_for(data),
+            t505.build_mapping(prompt={"letters": "A"}, completion={"letters": "A"}),
+            verified_content_type=odd,
+            dataset_sha256=sha(data),
+            reveal=True,
+        )
+        check(
+            "COLS-8",
+            f"the restriction applies to exactly the constant's value (got {result.raw_rows})",
+            [dict(r) for r in result.raw_rows] == [{"q": "hi"}],
+        )
+    finally:
+        rev.XLSX_CONTENT_TYPE = saved_const
+        del rev._EVENTS_BY_CONTENT_TYPE[odd]
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
