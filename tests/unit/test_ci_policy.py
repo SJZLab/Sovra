@@ -399,6 +399,30 @@ def test_classify_focus_narrows_a_full_run(tmp_path, monkeypatch):
     assert o["focus"] == " network-policy-enforcement-integration "
 
 
+def test_classify_draft_runs_the_gate_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "true")
+    o = _classify(tmp_path, monkeypatch, "", ["a.py"])
+    assert o["scope"] == "draft"
+    assert o["focus"].strip() == "", "no integration job is selected for a draft"
+
+
+def test_classify_ready_pr_is_a_full_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "false")
+    assert _classify(tmp_path, monkeypatch, "", ["a.py"])["scope"] == "full"
+
+
+def test_classify_draft_never_widens_a_tracker_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "true")
+    assert _classify(tmp_path, monkeypatch, "", ["QUEUE.md"])["scope"] == "tracker"
+
+
+def test_draft_run_never_passes_even_when_everything_ran_green():
+    problems, exempt = cp.evaluate(_ok(**{"db-integration": "skipped"}), EXPECTED, "draft", False)
+    assert any("draft run" in p for p in problems)
+    assert "db-integration" in exempt
+    assert any("draft run" in p for p in cp.evaluate(_ok(), EXPECTED, "draft", False)[0])
+
+
 def test_classify_focus_never_widens_a_tracker_run(tmp_path, monkeypatch):
     o = _classify(tmp_path, monkeypatch, "ci-focus: storage-semantics-integration", ["QUEUE.md"])
     assert o["scope"] == "tracker" and o["focus"].strip() == ""

@@ -136,6 +136,14 @@ def cmd_classify(args: argparse.Namespace) -> int:
                         f"ci-focus in the PR body: only {', '.join(focus)} of the integration jobs "
                         "run; this run can never pass ci-verdict"
                     )
+                elif os.environ.get("PR_DRAFT", "").strip().lower() == "true":
+                    # A draft cannot be merged, so its pushes get the gate only. Marking the PR
+                    # ready starts the full run, which is the only one that can pass ci-verdict.
+                    scope = "draft"
+                    reason = (
+                        "draft PR: the gate runs, the integration jobs wait until the PR is "
+                        "marked ready; this run can never pass ci-verdict"
+                    )
     except Exception as exc:  # any doubt -> widest scope, never a silent narrow run
         scope, reason, files, focus = (
             "full",
@@ -392,6 +400,8 @@ def skip_exemption(job: str, scope: str, is_relay: bool) -> str | None:
         return "tracker-only change set: integration jobs test code that did not change"
     if job.endswith("-integration") and scope == "focused":
         return "not in ci-focus (the focused run itself fails the verdict)"
+    if job.endswith("-integration") and scope == "draft":
+        return "draft PR (the draft run itself fails the verdict)"
     if job in {"mutation-gate", "relay-policy"} and not is_relay:
         return "runs only on [relay] PRs"
     return None
@@ -424,6 +434,11 @@ def evaluate(
         problems.append(
             "focused run (ci-focus in the PR body) verified only part of the change; "
             "remove the ci-focus line and push to get a merge verdict"
+        )
+    elif scope == "draft":
+        problems.append(
+            "draft run verified the gate only; mark the PR ready for review to get the full run "
+            "and a merge verdict"
         )
     elif scope not in {"tracker", "full"}:
         problems.append(f"scope {scope!r} is unknown; classify must decide tracker or full")

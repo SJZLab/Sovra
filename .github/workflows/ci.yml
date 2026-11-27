@@ -1,5 +1,8 @@
 name: CI
-on: [pull_request]
+on:
+  pull_request:
+    # ready_for_review starts the full run when a draft is marked ready (drafts run the gate only).
+    types: [opened, synchronize, reopened, ready_for_review]
 # One live verification per PR. A newer event on the same PR (new head, or the same head
 # re-delivered) supersedes the older run: its inputs (head, base/merge candidate, workflow)
 # are the current ones, so the older run is cancelled instead of finishing a stale answer.
@@ -45,6 +48,7 @@ jobs:
           # Untrusted PR text goes through env, never interpolated into the script. It can only
           # narrow a run to "focused", which ci-verdict always fails.
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: python3 "$RUNNER_TEMP/ci_policy.py" classify --base "origin/${BASE_REF}" --event "$EVENT" --workflow .github/workflows/ci.yml
 
   relay-policy:
