@@ -474,7 +474,12 @@ def contract_findings(openapi_text: str, schema_text: str, mod: ModuleType) -> l
         "after_name": (
             "query",
             False,
-            {"type": "string", "minLength": 1, "maxLength": store.NAME_MAX_LENGTH},
+            {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": store.NAME_MAX_LENGTH,
+                "pattern": "^[^\\u0000-\\u001F]+$",
+            },
         ),
         "after_version": ("query", False, {"type": "integer", "minimum": 1, "maximum": 2147483647}),
     }:
@@ -1143,6 +1148,21 @@ def route_suite(mod: ModuleType) -> None:
             ("limit 200", "limit=200", {"limit": 200, "after": None}),
             ("a cursor", "after_name=exp-a&after_version=2", {"limit": 50, "after": ("exp-a", 2)}),
             (
+                "a cursor name with spaces and punctuation",
+                "after_name=%20a%20~&after_version=3",
+                {"limit": 50, "after": (" a ~", 3)},
+            ),
+            (
+                "a non-ASCII cursor name",
+                "after_name=%C3%A9&after_version=3",
+                {"limit": 50, "after": ("é", 3)},
+            ),
+            (
+                "a DEL cursor name",
+                "after_name=%7F&after_version=3",
+                {"limit": 50, "after": ("\x7f", 3)},
+            ),
+            (
                 "a one-character cursor name",
                 "after_name=a&after_version=1",
                 {"limit": 50, "after": ("a", 1)},
@@ -1185,6 +1205,11 @@ def route_suite(mod: ModuleType) -> None:
             ("after_name alone", "after_name=a"),
             ("after_version alone", "after_version=1"),
             ("after_name empty", "after_name=&after_version=1"),
+            ("after_name NUL", "after_name=%00&after_version=1"),
+            ("after_name with an inner NUL", "after_name=a%00b&after_version=1"),
+            ("after_name with a newline", "after_name=a%0Ab&after_version=1"),
+            ("after_name with a tab", "after_name=%09&after_version=1"),
+            ("after_name with a unit separator", "after_name=a%1F&after_version=1"),
             ("after_name 201 chars", "after_name=" + "n" * 201 + "&after_version=1"),
             ("after_version 0", "after_name=a&after_version=0"),
             ("after_version 2^31", "after_name=a&after_version=2147483648"),
@@ -1472,6 +1497,12 @@ FAULTS: list[tuple[str, str, str]] = [
         "len(keys) != len(set(keys)) or not set(keys) <= _QUERY_KEYS",
         "len(keys) != len(set(keys))",
     ),
+    (
+        "control characters accepted in the cursor",
+        "    if any(ord(ch) < 0x20 or 0xD800 <= ord(ch) <= 0xDFFF for ch in name):\n        raise _invalid_body()\n",
+        "",
+    ),
+    ("only NUL refused in the cursor", "ord(ch) < 0x20 or 0xD800", "ord(ch) < 0x01 or 0xD800"),
     (
         "page limit widened",
         "limit = _decimal(raw_limit, 1, MAX_PAGE_SIZE)",

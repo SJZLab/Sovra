@@ -513,11 +513,25 @@ def section_create(env: Any, client: Client, fx: Any) -> str:
         ("limit 201", "limit=201"),
         ("half a cursor", "after_name=a"),
         ("unknown", "offset=1"),
+        ("a NUL cursor", "after_name=%00&after_version=1"),
+        ("an inner-NUL cursor", "after_name=a%00b&after_version=1"),
+        ("a newline cursor", "after_name=a%0Ab&after_version=1"),
     ):
         got = client.call("GET", f"{base}?{query}", "org1:viewer")
         check(
             f"list {label} is 400 invalid_body",
             (got.status, got.json) == (400, {"detail": "invalid_body"}),
+        )
+    for label, query in (
+        ("a non-ASCII cursor", "after_name=%C3%A9%E2%80%A8&after_version=1"),
+        ("a DEL cursor", "after_name=%7F&after_version=1"),
+        ("an invalid-UTF-8 cursor", "after_name=%FF%FE&after_version=1"),
+        ("a 200-char cursor", "after_name=" + "z" * 200 + "&after_version=2147483647"),
+    ):
+        got = client.call("GET", f"{base}?{query}", "org1:viewer")
+        check(
+            f"list with {label} answers 200, never a 500 ({got.status})",
+            got.status == 200 and "experiments" in got.json,
         )
     return str(exp["id"])
 

@@ -144,6 +144,10 @@ def _page(request: Request) -> tuple[int, tuple[str, int] | None]:
         return limit, None
     if name is None or raw_version is None or not 1 <= len(name) <= NAME_MAX_LENGTH:
         raise _invalid_body()
+    # A cursor is a stored name: no control character (PostgreSQL refuses NUL in text) and no
+    # lone surrogate (it cannot be encoded for the query).
+    if any(ord(ch) < 0x20 or 0xD800 <= ord(ch) <= 0xDFFF for ch in name):
+        raise _invalid_body()
     return limit, (name, _decimal(raw_version, 1, _MAX_VERSION))
 
 

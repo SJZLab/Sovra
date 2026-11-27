@@ -93,11 +93,15 @@ paths:
         - name: after_name
           in: query
           required: false
-          description: Cursor; given together with `after_version` or not at all.
+          description: >-
+            Cursor; given together with `after_version` or not at all. A stored
+            name: no control character (U+0000..U+001F); anything else is 400
+            `invalid_body`.
           schema:
             type: string
             minLength: 1
             maxLength: 200
+            pattern: '^[^\u0000-\u001F]+$'
         - name: after_version
           in: query
           required: false
