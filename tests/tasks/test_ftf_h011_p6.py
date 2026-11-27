@@ -1188,6 +1188,34 @@ def test_a_malformed_probe_block_is_refused_before_anything_is_read() -> None:
     check("ROUTE-12", "no visibility read happened for any malformed block", reached == [])
 
 
+def test_the_content_type_comparison_uses_the_constant_exactly() -> None:
+    # Kills `XLSX_CONTENT_TYPE -> XLSX_CONTENT_TYPE.strip().lower()` in both gates: with the
+    # constant swapped for a padded mixed-case value, only an exact comparison against the
+    # constant as written still recognises that value.
+    import app.datasets.dataset_mapping_store as store
+
+    odd = f" {XLSX.title()} "
+    saved = (store.XLSX_CONTENT_TYPE, rev.XLSX_CONTENT_TYPE)
+    store.XLSX_CONTENT_TYPE = odd
+    rev.XLSX_CONTENT_TYPE = odd
+    try:
+        check(
+            "ROUTE-13",
+            "the store selects xlsx for exactly the constant's own value",
+            store.importer_for_content_type(odd) == "xlsx",
+        )
+        try:
+            rev.run_worksheet_probe(
+                reader_for(GOOD), verified_content_type=odd, dataset_sha256=sha(GOOD), reveal=True
+            )
+            gated = False
+        except rev.MappingPreviewUnavailableError:
+            gated = True
+        check("ROUTE-14", "the worksheet probe compares against the constant exactly", not gated)
+    finally:
+        store.XLSX_CONTENT_TYPE, rev.XLSX_CONTENT_TYPE = saved
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:
