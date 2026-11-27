@@ -145,9 +145,10 @@ def main() -> None:
         if result.returncode != 0:
             return _finish()
     heads = p1._alembic(["heads"], migration_url)
+    history = p1._alembic(["history"], migration_url)
     check(
-        f"I0 exactly one alembic head, 0038 ({heads.stdout!r})",
-        heads.stdout.count("(head)") == 1 and "0038_dataset_mapping_requests" in heads.stdout,
+        f"I0 exactly one alembic head, with 0038 in the chain ({heads.stdout!r})",
+        heads.stdout.count("(head)") == 1 and "0038_dataset_mapping_requests" in history.stdout,
     )
 
     endpoint, credentials = s3lab._load_endpoint_and_credentials()

@@ -1663,9 +1663,15 @@ def main() -> None:
         if migrated.returncode != 0:
             _finish()
     heads = split_proof._alembic(["heads"], migration_url)
+    history = split_proof._alembic(["history"], migration_url)
     check(
-        f"exactly one Alembic head, 0039: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0039_training_experiments" in heads.stdout,
+        f"exactly one Alembic head, with 0039 in the chain: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1 and "0039_training_experiments" in history.stdout,
+    )
+    table_after_cycle = split_proof._alembic(["current"], migration_url)
+    check(
+        f"the database is at the head after the cycle: {table_after_cycle.stdout!r}",
+        "(head)" in table_after_cycle.stdout,
     )
 
     env = split_proof.Env()

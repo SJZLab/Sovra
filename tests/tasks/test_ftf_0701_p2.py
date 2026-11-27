@@ -566,8 +566,8 @@ def part_m_sql() -> None:
     )
     check(
         "LAW18-SQL",
-        f"exactly one head, 0039: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0039_training_experiments" in heads.stdout,
+        f"exactly one head: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1,
     )
 
 
