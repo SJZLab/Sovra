@@ -221,6 +221,10 @@ def _exact_keys(
 ) -> dict[str, Any]:
     if type(obj) is not dict:
         raise _fail("invalid_body")
+    # Exact `str` keys only, checked before any set compare: iterating never calls a key's
+    # `__eq__`, so a foreign or str-subclass key is one coded refusal and never a raw error.
+    if any(type(key) is not str for key in obj):
+        raise _fail("invalid_body")
     present = set(obj)
     if not (set(keys) <= present <= set(keys) | set(optional)):
         raise _fail("invalid_body")
@@ -650,8 +654,15 @@ def _validate_facts(facts: TrainingConfigFacts) -> None:
 
 
 def canonical_config_json(doc: Mapping[str, Any]) -> str:
-    """Key-order independent, whitespace-free JSON of a plain-JSON document."""
-    return json.dumps(_thaw(doc), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    """Key-order independent, whitespace-free JSON of a plain-JSON document.
+
+    A deep, cyclic or otherwise unserializable document is the module's own ``invalid_body``,
+    never a raw ``RecursionError``/``ValueError``/``TypeError`` (so the two hash helpers are too).
+    """
+    try:
+        return json.dumps(_thaw(doc), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    except Exception:  # noqa: BLE001  # deep, cyclic, raising or non-JSON document
+        raise _fail("invalid_body") from None
 
 
 def compute_config_sha256(doc: Mapping[str, Any]) -> str:
@@ -667,10 +678,11 @@ def resolve_training_config(
 ) -> ResolvedTrainingConfig:
     # A hand-built request is re-parsed, so a doc that did not come from the parser fails closed.
     try:
-        thawed = _thaw(request.doc)
+        doc = parse_training_config_request(_thaw(request.doc)).doc
+    except TrainingConfigError:
+        raise
     except Exception:  # noqa: BLE001  # not a request object, or a hostile/cyclic doc
         raise _fail("invalid_body") from None
-    doc = parse_training_config_request(thawed).doc
 
     # 2. Enablement (409).
     if doc["method"] not in ENABLED_METHODS:

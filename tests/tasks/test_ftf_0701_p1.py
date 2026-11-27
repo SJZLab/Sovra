@@ -256,6 +256,18 @@ ENUM_FIELDS = {
     "precision.compute_dtype": ("unsupported_dtype", ["bf16", "fp16", "fp32"]),
     "precision.quantization": ("invalid_quantization", ["none", "nf4"]),
 }
+# Every enum $def and the JSON type its members must have (round 4 item 3).
+ENUM_DEF_TYPES = {
+    "TrainingMethod": "string",
+    "EnabledTrainingMethod": "string",
+    "TrainingMode": "string",
+    "Optimizer": "string",
+    "Scheduler": "string",
+    "ComputeDtype": "string",
+    "Quantization": "string",
+    "SequenceLength": "integer",
+    "TrainingConfigErrorCode": "string",
+}
 WRONG_TYPES: list[Any] = [True, False, 1.0, "3", None, [], {}, [3]]
 
 
@@ -1439,6 +1451,11 @@ def _validate(schema: dict[str, Any], defs: dict[str, Any], value: Any) -> bool:
         return _validate(defs[schema["$ref"].rsplit("/", 1)[1]], defs, value)
     if "oneOf" in schema:
         return sum(_validate(s, defs, value) for s in schema["oneOf"]) == 1
+    # `type` first: a const/enum node's declared type is applied too, not skipped by the returns.
+    kind = schema.get("type")
+    kinds = kind if isinstance(kind, list) else [kind]
+    if not any(_type_ok(k, value) for k in kinds):
+        return False
     if "const" in schema:
         return type(value) is type(schema["const"]) and value == schema["const"]
     if "enum" in schema:
@@ -1450,10 +1467,6 @@ def _validate(schema: dict[str, Any], defs: dict[str, Any], value: Any) -> bool:
         branch = schema.get("then") if _validate(schema["if"], defs, value) else schema.get("else")
         if branch is not None and not _validate(branch, defs, value):
             return False
-    kind = schema.get("type")
-    kinds = kind if isinstance(kind, list) else [kind]
-    if not any(_type_ok(k, value) for k in kinds):
-        return False
     if isinstance(value, str):
         if (
             "pattern" in schema
@@ -2041,8 +2054,39 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "request-doc-uncoded",
-        "        thawed = _thaw(request.doc)\n    except Exception:",
-        "        thawed = _thaw(request.doc)\n    except KeyError:",
+        "        raise\n    except Exception:  # noqa: BLE001  # not a request object",
+        "        raise\n    except KeyError:  # noqa: BLE001  # not a request object",
+    ),
+    # Round 4 (items 1 and 4).
+    (
+        "reparse-coded-refusal-swallowed",
+        "    except TrainingConfigError:\n        raise\n    except Exception:",
+        "    except Exception:",
+    ),
+    (
+        "key-type-check-removed",
+        '    if any(type(key) is not str for key in obj):\n        raise _fail("invalid_body")\n',
+        "",
+    ),
+    (
+        "key-type-isinstance",
+        "if any(type(key) is not str for key in obj):",
+        "if any(not isinstance(key, str) for key in obj):",
+    ),
+    (
+        "key-type-any-to-all",
+        "if any(type(key) is not str for key in obj):",
+        "if all(type(key) is not str for key in obj):",
+    ),
+    (
+        "canonical-json-uncoded",
+        "    except Exception:  # noqa: BLE001  # deep, cyclic, raising or non-JSON document",
+        "    except KeyError:  # noqa: BLE001  # deep, cyclic, raising or non-JSON document",
+    ),
+    (
+        "canonical-json-recursion-only",
+        "    except Exception:  # noqa: BLE001  # deep, cyclic, raising or non-JSON document",
+        "    except RecursionError:  # noqa: BLE001  # deep, cyclic, raising or non-JSON document",
     ),
     (
         "schema-version-foreign-ne",
@@ -2921,6 +2965,178 @@ def facts_validation_suite(m: Any) -> None:
         )
 
 
+def hostile_key_suite(m: Any) -> None:
+    """Round 4 items 1 and 4: a hostile dict key or a deep/cyclic document gives the module's own
+    coded error and never a raw exception."""
+
+    class _CollidingKey:
+        """Hashes like a required key; any comparison raises."""
+
+        def __init__(self, twin: str) -> None:
+            self._hash = hash(twin)
+
+        def __hash__(self) -> int:
+            return self._hash
+
+        def __eq__(self, other: object) -> bool:
+            raise RuntimeError("boom")
+
+    class _StrKey(str):
+        """A str subclass whose comparison raises (same hash as the plain key)."""
+
+        __hash__ = str.__hash__
+
+        def __eq__(self, other: object) -> bool:
+            raise RuntimeError("boom")
+
+    class _FakeReq:
+        def __init__(self, doc: Any) -> None:
+            self.doc = doc
+
+    def swap_key(body: dict[str, Any], path: str, make: Any) -> dict[str, Any]:
+        """The dict at ``path`` ('' = top) rebuilt with its first key replaced by a hostile twin."""
+        out = copy.deepcopy(body)
+        parent: Any = None
+        node: Any = out
+        last = ""
+        for part in [x for x in path.split(".") if x]:
+            parent, last, node = node, part, node[part]
+        first = next(iter(node))
+        rebuilt = {make(first): node[first]}  # inserted first: nothing to compare against yet
+        rebuilt.update({k: v for k, v in node.items() if k != first})
+        if parent is None:
+            return rebuilt
+        parent[last] = rebuilt
+        return out
+
+    facts = make_facts(m)
+    levels = (
+        "",
+        "base",
+        "tokenizer",
+        "template",
+        "data",
+        "data.train",
+        "data.validation",
+        "precision",
+        "hyperparameters",
+        "adapter",
+        "budget",
+    )
+    for level in levels:
+        for label, make in (
+            ("colliding raising key", _CollidingKey),
+            ("str-subclass key", _StrKey),
+        ):
+            body = swap_key(valid_body(), level, make)
+            where = level or "top"
+            check(
+                "K10",
+                f"parse: {label} at {where} is invalid_body",
+                parse_code(m, body) == "invalid_body",
+            )
+            check(
+                "K10",
+                f"resolve re-parse: {label} at {where} is invalid_body",
+                code_of(m, lambda b=body: m.resolve_training_config(_FakeReq(b), facts))
+                == "invalid_body",
+            )
+    for label, key in (("int", 1), ("None", None), ("bytes", b"mode"), ("tuple", ("mode",))):
+        body = valid_body()
+        body[key] = 1
+        check(
+            "K10",
+            f"parse: extra {label} key is invalid_body",
+            parse_code(m, body) == "invalid_body",
+        )
+    # A plain str-keyed body still parses and resolves (the key rule refuses nothing valid).
+    check("K10", "valid body still parses", parse_code(m, valid_body()) is None)
+    check("K10", "valid body still resolves", resolve_code(m, valid_body(), facts) is None)
+    # Any raw error out of the re-parse itself is coded by resolve, never propagated.
+    real_parse = m.parse_training_config_request
+
+    def _raw(_body: object) -> Any:
+        raise RuntimeError("boom")
+
+    def _coded(_body: object) -> Any:
+        raise m.TrainingConfigError("invalid_lora_rank")
+
+    request = real_parse(valid_body())
+    try:
+        m.parse_training_config_request = _raw
+        check(
+            "K10",
+            "raw error inside the re-parse is invalid_body",
+            code_of(m, lambda: m.resolve_training_config(request, facts)) == "invalid_body",
+        )
+        m.parse_training_config_request = _coded
+        check(
+            "K10",
+            "a coded refusal from the re-parse keeps its own code",
+            code_of(m, lambda: m.resolve_training_config(request, facts)) == "invalid_lora_rank",
+        )
+    finally:
+        m.parse_training_config_request = real_parse
+
+    # Item 4: canonical JSON / hash / verify on a deep, cyclic or unserializable document.
+    cyc: dict[str, Any] = dict(valid_body())
+    cyc["self"] = cyc
+    cyc_list: list[Any] = []
+    cyc_list.append(cyc_list)
+    deep: dict[str, Any] = {}
+    cur = deep
+    for _ in range(100000):
+        cur["a"] = {}
+        cur = cur["a"]
+    deep_tuple: Any = ()
+    for _ in range(100000):
+        deep_tuple = (deep_tuple,)
+
+    class _BoomMap(dict):  # type: ignore[type-arg]
+        def items(self) -> Any:
+            raise RuntimeError("boom")
+
+    hostile_docs = (
+        ("cyclic dict", cyc),
+        ("cyclic list", {"a": cyc_list}),
+        ("deep dict", deep),
+        ("deep tuple", {"a": deep_tuple}),
+        ("raising map", _BoomMap(valid_body())),
+        ("unserializable value", {"a": object()}),
+        ("unsortable keys", {"a": 1, 2: 3}),
+    )
+    for label, doc in hostile_docs:
+        for fname, fn in (
+            ("canonical_config_json", m.canonical_config_json),
+            ("compute_config_sha256", m.compute_config_sha256),
+            (
+                "verify_config_sha256",
+                lambda d: m.verify_config_sha256(
+                    m.ResolvedTrainingConfig(doc=d, config_sha256="0" * 64)
+                ),
+            ),
+        ):
+            check(
+                "K11",
+                f"{fname}: {label} is invalid_body",
+                code_of(m, lambda f=fn, d=doc: f(d)) == "invalid_body",
+            )
+    good = m.resolve_training_config(real_parse(valid_body()), facts)
+    check("K11", "a real resolved config still verifies", m.verify_config_sha256(good) is True)
+    check(
+        "K11",
+        "a real resolved config with another hash does not verify",
+        m.verify_config_sha256(m.ResolvedTrainingConfig(doc=good.doc, config_sha256="0" * 64))
+        is False,
+    )
+    check(
+        "K11",
+        "canonical JSON of a real document is unchanged",
+        m.canonical_config_json({"b": [1, "x"], "a": {"d": None, "c": True}})
+        == '{"a":{"c":true,"d":null},"b":[1,"x"]}',
+    )
+
+
 def resolved_schema_suite(m: Any) -> None:
     """r2 findings 3-4: per-field schema parity for the resolved document, typed server fields,
     seed required in the resolved document."""
@@ -3024,6 +3240,167 @@ def resolved_schema_suite(m: Any) -> None:
         == "^[0-9a-f]{64}$",
     )
 
+    # Round 4 item 3: the validator itself applies `type` on const/enum nodes.
+    check(
+        "L6",
+        "validator: enum of the declared type",
+        _validate({"type": "string", "enum": ["a"]}, {}, "a"),
+    )
+    check(
+        "L6",
+        "validator: enum value of another declared type is refused",
+        not _validate({"type": "integer", "enum": ["a"]}, {}, "a"),
+    )
+    check(
+        "L6",
+        "validator: const of the declared type",
+        _validate({"type": "string", "const": "a"}, {}, "a"),
+    )
+    check(
+        "L6",
+        "validator: const value of another declared type is refused",
+        not _validate({"type": "integer", "const": "a"}, {}, "a"),
+    )
+    check(
+        "L6",
+        "validator: enum member under a type list",
+        _validate({"type": ["string", "null"], "enum": ["a", None]}, {}, None),
+    )
+    for name, kind in ENUM_DEF_TYPES.items():
+        check("L6", f"{name} declares type {kind}", defs[name].get("type") == kind)
+        check(
+            "L6",
+            f"{name} members are all of type {kind}",
+            all(_type_ok(kind, e) for e in defs[name]["enum"]),
+        )
+        check(
+            "L6",
+            f"{name} accepts each member and refuses the other JSON types",
+            all(_validate(defs[name], defs, e) for e in defs[name]["enum"])
+            and not any(_validate(defs[name], defs, w) for w in (None, True, 1.5, [], {})),
+        )
+    check(
+        "L6",
+        "server.security_profile is a typed closed enum equal to the module's set",
+        (server["security_profile"].get("type"), server["security_profile"].get("enum"))
+        == ("string", list(m.SECURITY_PROFILES)),
+    )
+    # Round 4 item 2: resolved-envelope schema faults, each with a negative row on a real envelope.
+    check(
+        "L7",
+        "server.base_revision pattern byte-equals the module",
+        (server["base_revision"].get("type"), server["base_revision"].get("pattern"))
+        == ("string", "^" + m._REVISION.pattern + "$"),
+    )
+    check(
+        "L7",
+        "server.split_manifest_version bounds",
+        (
+            server["split_manifest_version"].get("type"),
+            server["split_manifest_version"].get("minimum"),
+            server["split_manifest_version"].get("maximum"),
+        )
+        == ("integer", 1, 2147483647),
+    )
+    mode_rule = [
+        {
+            "if": {"properties": {"mode": {"const": "advanced"}}},
+            "then": {"properties": {"auto_rule_version": {"type": "null"}}},
+            "else": {"properties": {"auto_rule_version": {"type": "string"}}},
+        }
+    ]
+    check("L7", "ResolvedConfigDocument mode rule (allOf)", res.get("allOf") == mode_rule)
+    check("L7", "TrainingConfigV1 mode rule (allOf)", cfg.get("allOf") == mode_rule)
+    for label, node in (
+        ("TrainingConfigV1", cfg),
+        ("ResolvedConfigDocument", res),
+        ("ResolvedConfigDocument.server", res["properties"]["server"]),
+        ("ResolvedTrainingConfig", rs),
+    ):
+        check("L7", f"{label} is type object", node.get("type") == "object")
+    check(
+        "L7",
+        "config_sha256 is type string",
+        rs["properties"]["config_sha256"].get("type") == "string",
+    )
+
+    def envelope(**server_over: Any) -> dict[str, Any]:
+        config = json.loads(m.canonical_config_json(r.doc))
+        config["server"].update(server_over)
+        return {"config": config, "config_sha256": r.config_sha256}
+
+    def with_config(**over: Any) -> dict[str, Any]:
+        env = envelope()
+        env["config"].update(over)
+        return env
+
+    check("L7", "a real resolved envelope validates", _validate(rs, defs, envelope()))
+    check(
+        "L7",
+        "a real request body validates",
+        _validate(cfg, defs, json.loads(json.dumps(valid_body()))),
+    )
+    for label, value, good_value in (
+        ("split_manifest_version 1", 1, True),
+        ("split_manifest_version 2^31-1", 2147483647, True),
+        ("split_manifest_version 0", 0, False),
+        ("split_manifest_version -1", -1, False),
+        ("split_manifest_version 2^31", 2147483648, False),
+        ("split_manifest_version string", "1", False),
+        ("split_manifest_version bool", True, False),
+    ):
+        check(
+            "L7",
+            f"envelope row: {label}",
+            _validate(rs, defs, envelope(split_manifest_version=value)) is good_value,
+        )
+    for label, value, good_value in (
+        ("one char", "a", True),
+        ("128 chars", "a" * 128, True),
+        ("129 chars", "a" * 129, False),
+        ("empty", "", False),
+        ("leading dash", "-main", False),
+        ("space", "ma in", False),
+        ("slash", "refs/heads/main", False),
+        ("integer", 1, False),
+        ("null", None, False),
+    ):
+        check(
+            "L7",
+            f"envelope row: base_revision {label}",
+            _validate(rs, defs, envelope(base_revision=value)) is good_value,
+        )
+    for label, over, good_value in (
+        ("advanced + null rule", {"mode": "advanced", "auto_rule_version": None}, True),
+        ("advanced + string rule", {"mode": "advanced", "auto_rule_version": "v1"}, False),
+        ("auto + string rule", {"mode": "auto", "auto_rule_version": "v1"}, True),
+        ("auto + null rule", {"mode": "auto", "auto_rule_version": None}, False),
+    ):
+        check(
+            "L7", f"envelope row: {label}", _validate(rs, defs, with_config(**over)) is good_value
+        )
+        body = {**json.loads(json.dumps(valid_body())), **over}
+        check("L7", f"request row: {label}", _validate(cfg, defs, body) is good_value)
+    for label, bad in (("list", []), ("string", "x"), ("integer", 5), ("null", None)):
+        check("L7", f"envelope row: non-object envelope ({label})", not _validate(rs, defs, bad))
+        check(
+            "L7",
+            f"envelope row: non-object config ({label})",
+            not _validate(rs, defs, {**envelope(), "config": bad}),
+        )
+        check(
+            "L7",
+            f"envelope row: non-object server ({label})",
+            not _validate(rs, defs, with_config(server=bad)),
+        )
+        check("L7", f"request row: non-object body ({label})", not _validate(cfg, defs, bad))
+    for label, bad in (("integer", 5), ("null", None), ("list", []), ("bool", True)):
+        check(
+            "L7",
+            f"envelope row: {label} config_sha256",
+            not _validate(rs, defs, {**envelope(), "config_sha256": bad}),
+        )
+
 
 def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
     _failures.clear()
@@ -3035,6 +3412,7 @@ def run_suite(path: Path, name: str, *, contract: bool = True) -> list[str]:
     facts_leak_suite(module)
     order_suite(module)
     facts_validation_suite(module)
+    hostile_key_suite(module)
     resolved_schema_suite(module)
     return list(_failures)
 
@@ -3127,6 +3505,81 @@ def main() -> int:
             "config-sha256-pattern-dropped": lambda d: d["ResolvedTrainingConfig"]["properties"][
                 "config_sha256"
             ].pop("pattern"),
+            "server-base-revision-pattern-dropped": lambda d: srv(d)["properties"][
+                "base_revision"
+            ].pop("pattern"),
+            "server-base-revision-pattern-loosened": lambda d: srv(d)["properties"][
+                "base_revision"
+            ].__setitem__("pattern", "^[A-Za-z0-9][A-Za-z0-9._-]{0,128}$"),
+            "server-split-version-min-dropped": lambda d: srv(d)["properties"][
+                "split_manifest_version"
+            ].pop("minimum"),
+            "server-split-version-min-0": lambda d: srv(d)["properties"][
+                "split_manifest_version"
+            ].__setitem__("minimum", 0),
+            "server-split-version-max-dropped": lambda d: srv(d)["properties"][
+                "split_manifest_version"
+            ].pop("maximum"),
+            "server-split-version-max+1": lambda d: srv(d)["properties"][
+                "split_manifest_version"
+            ].__setitem__("maximum", 2147483648),
+            "resolved-allOf-dropped": lambda d: d["ResolvedConfigDocument"].pop("allOf"),
+            "resolved-allOf-emptied": lambda d: d["ResolvedConfigDocument"].__setitem__(
+                "allOf", []
+            ),
+            "resolved-allOf-if-dropped": lambda d: d["ResolvedConfigDocument"]["allOf"][0].pop(
+                "if"
+            ),
+            "resolved-allOf-if-const-auto": lambda d: d["ResolvedConfigDocument"]["allOf"][0]["if"][
+                "properties"
+            ]["mode"].__setitem__("const", "auto"),
+            "resolved-allOf-then-dropped": lambda d: d["ResolvedConfigDocument"]["allOf"][0].pop(
+                "then"
+            ),
+            "resolved-allOf-then-string": lambda d: d["ResolvedConfigDocument"]["allOf"][0]["then"][
+                "properties"
+            ]["auto_rule_version"].__setitem__("type", "string"),
+            "resolved-allOf-else-dropped": lambda d: d["ResolvedConfigDocument"]["allOf"][0].pop(
+                "else"
+            ),
+            "resolved-allOf-else-null": lambda d: d["ResolvedConfigDocument"]["allOf"][0]["else"][
+                "properties"
+            ]["auto_rule_version"].__setitem__("type", "null"),
+            "request-allOf-dropped": lambda d: d["TrainingConfigV1"].pop("allOf"),
+            "request-type-object-dropped": lambda d: d["TrainingConfigV1"].pop("type"),
+            "resolved-doc-type-object-dropped": lambda d: d["ResolvedConfigDocument"].pop("type"),
+            "resolved-doc-type-array": lambda d: d["ResolvedConfigDocument"].__setitem__(
+                "type", "array"
+            ),
+            "server-type-object-dropped": lambda d: srv(d).pop("type"),
+            "resolved-config-type-dropped": lambda d: d["ResolvedTrainingConfig"].pop("type"),
+            "config-sha256-type-dropped": lambda d: d["ResolvedTrainingConfig"]["properties"][
+                "config_sha256"
+            ].pop("type"),
+            "config-sha256-type-integer": lambda d: d["ResolvedTrainingConfig"]["properties"][
+                "config_sha256"
+            ].__setitem__("type", "integer"),
+            "security-profile-type-dropped": lambda d: srv(d)["properties"]["security_profile"].pop(
+                "type"
+            ),
+            "security-profile-type-integer": lambda d: srv(d)["properties"][
+                "security_profile"
+            ].__setitem__("type", "integer"),
+            "security-profile-enum-extended": lambda d: srv(d)["properties"]["security_profile"][
+                "enum"
+            ].append("open"),
+            **{
+                f"enum-type-dropped-{name}": (lambda d, n=name: d[n].pop("type"))
+                for name in ENUM_DEF_TYPES
+            },
+            **{
+                f"enum-type-changed-{name}": (
+                    lambda d, n=name, k=kind: d[n].__setitem__(
+                        "type", "integer" if k == "string" else "string"
+                    )
+                )
+                for name, kind in ENUM_DEF_TYPES.items()
+            },
         }
         for fname, edit in schema_faults.items():
             with tempfile.TemporaryDirectory() as tmp:
