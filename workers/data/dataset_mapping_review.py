@@ -65,7 +65,7 @@ from workers.data.import_common import (
 from workers.data.json_importer import json_events
 from workers.data.jsonl_importer import jsonl_events
 from workers.data.ooxml_safety import XLSX_CONTENT_TYPE
-from workers.data.xlsx_importer import list_worksheets, xlsx_events
+from workers.data.xlsx_importer import XLSX_CONTENT_TYPES, list_worksheets, xlsx_events
 
 __all__ = [
     "JSONL_PREVIEW_CONTENT_TYPES",
@@ -623,7 +623,8 @@ def run_worksheet_probe(
     worksheets: `MappingPreviewUnavailableError`, as for any unrecognised type. Sheet names are
     read from the source's own data, so they are masked like headers when `reveal` is False;
     the `hidden` flag and `state` are schema and stay."""
-    if verified_content_type != XLSX_CONTENT_TYPE:
+    # The importer's own gate (`XLSX_CONTENT_TYPES`): exact membership, a str only.
+    if type(verified_content_type) is not str or verified_content_type not in XLSX_CONTENT_TYPES:
         raise MappingPreviewUnavailableError(verified_content_type)
     listing = list_worksheets(
         reader,

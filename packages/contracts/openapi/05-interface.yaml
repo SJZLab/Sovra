@@ -1077,7 +1077,7 @@ paths:
     post:
       summary: >-
         Headers (tabular sources only) and up to twenty raw rows of the dataset, read with the
-        caller's `csv` / `json` format options and a server-built probe mapping (FTF-H011-P3).
+        caller's `csv` / `json` / `xlsx` format options and a server-built probe mapping (FTF-H011-P3; `xlsx` added by FTF-H011-P6).
         Read-only. The audit event `dataset_mapping.probed` carries ids, a row count and the masked
         flag, never a value.
       operationId: probeDatasetMapping
@@ -2151,6 +2151,7 @@ components:
       properties:
         csv: {$ref: '#/components/schemas/DatasetMappingCsvOptions'}
         json: {$ref: '#/components/schemas/DatasetMappingJsonOptions'}
+        xlsx: {$ref: '#/components/schemas/DatasetMappingXlsxOptions'}
       additionalProperties: false
     DatasetMappingApproveRequest:
       type: object

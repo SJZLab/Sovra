@@ -953,6 +953,359 @@ def test_listing_guards_are_pinned_against_type_padding_and_name_trimming() -> N
         )
 
 
+# --- RULING (Control plane 2026-11-27, FTF-H011-P6 option 2) ---------------------------------
+# Gap 2: the sheet picker lists only worksheets the importer accepts.
+
+
+def _mixed() -> bytes:
+    """Data (a worksheet), Chart (a chartsheet), Gone (an r:id with no relationship), Lost (a
+    worksheet relationship whose part is missing), Kept (another worksheet), in that order."""
+    rel = t505.REL
+    return t505.book(
+        [[S("q"), S("a")], [S("hi"), S("there")]],
+        sheet="Data",
+        extra_sheets=[
+            ("Chart", "rIdC", None),
+            ("Gone", "rIdNone", "hidden"),
+            ("Lost", "rIdL", None),
+            ("Kept", "rIdK", "hidden"),
+        ],
+        rel_extra=(
+            f'<Relationship Id="rIdC" Type="{rel}/chartsheet" Target="chartsheets/sheet1.xml"/>'
+            f'<Relationship Id="rIdL" Type="{rel}/worksheet" Target="worksheets/nothere.xml"/>'
+            f'<Relationship Id="rIdK" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/>'
+        ),
+    )
+
+
+def test_listing_offers_only_sheets_the_importer_accepts() -> None:
+    result = sheets(_mixed())
+    check(
+        "LIST-1",
+        f"only importable sheets are listed, in workbook order ({result.sheets})",
+        result.state == "completed"
+        and [(s["name"], s["hidden"]) for s in result.sheets] == [("Data", False), ("Kept", True)],
+    )
+    listing = xi.list_worksheets(
+        reader_for(_mixed()), verified_content_type=XLSX, dataset_sha256=sha(_mixed())
+    )
+    check(
+        "LIST-2",
+        "list_worksheets itself leaves the chartsheet, the dangling r:id and the missing part out",
+        [w.name for w in listing.sheets] == ["Data", "Kept"],
+    )
+    # every sheet the picker offers opens; every sheet it leaves out keeps the importer's code
+    for name in ("Data", "Kept"):
+        _e, outcome = t505.run(_mixed(), sheet=name)
+        check("LIST-3", f"the listed sheet {name!r} imports", outcome.report.state == "completed")
+    for name, code in (
+        ("Chart", "unsupported_workbook"),
+        ("Gone", "xlsx_malformed"),
+        ("Lost", "xlsx_malformed"),
+    ):
+        _e, outcome = t505.run(_mixed(), sheet=name)
+        check(
+            "LIST-4",
+            f"naming the omitted sheet {name!r} directly keeps the importer's {code}",
+            t505.failed_with(outcome, code),
+        )
+
+
+def test_a_workbook_whose_only_sheet_is_a_chartsheet_lists_nothing() -> None:
+    data = t505.book(sheet_type="chartsheet")
+    try:
+        result = sheets(data)
+    except Exception as exc:  # noqa: BLE001 -- the ruling pins "no exception"
+        check("LIST-5", f"a chartsheet-only workbook raises nothing (raised {exc!r})", False)
+        return
+    check(
+        "LIST-5",
+        "a chartsheet-only workbook is an empty completed listing (no exception, no code)",
+        (result.state, result.failure_code, result.sheets) == ("completed", None, ()),
+    )
+    dangling = t505.book(
+        replace={"xl/workbook.xml": t505.workbook_xml([("Data", "rIdNone", None)]).encode()}
+    )
+    result = sheets(dangling)
+    check(
+        "LIST-6",
+        "a workbook whose only sheet has a dangling r:id is an empty completed listing",
+        (result.state, result.failure_code, result.sheets) == ("completed", None, ()),
+    )
+    check(
+        "LIST-7",
+        "and the importer still refuses that workbook with its own code (no new code)",
+        t505.failed_with(t505.run(data)[1], "unsupported_workbook")
+        and t505.failed_with(t505.run(dangling)[1], "xlsx_malformed"),
+    )
+
+
+def test_an_unsafe_sheet_target_refuses_the_whole_listing() -> None:
+    rel = t505.REL
+    data = t505.book(
+        extra_sheets=[("Evil", "rIdE", None)],
+        rel_extra=f'<Relationship Id="rIdE" Type="{rel}/worksheet" Target="../../etc/passwd"/>',
+    )
+    result = sheets(data)
+    check(
+        "LIST-8",
+        f"a sheet with an unsafe target is never quietly left out: the listing is unsafe_archive ({result})",
+        (result.state, result.failure_code, result.sheets) == ("failed", "unsafe_archive", ()),
+    )
+    _e, outcome = t505.run(data, sheet="Evil")
+    check(
+        "LIST-9",
+        "naming it is the importer's unsafe_archive",
+        t505.failed_with(outcome, "unsafe_archive"),
+    )
+    _e, outcome = t505.run(data)
+    check("LIST-10", "the safe sheet beside it still imports", outcome.report.state == "completed")
+
+
+# The two `verified_content_type` mutants (dataset_mapping_store.importer_for_content_type and
+# dataset_mapping_review.run_worksheet_probe): exact case and padding are refused as before.
+RULING_VARIANTS = (
+    " Application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "Application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    f"  {XLSX}  ",
+    f"{XLSX}\n",
+    XLSX.upper(),
+)
+
+
+def test_content_type_is_never_normalized() -> None:
+    import app.datasets.dataset_mapping_store as store
+
+    for variant in RULING_VARIANTS:
+        try:
+            store.importer_for_content_type(variant)
+        except store.MappingStoreError as exc:
+            code = exc.code
+        else:
+            code = None
+        check(
+            "CT-1",
+            f"importer_for_content_type({variant!r}) is importer_unavailable",
+            code == "importer_unavailable",
+        )
+        try:
+            sheets(GOOD, content_type=variant)
+        except rev.MappingPreviewUnavailableError:
+            ok = True
+        else:
+            ok = False
+        check("CT-2", f"run_worksheet_probe({variant!r}) is unavailable", ok)
+    for value in (None, 7, b"x", [XLSX], {XLSX: 1}, (XLSX,)):
+        try:
+            sheets(GOOD, content_type=value)  # type: ignore[arg-type]
+        except rev.MappingPreviewUnavailableError:
+            ok = True
+        except Exception as exc:  # noqa: BLE001 -- anything else is a crash
+            ok = False
+            check("CT-3", f"run_worksheet_probe({value!r}) raised {type(exc).__name__}", False)
+        else:
+            ok = False
+        check("CT-3", f"a non-str content type {value!r} is unavailable, never a crash", ok)
+    check("CT-4", "the exact type still lists", sheets(GOOD).state == "completed")
+    check(
+        "CT-5",
+        "both functions use the importer's own gate",
+        xi.XLSX_CONTENT_TYPES == frozenset({XLSX})
+        and store.importer_for_content_type(XLSX) == "xlsx",
+    )
+
+
+# Gap 1: the P3 probe gains the XLSX rows ADDITIVELY.
+def _probe_problems(store: Any, routes: Any) -> list[str]:
+    problems: list[str] = []
+    if store._PROBE_BLOCKS - {"xlsx"} != frozenset({"csv", "json"}):
+        problems.append(f"the non-XLSX probe blocks changed: {sorted(store._PROBE_BLOCKS)}")
+    if {k: v for k, v in store._PROBE_SLOTS.items() if k != "xlsx"} != {"csv": {"index": 0}}:
+        problems.append(f"the non-XLSX probe slots changed: {store._PROBE_SLOTS}")
+    if "xlsx" not in store._PROBE_BLOCKS:
+        problems.append("the store's probe gate refuses an xlsx block")
+    if routes._PROBE_FIELDS != store._PROBE_BLOCKS:
+        problems.append(
+            f"the route's probe body fields {sorted(routes._PROBE_FIELDS)} differ from the store's"
+        )
+    block = {"xlsx": {"sheet_name": "الورقة", "header_row": 1}}
+    try:
+        mapping = store.probe_mapping_for("xlsx", block)
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"the xlsx probe mapping does not parse: {exc!r}")
+    else:
+        if (
+            mapping.prompt.kind,
+            mapping.prompt.value,
+            mapping.completion.kind,
+            mapping.completion.value,
+        ) != ("index", 0, "index", 0):
+            problems.append("an XLSX sheet is not probed by column index 0")
+        if mapping.document.get("xlsx") != block["xlsx"]:
+            problems.append("the caller's xlsx block is not in the probe mapping")
+    # every non-XLSX probe mapping is the one P3 built (byte-identical documents and digests)
+    for importer, options, slot in (
+        (
+            "csv",
+            {"csv": {"encoding": "utf-8", "delimiter": ",", "has_header": True, "header_row": 0}},
+            {"index": 0},
+        ),
+        ("csv", {}, {"index": 0}),
+        (
+            "json",
+            {"json": {"container": "/rows", "ignored_top_level_keys": ["meta"]}},
+            {"key": "probe"},
+        ),
+        ("json", {}, {"key": "probe"}),
+        ("jsonl", {}, {"key": "probe"}),
+    ):
+        expected = ic.mapping_from_object(
+            {"shape": "prompt_completion", "prompt": slot, "completion": slot, **options}
+        )
+        got = store.probe_mapping_for(importer, options)
+        if (got.document, got.mapping_sha256) != (expected.document, expected.mapping_sha256):
+            problems.append(f"the {importer} probe mapping with {options} changed")
+    return problems
+
+
+def test_probe_rows_are_additive() -> None:
+    import app.datasets.dataset_mapping_routes as routes
+    import app.datasets.dataset_mapping_store as store
+
+    real = _probe_problems(store, routes)
+    check("PROBE-ADD-1", f"the XLSX probe rows are present and additive: {real}", real == [])
+    contract = (ROOT / "packages/contracts/openapi/05-interface.yaml").read_text()
+    import yaml
+
+    schemas = yaml.safe_load(contract)["components"]["schemas"]
+    check(
+        "PROBE-ADD-2",
+        "the contract's probe request names exactly the route's blocks, xlsx by the XLSX options schema",
+        set(schemas["DatasetMappingProbeRequest"]["properties"]) == set(routes._PROBE_FIELDS)
+        and schemas["DatasetMappingProbeRequest"]["properties"]["xlsx"]["$ref"].endswith(
+            "/DatasetMappingXlsxOptions"
+        ),
+    )
+
+    class Faulted:
+        def __init__(self, base: Any, **override: Any) -> None:
+            self._base, self._override = base, override
+
+        def __getattr__(self, name: str) -> Any:
+            return self._override.get(name, getattr(self._base, name))
+
+    def faulted_probe_mapping(slots: dict[str, Any]) -> Any:
+        def build(importer: str, options: Any) -> Any:
+            slot = dict(slots.get(importer, {"key": "probe"}))
+            return store._parse_document(
+                {"shape": "prompt_completion", "prompt": slot, "completion": slot, **options}
+            )
+
+        return build
+
+    for label, fake_store, fake_routes in (
+        (
+            "xlsx dropped from the store's probe blocks",
+            Faulted(store, _PROBE_BLOCKS=frozenset({"csv", "json"})),
+            routes,
+        ),
+        (
+            "xlsx dropped from the probe slots",
+            Faulted(
+                store,
+                _PROBE_SLOTS={"csv": {"index": 0}},
+                probe_mapping_for=faulted_probe_mapping({"csv": {"index": 0}}),
+            ),
+            routes,
+        ),
+        (
+            "xlsx dropped from the route's body fields",
+            store,
+            Faulted(routes, _PROBE_FIELDS=frozenset({"csv", "json"})),
+        ),
+        (
+            "a non-XLSX block changed",
+            Faulted(store, _PROBE_BLOCKS=frozenset({"csv", "json", "xlsx", "tsv"})),
+            Faulted(routes, _PROBE_FIELDS=frozenset({"csv", "json", "xlsx", "tsv"})),
+        ),
+        (
+            "a non-XLSX slot changed",
+            Faulted(
+                store,
+                _PROBE_SLOTS={"csv": {"index": 1}, "xlsx": {"index": 0}},
+                probe_mapping_for=faulted_probe_mapping(
+                    {"csv": {"index": 1}, "xlsx": {"index": 0}}
+                ),
+            ),
+            routes,
+        ),
+    ):
+        check(
+            "PROBE-ADD-3",
+            f"FAULT {label} is detected",
+            bool(_probe_problems(fake_store, fake_routes)),
+        )
+
+
+# The P2 table's CHECK admits csv/json/jsonl only: an XLSX proposal is refused up front.
+def test_xlsx_proposal_is_refused_until_the_schema_admits_it() -> None:
+    import re
+    import uuid
+
+    import app.datasets.dataset_mapping_store as store
+
+    migration = next((ROOT / "apps/api/alembic/versions").glob("*_dataset_mappings.py")).read_text()
+    m = re.search(r"^_IMPORTERS = \((.*?)\)$", migration, re.M)
+    in_migration = frozenset(re.findall(r'"([a-z]+)"', m.group(1))) if m else frozenset()
+    check(
+        "STORE-1",
+        f"STORABLE_IMPORTERS equals the migration's CHECK ({sorted(in_migration)})",
+        store.STORABLE_IMPORTERS == in_migration and "xlsx" not in in_migration,
+    )
+    calls: list[str] = []
+    orig = (
+        store._authorized_dataset,
+        store._finished_preview,
+        store._require_actor,
+        store._require_ids,
+    )
+    store._require_actor = lambda *a, **k: None
+    store._require_ids = lambda *a, **k: None
+    store._authorized_dataset = lambda *a, **k: (None, None, None, "xlsx")
+    store._finished_preview = lambda *a, **k: calls.append("preview")  # type: ignore[assignment]
+    try:
+        code = None
+        try:
+            store.propose_dataset_mapping(
+                None,  # type: ignore[arg-type]
+                None,  # type: ignore[arg-type]
+                project_id=uuid.uuid4(),
+                dataset_id=uuid.uuid4(),
+                mapping_document={
+                    "shape": "prompt_completion",
+                    "prompt": {"index": 0},
+                    "completion": {"index": 1},
+                    "xlsx": {"sheet_name": "Data", "header_row": 0},
+                },
+                storage=None,  # type: ignore[arg-type]
+                actor=store.MappingActor("user", "u", "workspace_admin", "r"),
+            )
+        except store.MappingStoreError as exc:
+            code = exc.code
+    finally:
+        (
+            store._authorized_dataset,
+            store._finished_preview,
+            store._require_actor,
+            store._require_ids,
+        ) = orig
+    check(
+        "STORE-2",
+        f"an XLSX proposal is importer_unavailable before any byte is read (got {code}, {calls})",
+        code == "importer_unavailable" and calls == [],
+    )
+
+
 def main() -> int:
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     for name, fn in tests:

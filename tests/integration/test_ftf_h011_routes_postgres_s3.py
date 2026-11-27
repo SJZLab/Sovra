@@ -1540,6 +1540,80 @@ def main() -> None:
         status == 200 and recovered["state"] == "completed",
     )
 
+    # ---- I12 (FTF-H011-P6): an XLSX source through the real routes -------------------------------
+    t505 = _load("test_ftf_0505.py", ROOT / "tests" / "tasks")
+    xlsx_ct = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    workbook = t505.book(
+        [
+            [t505.S("سؤال"), t505.S("جواب")],
+            [t505.S("مرحبا"), t505.S("أهلا")],
+            [t505.S("حساب"), t505.F("1+1", "2")],
+        ],
+        sheet="البيانات",
+    )
+    xlsx_id = make_dataset(
+        "org1", p1_id, conn_internal, workbook, "xlsx-arabic", content_type=xlsx_ct
+    )
+    xlsx_path = ds_path("org1", p1_id, xlsx_id)
+    xlsx_block = {"xlsx": {"sheet_name": "البيانات", "header_row": 0}}
+    status, xlsx_probe = route(
+        "POST", f"{xlsx_path}/mapping-probe", xlsx_block, who("org1", "admin")
+    )
+    check(
+        f"I12 the XLSX probe reads the Arabic sheet's header and rows (got {status} {str(xlsx_probe)[:200]})",
+        status == 200
+        and xlsx_probe["state"] == "completed"
+        and xlsx_probe["headers"] == ["سؤال", "جواب"],
+    )
+    status, xlsx_unknown = route(
+        "POST",
+        f"{xlsx_path}/mapping-probe",
+        {"xlsx": {"sheet_name": "Nope", "header_row": 0}},
+        who("org1", "admin"),
+    )
+    check(
+        f"I12 a sheet the workbook does not name is a visible failed probe, not a fallback (got {status} {xlsx_unknown})",
+        status == 200 and xlsx_unknown["state"] == "failed",
+    )
+    xlsx_document = {
+        "shape": "prompt_completion",
+        **xlsx_block,
+        "prompt": {"header": "سؤال"},
+        "completion": {"header": "جواب"},
+    }
+    status, xlsx_preview = route(
+        "POST", f"{xlsx_path}/mapping-preview", {"mapping": xlsx_document}, who("org1", "admin")
+    )
+    outcomes = (
+        [(r["outcome"], r["code"]) for r in xlsx_preview["rows"]] if status == 200 else status
+    )
+    check(
+        f"I12 the XLSX preview accepts the Arabic row and shows the formula cell rejected ({outcomes})",
+        outcomes == [("accepted", None), ("rejected", "formula_cell")],
+    )
+    before = counts()
+    status, xlsx_prop = route(
+        "POST",
+        f"{xlsx_path}/mappings",
+        {"mapping": xlsx_document},
+        who("org1", "admin"),
+        "i12-propose-0001",
+    )
+    # dataset_mappings' CHECK (migration 0037) admits csv/json/jsonl only: until a migration
+    # admits xlsx, the proposal is a stable refusal that writes nothing (never a 500 or a
+    # constraint error).
+    check(
+        f"I12 an XLSX proposal is 409 importer_unavailable and stores nothing (got {status} {xlsx_prop})",
+        (status, xlsx_prop) == (409, {"detail": "importer_unavailable"}) and counts() == before,
+    )
+    status, masked_sheet = route(
+        "POST", f"{xlsx_path}/mapping-probe", xlsx_block, who("org1", "ml")
+    )
+    check(
+        f"I12 the probe of an internal source is revealed to an ml_engineer (got {status})",
+        status == 200 and masked_sheet["masked"] is False,
+    )
+
     # ---- I11: nothing internal in any response ---------------------------------------------------------------------------------------
     with owner_engine.connect() as conn:
         keys = [r[0] for r in conn.execute(text("SELECT object_key FROM dataset_upload_sessions"))]

@@ -933,6 +933,39 @@ class _Workbook:
     budget: PartBudget
 
 
+def _worksheet_part(
+    by_id: Mapping[str, Mapping[str, str]], parts: Mapping[str, zipfile.ZipInfo], rid: str
+) -> str:
+    """The package part of the worksheet a sheet's relationship id names, by the importer's own
+    rules, shared by `open_package` and `list_worksheets` so the sheet picker never offers a
+    sheet the importer then refuses: a relationship that is missing or has no Target, or whose
+    part is not in the package, is `xlsx_malformed`; a relationship of another type (a
+    chartsheet, a dialogsheet) is `unsupported_workbook`; an unsafe target is `unsafe_archive`
+    (`_resolve_target`). Raises `OoxmlRefused`."""
+    sheet_rel = by_id.get(rid)
+    if sheet_rel is None or "Target" not in sheet_rel:
+        raise OoxmlRefused("xlsx_malformed")
+    sheet_part = _resolve_target(sheet_rel["Target"]).casefold()
+    if sheet_rel.get("Type") != _REL_WORKSHEET:
+        raise OoxmlRefused("unsupported_workbook")
+    if sheet_part not in parts:
+        raise OoxmlRefused("xlsx_malformed")
+    return sheet_part
+
+
+def _importable_sheet(workbook: _Workbook, rid: str) -> bool:
+    """True when `open_package` would open this sheet; False for a sheet it refuses as
+    `xlsx_malformed` or `unsupported_workbook`. An unsafe target is not a sheet to leave out
+    quietly: it propagates (`unsafe_archive`) and the whole listing is refused, fail-closed."""
+    try:
+        _worksheet_part(workbook.by_id, workbook.parts, rid)
+    except OoxmlRefused as exc:
+        if exc.code == "unsafe_archive":
+            raise
+        return False
+    return True
+
+
 def _open_workbook(spool: IO[bytes], *, limits: XlsxLimits, tick: Callable[[], None]) -> _Workbook:
     """The package-level checks (container, archive bounds, macro/external carriers,
     content types, relationships, the workbook's sheet list, duplicate sheet names),
@@ -1029,14 +1062,7 @@ def open_package(
     if not matches:
         raise XlsxAborted("mapping_column_missing")
     sheet_index = matches[0]
-    sheet_rel = by_id.get(sheets[sheet_index][1])
-    if sheet_rel is None or "Target" not in sheet_rel:
-        raise OoxmlRefused("xlsx_malformed")
-    sheet_part = _resolve_target(sheet_rel["Target"]).casefold()
-    if sheet_rel.get("Type") != _REL_WORKSHEET:
-        raise OoxmlRefused("unsupported_workbook")
-    if sheet_part not in parts:
-        raise OoxmlRefused("xlsx_malformed")
+    sheet_part = _worksheet_part(by_id, parts, sheets[sheet_index][1])
 
     shared = _SharedStrings()
     for item in by_id.values():
@@ -1404,11 +1430,15 @@ def list_worksheets(
     limits: ImportLimits = DEFAULT_LIMITS,
     xlsx_limits: XlsxLimits = DEFAULT_XLSX_LIMITS,
 ) -> WorksheetListing:
-    """The worksheets a workbook names, in workbook order, hidden ones flagged -- for the
-    mapping wizard's sheet picker. Goes through the same gates the importer does (content
-    type, the declared hash, `_open_workbook`'s package checks), so a workbook the importer
-    would refuse is refused here with the same code, and a sheet is never listed from a
-    package that was not safe to open. Reads the workbook part only; no cell is read."""
+    """The worksheets of a workbook the importer would open, in workbook order, hidden ones
+    flagged -- for the mapping wizard's sheet picker. Goes through the same gates the importer
+    does (content type, the declared hash, `_open_workbook`'s package checks), so a workbook
+    the importer would refuse is refused here with the same code, and a sheet is never listed
+    from a package that was not safe to open. A sheet the importer would refuse by name (a
+    chartsheet, a relationship id with no relationship, a missing part: `_worksheet_part`) is
+    left out of the list, so the picker never offers a dead end; naming such a sheet directly
+    still gets the importer's own code. A workbook whose only sheets are such sheets is an
+    empty `completed` listing. Reads the workbook part only; no cell is read."""
     if type(verified_content_type) is not str or verified_content_type not in XLSX_CONTENT_TYPES:
         return WorksheetListing("failed", "content_type_not_supported_by_importer", ())
     if (
@@ -1432,7 +1462,8 @@ def list_worksheets(
                     None,
                     tuple(
                         WorksheetInfo(name, state, state != "visible")
-                        for name, _rid, state in workbook.sheets
+                        for name, rid, state in workbook.sheets
+                        if _importable_sheet(workbook, rid)
                     ),
                 )
             finally:
