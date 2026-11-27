@@ -123,7 +123,7 @@ STORE_ERROR_CODES: Final[Mapping[str, int]] = {
     "config_integrity_failed": 500,
 }
 
-_IDEMPOTENCY_CONSTRAINT: Final = "uq_training_experiments_idempotency"
+_IDEMPOTENCY_RACE: Final = "idempotency_race"
 # violated constraint / trigger CONSTRAINT -> the stable code (the database is the authority when
 # a fact changes between the read and the INSERT)
 _CONFLICT_BY_NAME: Final[Mapping[str, str]] = {
@@ -133,10 +133,45 @@ _CONFLICT_BY_NAME: Final[Mapping[str, str]] = {
     "tr_training_experiments_artifact_ready": "artifact_not_trainable",
     "tr_training_experiments_budget_project": "budget_policy_missing",
     "ck_training_experiments_config_consistency": "invalid_source_role",
+    "uq_training_experiments_idempotency": _IDEMPOTENCY_RACE,
 }
 # FTF-0519 refusals of the live training read -> the fact they falsify.
-_SPLIT_NOT_LOCKED: Final = frozenset(
-    {"manifest_not_found", "manifest_not_locked", "leakage_not_clear", "quality_not_clear"}
+# FTF-0519 refusals of the live training read -> the fact each one falsifies. Any other refusal
+# is not the store's to interpret and propagates as itself.
+_LOAD_REFUSAL: Final[Mapping[str, str]] = {
+    "manifest_not_found": "locked",
+    "manifest_not_locked": "locked",
+    "leakage_not_clear": "locked",
+    "quality_not_clear": "locked",
+    "manifest_tampered": "hash",
+    "quality_report_changed": "quality",
+    "grant_changed": "grants",
+}
+_SUMMARY_ABSENT: Final[Mapping[str, bool]] = {"manifest_not_found": True}
+# A cause the store can name more exactly than the pure module (see `_refined`).
+_LICENSE_CAUSE: Final[Mapping[str, str]] = {"artifact_not_trainable": "license_not_accepted"}
+# What is known about an artifact or a manifest that could not be read: nothing. Neither can
+# pass `resolve_training_config` (no id, not `ready`, not `locked`).
+_ABSENT_ARTIFACT: Final = ArtifactFacts(
+    artifact_id="",
+    status=_ABSENT,
+    capability=_ABSENT,
+    weights_digest=_NO_DIGEST,
+    base_revision="",
+    license_accepted=False,
+)
+_ABSENT_SPLIT: Final = SplitFacts(
+    manifest_id="",
+    manifest_version=1,
+    status=_ABSENT,
+    frozen_sha256="",
+    hash_verified=False,
+    quality_report_current=False,
+    grants_current=False,
+    train_count=0,
+    validation_count=0,
+    train_role_sha256=_NO_DIGEST,
+    validation_role_sha256=_NO_DIGEST,
 )
 
 _JSON = JSONB().with_variant(JSON(), "sqlite")
@@ -293,14 +328,7 @@ def _artifact_facts(
     try:
         artifact = get_artifact(session, context, artifact_id)
     except ArtifactNotFoundError:
-        return ArtifactFacts(
-            artifact_id=str(artifact_id),
-            status=_ABSENT,
-            capability=_ABSENT,
-            weights_digest=_NO_DIGEST,
-            base_revision="",
-            license_accepted=False,
-        )
+        return _ABSENT_ARTIFACT
     classification = classify_training_capability(
         model_id=str(artifact.id),
         organization_id=context.organization_id,
@@ -323,12 +351,17 @@ def _artifact_facts(
 
 
 def _catalog_facts(
-    session: Session, context: TenantContext, entry_id: str | None, catalog_version: int | None
+    session: Session, context: TenantContext, base: Mapping[str, Any]
 ) -> CatalogFacts | None:
-    if entry_id is None or catalog_version is None:
+    """The current mapping of the request's catalog entry, or None when it names none (the parser
+    accepts an entry id and its version only together) or the mapping is missing or stale."""
+    entry_id = base["model_catalog_entry_id"]
+    if entry_id is None:
         return None
     try:
-        record = require_current_mapping(session, context, uuid.UUID(entry_id), catalog_version)
+        record = require_current_mapping(
+            session, context, uuid.UUID(entry_id), base["catalog_version"]
+        )
     except (ModelCatalogEntryNotFoundError, MappingChangedError):
         return None
     mapped = record.trainable_artifact_id
@@ -349,33 +382,26 @@ def _split_facts(
             session, context, project_id=project_id, manifest_id=manifest_id
         )
     except SplitManifestError as exc:
-        if exc.code != "manifest_not_found":
+        if _SUMMARY_ABSENT.get(exc.code) is None:
             raise
-        return _unusable_split(manifest_id, _ABSENT)
+        return _ABSENT_SPLIT
     manifest = summary.manifest
     roles = {row.role: row for row in summary.roles}
     train, validation = roles.get("train"), roles.get("validation")
-    status = str(manifest.status)
-    hash_verified = quality_current = grants_current = True
+    holds = {"locked": True, "hash": True, "quality": True, "grants": True}
     try:
         view = load_training_split(session, context, project_id=project_id, manifest_id=manifest_id)
     except SplitManifestError as exc:
-        if exc.code in _SPLIT_NOT_LOCKED:
-            status = status if status != "locked" else _NOT_CLEAR
-        elif exc.code == "manifest_tampered":
-            hash_verified = False
-        elif exc.code == "quality_report_changed":
-            quality_current = False
-        elif exc.code == "grant_changed":
-            grants_current = False
-        else:
+        falsified = _LOAD_REFUSAL.get(exc.code)
+        if falsified is None:
             raise
+        holds[falsified] = False
     else:
         served = {"train": 0, "validation": 0}
         for row in view.rows:
             served[row.role] = served.get(row.role, 0) + 1
         # The served rows must be the rows the summary counted, of the same frozen manifest.
-        hash_verified = (
+        holds["hash"] = (
             view.frozen_manifest_sha256 == manifest.frozen_manifest_sha256
             and view.version == manifest.version
             and set(served) == {"train", "validation"}
@@ -386,31 +412,17 @@ def _split_facts(
     return SplitFacts(
         manifest_id=str(manifest_id),
         manifest_version=manifest.version,
-        status=status,
+        # The live read is the authority: a manifest it will not serve for training is not a
+        # locked training source, whatever its row says.
+        status=str(manifest.status) if holds["locked"] else _NOT_CLEAR,
         frozen_sha256=frozen if type(frozen) is str else "",
-        hash_verified=hash_verified,
-        quality_report_current=quality_current,
-        grants_current=grants_current,
+        hash_verified=holds["hash"],
+        quality_report_current=holds["quality"],
+        grants_current=holds["grants"],
         train_count=0 if train is None else train.record_count,
         validation_count=0 if validation is None else validation.record_count,
         train_role_sha256=_NO_DIGEST if train is None else train.role_sha256,
         validation_role_sha256=_NO_DIGEST if validation is None else validation.role_sha256,
-    )
-
-
-def _unusable_split(manifest_id: uuid.UUID, status: str) -> SplitFacts:
-    return SplitFacts(
-        manifest_id=str(manifest_id),
-        manifest_version=1,
-        status=status,
-        frozen_sha256="",
-        hash_verified=False,
-        quality_report_current=False,
-        grants_current=False,
-        train_count=0,
-        validation_count=0,
-        train_role_sha256=_NO_DIGEST,
-        validation_role_sha256=_NO_DIGEST,
     )
 
 
@@ -454,9 +466,7 @@ def _build_facts(
             session, context, project.id, uuid.UUID(doc["data"]["train"]["split_manifest_id"])
         ),
         security_profile=_effective_security_profile(session, context, project),
-        catalog=_catalog_facts(
-            session, context, base["model_catalog_entry_id"], base["catalog_version"]
-        ),
+        catalog=_catalog_facts(session, context, base),
         budget=_budget_facts(session, context, project.id),
     )
 
@@ -466,13 +476,9 @@ def _refined(code: str, facts: TrainingConfigFacts) -> str:
     0029 CHECK), so the pure module reports it as `artifact_not_trainable`. For an artifact that
     exists, the store names the cause: `license_not_accepted`."""
     artifact = facts.artifact
-    if (
-        code == "artifact_not_trainable"
-        and artifact.status != _ABSENT
-        and artifact.license_accepted is not True
-    ):
-        return "license_not_accepted"
-    return code
+    if artifact is _ABSENT_ARTIFACT or artifact.license_accepted is True:
+        return code
+    return _LICENSE_CAUSE.get(code, code)
 
 
 def _violated_name(exc: DBAPIError) -> str | None:
@@ -562,12 +568,12 @@ def create_training_experiment(
             session.flush()
     except (IntegrityError, DBAPIError) as exc:
         violated = _violated_name(exc)
-        if violated == _IDEMPOTENCY_CONSTRAINT:
+        code = _CONFLICT_BY_NAME.get(violated) if violated is not None else None
+        if code is _IDEMPOTENCY_RACE:
             raced = _find_by_idempotency_key(session, context, actor.actor_id, key)
             if raced is None:
                 raise
             return _replay_or_reuse(raced, digest)
-        code = _CONFLICT_BY_NAME.get(violated) if violated is not None else None
         if code is None:
             raise
         raise _fail(code) from None
