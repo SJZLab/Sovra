@@ -533,6 +533,12 @@ def section_bodies(env: Any, client: Client, fx: Any) -> None:
         ("a missing key", json.dumps({"name": "a", "config": fx.body()}).encode()),
         ("an extra key", json.dumps({**post(fx, "a", "k"), "status": "submitted"}).encode()),
         ("a duplicate key", valid[:-1] + b', "name": "other"}'),
+        (
+            "a name holding a lone surrogate",
+            json.dumps(post(fx, "exp-body", "key-surrogate"))
+            .encode()
+            .replace(b'"exp-body"', b'"exp\\ud800"'),
+        ),
     ):
         before = counts(env)
         got = client.call("POST", base, "org1:ml_engineer", raw)
