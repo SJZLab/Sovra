@@ -46,8 +46,10 @@ from __future__ import annotations
 import contextlib
 import http.client
 import json
+import os
 import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -623,6 +625,79 @@ def test_n2_missing_critical_category() -> None:
             _f("insufficient_category_sample", "Prompt Injection", 1, 0),
         ],
     )
+
+
+def test_n2_case_category_is_matched_exactly() -> None:
+    suite_id = _valid_dev_suite(
+        _case("k1", category="Prompt Injection "), _case("k2", category="tool timeout")
+    )
+    _refused(
+        "a case category differing only by case/whitespace does not cover the plan category",
+        suite_id,
+        _lock(suite_id, _body(suite_id, _plan(["prompt injection", "tool timeout"]))),
+        [
+            _f("missing_critical_category", "prompt injection"),
+            _f("insufficient_category_sample", "prompt injection", 1, 0),
+        ],
+    )
+
+
+def test_r1_unexpected_value_error_maps_to_400() -> None:
+    suite_id = _valid_dev_suite()
+    original = routes.lock_validated_evaluation_suite
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise ValueError("bad input")
+
+    routes.lock_validated_evaluation_suite = boom
+    try:
+        response = _lock(suite_id, _body(suite_id))
+    finally:
+        routes.lock_validated_evaluation_suite = original
+    check(
+        "R1",
+        "FTF-0601's ValueError -> 400 mapping on the lock route is kept",
+        response.status == 400 and response.json() == {"detail": "bad input"},
+    )
+
+
+def _offline_sql(action: str, revision_range: str) -> str:
+    env = dict(os.environ)
+    env["SOVRA_DATABASE_URL"] = "postgresql+psycopg://x:y@localhost:5432/z"
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", action, revision_range, "--sql"],
+        cwd=str(ROOT / "apps" / "api"),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    check("M1", f"alembic {action} {revision_range} --sql exits 0", result.returncode == 0)
+    return result.stdout
+
+
+def test_m1_offline_upgrade_and_downgrade_sql() -> None:
+    up = _offline_sql("upgrade", "0038_dataset_mapping_requests:0039_eval_suite_sample_plans")
+    for needle in (
+        "CREATE TABLE evaluation_suite_sample_plans",
+        "CONSTRAINT uq_evaluation_suite_sample_plans_suite_id UNIQUE (suite_id)",
+        "REFERENCES evaluation_suites (organization_id, project_id, id) ON DELETE RESTRICT",
+        "CHECK (suite_sha256 ~ '^[0-9a-f]{64}$')",
+        'GRANT SELECT, INSERT ON evaluation_suite_sample_plans TO "sovra_app";',
+        "ALTER TABLE evaluation_suite_sample_plans ENABLE ROW LEVEL SECURITY;",
+        "ALTER TABLE evaluation_suite_sample_plans FORCE ROW LEVEL SECURITY;",
+        "CREATE POLICY tenant_isolation ON evaluation_suite_sample_plans FOR ALL USING "
+        "(organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid) "
+        "WITH CHECK (organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid);",
+    ):
+        check("M1", f"offline upgrade SQL contains: {needle[:70]}", needle in up)
+    down = _offline_sql("downgrade", "0039_eval_suite_sample_plans:0038_dataset_mapping_requests")
+    for needle in (
+        "DROP POLICY IF EXISTS tenant_isolation ON evaluation_suite_sample_plans;",
+        'REVOKE ALL ON evaluation_suite_sample_plans FROM "sovra_app";',
+        "DROP INDEX ix_evaluation_suite_sample_plans_organization_id;",
+        "DROP TABLE evaluation_suite_sample_plans;",
+    ):
+        check("M1", f"offline downgrade SQL contains: {needle}", needle in down)
 
 
 def test_n2_independence_counts_groups_not_rows() -> None:

@@ -296,7 +296,7 @@ def build_evaluation_suite_router(
                 body = [_serialize(s, hashes.get(s.id)) for s in suites]
         except (ProjectNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.get(_ITEM_PATH)
     async def get_one(
@@ -314,7 +314,7 @@ def build_evaluation_suite_router(
                 body = _serialize(suite, hashes.get(suite.id))
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.patch(_ITEM_PATH)
     async def update(
@@ -401,6 +401,6 @@ def build_evaluation_suite_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     return router
