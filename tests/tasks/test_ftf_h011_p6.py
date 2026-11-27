@@ -1104,7 +1104,7 @@ def test_the_probe_route_reads_an_xlsx_sheet() -> None:
             f"A: got {result.state}/{result.failure_code}/{result.headers}/{result.raw_rows})",
             result.state == "completed"
             and tuple(result.headers) == ("q", "a")
-            and [dict(r)["q"] for r in result.raw_rows] == ["hi"],
+            and [dict(r) for r in result.raw_rows] == [{"q": "hi"}],
         )
     for label, bad in (
         ("an empty xlsx block", {"xlsx": {}}),
@@ -1214,6 +1214,76 @@ def test_the_content_type_comparison_uses_the_constant_exactly() -> None:
         check("ROUTE-14", "the worksheet probe compares against the constant exactly", not gated)
     finally:
         store.XLSX_CONTENT_TYPE, rev.XLSX_CONTENT_TYPE = saved
+
+
+def test_an_xlsx_probe_never_shows_a_cell_it_did_not_read() -> None:
+    data = t505.book([[S("q"), S("a"), S("z")], [S("hi"), S("there"), S("zz")]])
+    one = probe(data, prompt={"letters": "A"}, completion={"letters": "A"})
+    check(
+        "UNREAD-1",
+        f"only the mapped column's cell is shown (got {[dict(r) for r in one.raw_rows]})",
+        [dict(r) for r in one.raw_rows] == [{"q": "hi"}] and tuple(one.headers) == ("q", "a", "z"),
+    )
+    two = probe(data, prompt={"letters": "A"}, completion={"letters": "C"})
+    check(
+        "UNREAD-2",
+        "every mapped column is shown, in sheet order, and no other",
+        [dict(r) for r in two.raw_rows] == [{"q": "hi", "z": "zz"}],
+    )
+    by_header = probe(data, prompt={"header": "z"}, completion={"header": "z"})
+    check(
+        "UNREAD-3",
+        "a header-slot mapping shows its own column",
+        [dict(r) for r in by_header.raw_rows] == [{"z": "zz"}],
+    )
+    masked = probe(data, reveal=False, prompt={"letters": "A"}, completion={"letters": "A"})
+    check(
+        "UNREAD-4",
+        "a masked probe still shows no value",
+        "hi" not in repr(masked.raw_rows) and len(masked.raw_rows) == 1,
+    )
+
+
+def test_review_probe_guards_its_options_and_verdicts() -> None:
+    import app.datasets.dataset_mapping_store as store
+
+    for bad in ([], None, "csv", 7, ("csv",)):
+        got = _probe_mapping_for(XLSX, bad)
+        check(
+            "GUARD-1",
+            f"{bad!r} options are mapping_invalid (got {got!r})",
+            got == "mapping_invalid",
+        )
+    for state, code in (("failed", "source_changed"), ("blocked", "source_unavailable")):
+        saved = (store.dataset_visibility, store._authorized_dataset, store.probe_dataset_source)
+        store.dataset_visibility = lambda *a, **k: (True, True)
+        store._authorized_dataset = lambda *a, **k: (None, None, [], "xlsx")
+        store.probe_dataset_source = lambda *a, st=state, cd=code, **k: rev.ProbeResult(
+            st, cd, None, (), False
+        )
+        try:
+            try:
+                store.review_probe(
+                    None,
+                    None,
+                    project_id=None,
+                    dataset_id=None,
+                    format_options={"xlsx": {"sheet_name": "Data", "header_row": 0}},
+                    role="workspace_admin",
+                    storage=None,
+                )
+                got = "returned a probe"
+            except store.MappingStoreError as exc:
+                got = str(exc)
+        finally:
+            store.dataset_visibility, store._authorized_dataset, store.probe_dataset_source = saved
+        check(
+            "GUARD-2",
+            f"a {state}/{code} verdict is refused, never returned as a probe (got {got})",
+            got != "returned a probe",
+        )
+    ok = _probe_mapping_for(XLSX, {"xlsx": {"sheet_name": "Data", "header_row": 0}})
+    check("GUARD-3", "a completed verdict is still returned", not isinstance(ok, str))
 
 
 def main() -> int:

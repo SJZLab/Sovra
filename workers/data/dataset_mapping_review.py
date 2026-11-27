@@ -60,6 +60,7 @@ from workers.data.import_common import (
     Row,
     RowRejection,
     Slot,
+    _column_index,
     resolve_pointer,
 )
 from workers.data.json_importer import json_events
@@ -540,6 +541,29 @@ def _drain_and_verify(reader: ChunkReader) -> ImportAborted | None:
     return None
 
 
+def _mapped_slots(mapping: ImportMapping) -> list[Slot]:
+    slots = [mapping.prompt, mapping.completion, mapping.system, mapping.group_key]
+    slots += [mapping.messages_slot, *(slot for _name, slot in mapping.metadata_slots)]
+    return [slot for slot in slots if slot is not None]
+
+
+def _only_read_columns(
+    row: Sequence[object], headers: Sequence[str] | None, slots: Sequence[Slot]
+) -> tuple[Row, Sequence[str] | None]:
+    """The columns an XLSX mapping reads (by letters, index or unique header), in sheet order."""
+    columns: set[int] = set()
+    for slot in slots:
+        if slot.kind == "letters":
+            columns.add(_column_index(str(slot.value)))
+        elif slot.kind == "index":
+            columns.add(int(slot.value))
+        elif slot.kind == "header" and headers is not None:
+            columns.update(i for i, name in enumerate(headers) if name == slot.value)
+    keep = [i for i in range(len(row)) if i in columns]
+    kept_headers = None if headers is None else [headers[i] for i in keep if i < len(headers)]
+    return tuple(row[i] for i in keep), kept_headers
+
+
 def run_mapping_probe(
     reader: ChunkReader,
     mapping: ImportMapping,
@@ -571,6 +595,7 @@ def run_mapping_probe(
     raw_rows: list[Mapping[str, object] | tuple[object, ...]] = []
     headers: Sequence[str] | None = None
     truncated = False
+    only_slots = _mapped_slots(mapping) if verified_content_type == XLSX_CONTENT_TYPE else None
     aborted: ImportAborted | None = None
     try:
         for event in stream:
@@ -589,6 +614,10 @@ def run_mapping_probe(
                 truncated = True
                 break
             if row is not None:
+                if only_slots is not None and not isinstance(row, Mapping):
+                    # XLSX keeps only the mapped columns; the rest of a row is empty
+                    # placeholders, not observed cells, so they are never shown as values.
+                    row, row_headers = _only_read_columns(row, row_headers, only_slots)
                 raw_rows.append(_present_row(row, row_headers, reveal))
     except ImportAborted as exc:
         aborted = exc
