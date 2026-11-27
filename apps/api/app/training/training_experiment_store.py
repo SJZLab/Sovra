@@ -251,6 +251,10 @@ def _valid_name(value: object) -> str:
         raise _fail("invalid_body")
     if value[0].isspace() or value[-1].isspace() or any(ord(ch) < 0x20 for ch in value):
         raise _fail("invalid_body")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:  # a lone surrogate cannot be stored or hashed
+        raise _fail("invalid_body") from None
     return value
 
 
