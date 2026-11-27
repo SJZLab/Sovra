@@ -923,6 +923,13 @@ def part_s_constants() -> None:
     except ValueError as exc:
         raised = CANARY not in str(exc) and "no_such_code" not in str(exc)
     check("CODES", "an unknown code is a ValueError that does not echo it", raised)
+    for spelling in ("NOT_FOUND", " not_found", "not_found ", "Not_Found", "\tinvalid_body\n"):
+        try:
+            store.TrainingExperimentError(spelling)
+            exact = False
+        except ValueError:
+            exact = True
+        check("CODES", f"a code is matched exactly, never folded or trimmed: {spelling!r}", exact)
     check(
         "CODES",
         "writers are exactly the ML engineer and the organization admin",
@@ -1463,6 +1470,30 @@ def part_s_idempotency() -> None:
             "IDEMPOTENT",
             "the lookup is scoped to the key",
             (store._find_by_idempotency_key(w.session, w.ctx, "user-ml-1", "key-none") is None),
+        )
+        for label, actor_id, key in (
+            ("upper-case actor", "USER-ML-1", "key-1"),
+            ("padded actor", " user-ml-1 ", "key-1"),
+            ("upper-case key", "user-ml-1", "KEY-1"),
+            ("padded key", "user-ml-1", " key-1 "),
+        ):
+            check(
+                "IDEMPOTENT",
+                f"the lookup matches the actor and the key exactly: {label}",
+                store._find_by_idempotency_key(w.session, w.ctx, actor_id, key) is None,
+            )
+        shouting = store.ExperimentActor("user", "USER-ML-1", "ml_engineer", "req-9")
+        loud = w.create(actor=shouting)
+        check(
+            "IDEMPOTENT",
+            "an actor id differing only in case is another actor",
+            loud.replayed is False and loud.experiment.requested_by == "USER-ML-1",
+        )
+        cased = w.create(key="KEY-1")
+        check(
+            "IDEMPOTENT",
+            "a key differing only in case is another key",
+            cased.replayed is False and cased.experiment.idempotency_key == "KEY-1",
         )
         # a replay of a row whose document was edited is refused
         first.experiment.config_json = {**first.experiment.config_json, "method": "qlora"}
