@@ -37,7 +37,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -50,13 +50,13 @@ sys.path.insert(0, str(ROOT / "apps" / "api"))
 import uvicorn  # noqa: E402
 import yaml  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
+from scripts.product_truth_check import SOURCE_ROOTS, find_callers  # noqa: E402
 from workers.training import training_config_schema as schema  # noqa: E402
 
 from app.auth.rbac_middleware import AuthenticatedPrincipal, Role  # noqa: E402
 from app.auth.tenant_isolation_query_guards import TenantContextError  # noqa: E402
 from app.training import training_experiment_routes as real_routes  # noqa: E402
 from app.training import training_experiment_store as store  # noqa: E402
-from scripts.product_truth_check import SOURCE_ROOTS, find_callers  # noqa: E402
 
 CID = "FTF-0701"
 FAILURES: list[str] = []
@@ -905,9 +905,21 @@ def route_suite(mod: ModuleType) -> None:
                 got.json["model_catalog_entry_id"] == "eeeeeeee-0000-4000-8000-00000000e005"
                 and got.json["parent_version"] is None
                 and got.json["version"] == 1
-                and got.json["max_cost"] == "1000"
+                and got.json["max_cost"] == "1000.0000"
                 and P1._validate(defs["TrainingExperiment"], defs, got.json)
             ),
+        )
+        stub.reset()
+        stub.experiment = resolved_experiment(
+            max_cost=Decimal("10.5"),
+            created_at=datetime(2026, 11, 27, 15, 0, 0, tzinfo=timezone(timedelta(hours=3))),
+        )
+        got = call(base, "POST", BASE, "org1:ml_engineer", post_body())
+        check(
+            "POST",
+            "a freshly built row serializes like the row read back (four decimals, UTC instant)",
+            (got.json["max_cost"], got.json["created_at"])
+            == ("10.5000", "2026-11-27T12:00:00+00:00"),
         )
         stub.experiment = resolved_experiment()
         stub.listing = [stub.experiment]

@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
+from datetime import UTC
+from decimal import Decimal
 from typing import Any, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -76,6 +78,7 @@ READ_ROLES: Final = ALL_ROLES
 _BODY_KEYS: Final = frozenset({"name", "idempotency_key", "config"})
 _QUERY_KEYS: Final = frozenset({"limit", "after_name", "after_version"})
 _MAX_VERSION: Final = 2**31 - 1
+_COST_QUANTUM: Final = Decimal("0.0001")
 
 
 def _invalid_body() -> HTTPException:
@@ -172,11 +175,12 @@ def _serialize(experiment: TrainingExperiment) -> dict[str, Any]:
         "split_manifest_id": str(experiment.split_manifest_id),
         "frozen_manifest_sha256": experiment.frozen_manifest_sha256,
         "budget_policy_id": str(experiment.budget_policy_id),
-        "max_cost": format(experiment.max_cost, "f"),
+        # NUMERIC(18,4): the same four-decimal text whether the row was just built or read back.
+        "max_cost": format(experiment.max_cost.quantize(_COST_QUANTUM), "f"),
         "currency": experiment.currency,
         "security_profile": experiment.security_profile,
         "requested_by": experiment.requested_by,
-        "created_at": experiment.created_at.isoformat(),
+        "created_at": experiment.created_at.astimezone(UTC).isoformat(),
     }
 
 
