@@ -61,7 +61,7 @@ from typing import Any
 import uvicorn
 import yaml
 from fastapi import FastAPI
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -122,6 +122,20 @@ def _role_lookup(issuer: str, subject: str, organization_id: uuid.UUID) -> Role 
 
 
 ENGINE = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+
+
+# pysqlite's own transaction handling breaks SAVEPOINT; SQLAlchemy's documented
+# recipe makes SQLite honour the gate's `begin_nested()` like Postgres does.
+@event.listens_for(ENGINE, "connect")
+def _sqlite_autocommit(dbapi_connection: Any, _record: Any) -> None:
+    dbapi_connection.isolation_level = None
+
+
+@event.listens_for(ENGINE, "begin")
+def _sqlite_begin(connection: Any) -> None:
+    connection.exec_driver_sql("BEGIN")
+
+
 EvaluationSuite.__table__.create(ENGINE)
 EvaluationCaseRecord.__table__.create(ENGINE)
 gate.EvaluationSuiteSamplePlan.__table__.create(ENGINE)
@@ -173,6 +187,7 @@ crud.execute_tenant_scoped = _passthrough_execute
 crud.authorize_resource_ownership = _authorize
 crud.write_audit_event = _write_audit
 gate.execute_tenant_scoped = _gate_execute
+gate.write_audit_event = _write_audit
 routes.tenant_scoped_session_for = _scoped_session
 
 
@@ -785,12 +800,27 @@ def test_a1_valid_development_lock_records_plan_and_hash() -> None:
         and row.created_at is not None,
     )
     locks = [a for a in AUDIT if a.get("action") == "evaluation_suite.lock"]
+    records = [a for a in AUDIT if a.get("action") == "evaluation_suite.sample_plan_record"]
     check(
         "A1",
-        "the lock audit event carries the hash and the reviewer as actor",
-        len(locks) == 1
-        and locks[0]["details"] == {"suite_sha256": sha}
-        and locks[0]["actor_id"] == "reviewer-1",
+        "FTF-0601's own lock audit event is still written once",
+        len(locks) == 1 and locks[0]["actor_id"] == "reviewer-1",
+    )
+    check(
+        "A1",
+        f"one sample-plan audit event records the hash ({records})",
+        len(records) == 1
+        and records[0]
+        == {
+            "organization_id": _ORG,
+            "actor_type": "user",
+            "actor_id": "reviewer-1",
+            "action": "evaluation_suite.sample_plan_record",
+            "resource_type": "evaluation_suite",
+            "resource_id": str(suite_id),
+            "request_id": locks[0]["request_id"] if locks else None,
+            "details": {"suite_sha256": sha},
+        },
     )
     got = _request("GET", _suite_path(suite_id), principal="viewer-1")
     check(
@@ -1034,6 +1064,12 @@ def test_floor_findings_pure() -> None:
             gate.Finding("sample_plan_below_floor", "min_critical_scenarios", 100, 0),
         ],
     )
+    for purpose in ("Final", " final", "FINAL"):
+        check(
+            "N2",
+            f"purpose {purpose!r} is not 'final' (exact match only)",
+            gate.plan_floor_findings(gate.SamplePlan(("a",), 1, 0, 1), purpose) == [],
+        )
     check(
         "N2",
         "Finding.as_dict is the exact wire shape",
@@ -1277,12 +1313,15 @@ def test_l1_lock_reloads_the_row_under_the_lock() -> None:
     original = crud._fetch_or_raise
 
     def stale_fetch(session: Session, context: Any, project_id: Any, sid: Any) -> Any:
+        # The row is now in this session's identity map with reviewer-1; a
+        # Core UPDATE (what another transaction's commit looks like to this
+        # one) changes the stored reviewer without touching that object.
         row = original(session, context, project_id, sid)
-        session.expunge(row)
-        with Session(ENGINE) as other:
-            other.get(EvaluationSuite, sid).reviewer_id = "creator-1"
-            other.commit()
-        session.add(row)
+        session.execute(
+            EvaluationSuite.__table__.update()
+            .where(EvaluationSuite.__table__.c.id == sid)
+            .values(reviewer_id="creator-1")
+        )
         return row
 
     crud._fetch_or_raise = stale_fetch
@@ -1297,30 +1336,61 @@ def test_l1_lock_reloads_the_row_under_the_lock() -> None:
     )
 
 
-def test_crud_default_lock_request_is_refused() -> None:
-    suite_id = _valid_dev_suite(_case("k1"))
+def test_refusal_leaves_nothing_even_if_the_caller_commits() -> None:
+    suite_id = _valid_dev_suite(_case("k1", expected_json={"answer": "tbd"}))
     context = types.SimpleNamespace(organization_id=_ORG)
     actor = crud.ActorInfo(actor_type="user", actor_id="reviewer-1", request_id="r")
+    request = gate.LockRequest(
+        gate.SamplePlan(("prompt injection",), 1, 0, 1), _current_sha(suite_id)
+    )
     with Session(ENGINE) as session:
         try:
-            crud.lock_evaluation_suite(
+            gate.lock_validated_evaluation_suite(
                 session,
                 context,
                 project_id=_PROJECT,
                 suite_id=suite_id,
                 actor=actor,
                 member_lookup=lambda org, subject: True,
+                lock_request=request,
             )
         except gate.SuiteLockValidationError as exc:
-            codes = [f.code for f in exc.findings]
             check(
                 "N2",
-                "a direct CRUD call with no lock request is refused for plan and hash",
-                codes == ["sample_plan_missing", "suite_sha256_required"],
+                "a direct call is refused with the typed finding",
+                [f.code for f in exc.findings] == ["unresolved_expected_output"],
             )
         else:
-            check("N2", "a direct CRUD call with no lock request is refused", False)
-        session.rollback()
+            check("N2", "a direct call on an unresolved suite is refused", False)
+        session.commit()
+    check(
+        "N2",
+        "after a refused lock that the caller still commits, the suite is draft with no plan row",
+        _state(suite_id) == ("draft", 0),
+    )
+
+
+def test_only_the_gate_calls_the_ungated_transition() -> None:
+    offenders = []
+    for path in (ROOT / "apps").rglob("*.py"):
+        if "tests" in path.parts or path.name in (
+            "evaluation_suite_crud.py",
+            "evaluation_suite_lock_gate.py",
+        ):
+            continue
+        if "lock_evaluation_suite(" in path.read_text(encoding="utf-8", errors="replace"):
+            offenders.append(str(path.relative_to(ROOT)))
+    check(
+        "L1",
+        f"no production module calls FTF-0601's ungated lock_evaluation_suite ({offenders})",
+        offenders == [],
+    )
+    gate_src = (ROOT / "apps/api/app/evaluation/evaluation_suite_lock_gate.py").read_text()
+    check(
+        "L1",
+        "the gate calls it through the module, so a reloaded FTF-0601 module is the one used",
+        "_crud.lock_evaluation_suite(" in gate_src,
+    )
 
 
 # -- M1: migration shape ----------------------------------------------------------------

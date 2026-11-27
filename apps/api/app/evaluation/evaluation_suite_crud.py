@@ -62,11 +62,6 @@ from app.auth.audit_event_writer import write_audit_event
 from app.auth.resource_authorization import ResourceAuthorizationError, authorize_resource_ownership
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
-from app.evaluation.evaluation_suite_lock_gate import (
-    LockRequest,
-    enforce_lock_gate,
-    lock_suite_row,
-)
 from app.evaluation.evaluation_suite_schema import (
     PURPOSE_FINAL,
     EvaluationSuite,
@@ -425,7 +420,6 @@ def lock_evaluation_suite(
     suite_id: uuid.UUID,
     actor: ActorInfo,
     member_lookup: OrganizationMemberLookup = default_organization_member_lookup,
-    lock_request: LockRequest | None = None,
 ) -> EvaluationSuite:
     """`draft` -> `locked`: requires a real `reviewer_id` already assigned
     (Section 69.1); for a `final`-purpose suite, that reviewer must differ
@@ -439,15 +433,8 @@ def lock_evaluation_suite(
     organization membership as defense-in-depth against a raw write that
     bypassed `create_evaluation_suite`/`update_evaluation_suite`'s own
     membership check.
-
-    FTF-0603-F1: the suite row is taken FOR UPDATE before any check, and
-    after FTF-0601's checks pass `enforce_lock_gate` validates the sample
-    plan, every case and the reviewed `suite_sha256` (raising
-    `SuiteLockValidationError`, nothing changed) and records the plan with
-    the hash (read back by the route through `recorded_suite_sha256s`).
     """
     suite = _fetch_or_raise(session, context, project_id, suite_id)
-    lock_suite_row(session, context, suite)
     if suite.status != "draft":
         raise EvaluationSuiteLockedError(f"evaluation suite {suite_id} is already {suite.status!r}")
 
@@ -471,13 +458,6 @@ def lock_evaluation_suite(
             f"({suite.reviewer_id!r}), not actor {actor.actor_id!r} -- Section 69.1"
         )
 
-    suite_sha256 = enforce_lock_gate(
-        session,
-        context,
-        suite,
-        lock_request or LockRequest(sample_plan=None, suite_sha256=None),
-        actor_id=actor.actor_id,
-    )
     suite.status = "locked"
     suite.locked_at = datetime.now(UTC)
     session.flush()
@@ -490,6 +470,5 @@ def lock_evaluation_suite(
         resource_type="evaluation_suite",
         resource_id=str(suite.id),
         request_id=actor.request_id,
-        details={"suite_sha256": suite_sha256},
     )
     return suite

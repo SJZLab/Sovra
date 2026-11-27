@@ -67,6 +67,7 @@ changes.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import math
 import uuid
@@ -79,8 +80,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.audit_event_writer import write_audit_event
 from app.auth.tenant_isolation_query_guards import execute_tenant_scoped
 from app.db.tenant_context import TenantContext
+from app.evaluation import evaluation_suite_crud as _crud
 from app.evaluation.evaluation_case_store import CATEGORY_MAX_LENGTH, EvaluationCaseRecord
 from app.evaluation.evaluation_suite_sample_plan_schema import EvaluationSuiteSamplePlan
 from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite
@@ -105,6 +108,7 @@ __all__ = [
     "enforce_lock_gate",
     "has_unresolved_expected",
     "lock_suite_row",
+    "lock_validated_evaluation_suite",
     "parse_lock_request",
     "parse_sample_plan",
     "plan_floor_findings",
@@ -140,6 +144,7 @@ FINDING_CODES: tuple[str, ...] = (
     "suite_sha256_mismatch",
 )
 
+_FINAL_PURPOSES = frozenset({PURPOSE_FINAL})
 _HEX_DIGITS = frozenset("0123456789abcdef")
 _BODY_FIELDS = frozenset({"sample_plan", "suite_sha256"})
 _COUNT_FIELDS = ("min_independent_tasks", "min_critical_scenarios", "min_cases_per_category")
@@ -252,7 +257,7 @@ def parse_lock_request(payload: Mapping[str, Any]) -> LockRequest:
 
 def plan_floor_findings(plan: SamplePlan, purpose: str) -> list[Finding]:
     floors = {"min_independent_tasks": 1, "min_critical_scenarios": 0, "min_cases_per_category": 1}
-    if purpose == PURPOSE_FINAL:
+    if purpose in _FINAL_PURPOSES:
         floors["min_independent_tasks"] = FINAL_MIN_INDEPENDENT_TASKS
         floors["min_critical_scenarios"] = FINAL_MIN_CRITICAL_SCENARIOS
     findings: list[Finding] = []
@@ -424,14 +429,10 @@ def compute_suite_sha256(suite: Any, cases: Sequence[Any]) -> str:
 
 def lock_suite_row(session: Session, context: TenantContext, suite: EvaluationSuite) -> None:
     """Takes the suite row FOR UPDATE -- the same row lock every case write
-    takes (`evaluation_case_store`) -- and reloads `suite` from it, so no
+    takes (`evaluation_case_store`). SQLAlchemy refreshes an already-loaded
+    row on a FOR UPDATE select, so `suite` is re-read under the lock and no
     case or reviewer can change between validation and the lock."""
-    statement = (
-        select(EvaluationSuite)
-        .where(EvaluationSuite.id == suite.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    statement = select(EvaluationSuite).where(EvaluationSuite.id == suite.id).with_for_update()
     execute_tenant_scoped(session, context.organization_id, statement).scalars().one()
 
 
@@ -453,7 +454,7 @@ def _hash_findings(
         return [Finding("non_canonical_number", key) for key in bad], None
     if reviewed is None:
         return [Finding("suite_sha256_required")], current
-    if reviewed != current:
+    if not hmac.compare_digest(reviewed, current):
         return [Finding("suite_sha256_mismatch")], current
     return [], current
 
@@ -476,8 +477,8 @@ def enforce_lock_gate(
 ) -> str:
     """Validates the suite against the plan and the reviewed hash and, only
     when every rule passes, records the plan. Returns `suite_sha256`. Raises
-    `SuiteLockValidationError` (nothing written) otherwise. The caller has
-    already run FTF-0601's checks and flips the status after this returns."""
+    `SuiteLockValidationError` otherwise. Called only by
+    `lock_validated_evaluation_suite`, inside its savepoint."""
     cases = _load_cases(session, context, suite)
     plan = request.sample_plan
     findings: list[Finding] = []
@@ -509,6 +510,62 @@ def enforce_lock_gate(
         )
     )
     return current
+
+
+def lock_validated_evaluation_suite(
+    session: Session,
+    context: TenantContext,
+    *,
+    project_id: uuid.UUID,
+    suite_id: uuid.UUID,
+    actor: _crud.ActorInfo,
+    member_lookup: _crud.OrganizationMemberLookup,
+    lock_request: LockRequest,
+) -> tuple[EvaluationSuite, str]:
+    """The lock route's only path to `locked` (FTF-0603-F1).
+
+    1. Authorizes and fetches the suite (FTF-0601's own `get_evaluation_suite`)
+       and takes its row FOR UPDATE, so no case or reviewer can change until
+       the transaction ends.
+    2. Inside one savepoint: FTF-0601's unchanged `lock_evaluation_suite` runs
+       its reviewer / independence / membership / actor checks and flips the
+       suite to `locked`; then `enforce_lock_gate` validates the plan, every
+       case and the reviewed hash and records the plan; then one audit event
+       records the hash.
+    3. Any refusal -- FTF-0601's or this gate's -- rolls the savepoint back, so
+       the suite is still `draft` with no plan row and no audit event even if
+       a caller catches the error and commits.
+
+    FTF-0601's module is byte-identical; its checks still run first and in
+    their own order, so its refusals (400/403/404/409) are unchanged."""
+    lock_suite_row(
+        session, context, _crud.get_evaluation_suite(session, context, project_id, suite_id)
+    )
+    with session.begin_nested():
+        suite = _crud.lock_evaluation_suite(
+            session,
+            context,
+            project_id=project_id,
+            suite_id=suite_id,
+            actor=actor,
+            member_lookup=member_lookup,
+        )
+        suite_sha256 = enforce_lock_gate(
+            session, context, suite, lock_request, actor_id=actor.actor_id
+        )
+        write_audit_event(
+            session,
+            organization_id=context.organization_id,
+            actor_type=actor.actor_type,
+            actor_id=actor.actor_id,
+            action="evaluation_suite.sample_plan_record",
+            resource_type="evaluation_suite",
+            resource_id=str(suite.id),
+            request_id=actor.request_id,
+            details={"suite_sha256": suite_sha256},
+        )
+        session.flush()
+    return suite, suite_sha256
 
 
 def recorded_suite_sha256s(

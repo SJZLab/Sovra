@@ -61,12 +61,12 @@ from app.evaluation.evaluation_suite_crud import (
     create_evaluation_suite,
     get_evaluation_suite,
     list_evaluation_suites,
-    lock_evaluation_suite,
     update_evaluation_suite,
 )
 from app.evaluation.evaluation_suite_lock_gate import (
     LockRequestError,
     SuiteLockValidationError,
+    lock_validated_evaluation_suite,
     parse_lock_request,
     recorded_suite_sha256s,
 )
@@ -373,7 +373,7 @@ def build_evaluation_suite_router(
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
-                suite = lock_evaluation_suite(
+                suite, suite_sha256 = lock_validated_evaluation_suite(
                     session,
                     tenant_context,
                     project_id=project_id,
@@ -382,8 +382,7 @@ def build_evaluation_suite_router(
                     member_lookup=_member_lookup_for(ctx, role_lookup),
                     lock_request=lock_request,
                 )
-                hashes = recorded_suite_sha256s(session, tenant_context, [suite.id])
-                body = _serialize(suite, hashes[suite.id])
+                body = _serialize(suite, suite_sha256)
         except (EvaluationSuiteNotFoundError, TenantContextError) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
         except SuiteLockValidationError as exc:

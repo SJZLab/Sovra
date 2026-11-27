@@ -673,7 +673,7 @@ def main() -> None:  # noqa: C901 - one linear live-database scenario
                 ).first()
                 audit = conn.execute(
                     text(
-                        "SELECT details_json FROM audit_events WHERE action = 'evaluation_suite.lock' "
+                        "SELECT details_json FROM audit_events WHERE action = 'evaluation_suite.sample_plan_record' "
                         "AND resource_id = :r"
                     ),
                     {"r": str(ok)},
