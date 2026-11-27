@@ -953,6 +953,10 @@ def _worksheet_part(
     return sheet_part
 
 
+# A sheet refusal that is a security signal, never a sheet to leave out of the listing quietly.
+_FAIL_CLOSED_SHEET_CODES: Final = frozenset({"unsafe_archive"})
+
+
 def _importable_sheet(workbook: _Workbook, rid: str) -> bool:
     """True when `open_package` would open this sheet; False for a sheet it refuses as
     `xlsx_malformed` or `unsupported_workbook`. An unsafe target is not a sheet to leave out
@@ -960,7 +964,7 @@ def _importable_sheet(workbook: _Workbook, rid: str) -> bool:
     try:
         _worksheet_part(workbook.by_id, workbook.parts, rid)
     except OoxmlRefused as exc:
-        if exc.code == "unsafe_archive":
+        if _FAIL_CLOSED_SHEET_CODES.issuperset((exc.code,)):
             raise
         return False
     return True

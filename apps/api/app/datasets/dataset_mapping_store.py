@@ -665,7 +665,7 @@ def propose_dataset_mapping(
         dataset_id=dataset_id,
         include_held_out=include_held_out,
     )
-    if importer not in STORABLE_IMPORTERS:
+    if not STORABLE_IMPORTERS.issuperset((importer,)):
         # The table's own CHECK (migration 0037 `ck_dataset_mappings_importer`) does not admit
         # this importer yet: refuse with a stable code before any byte is read, instead of a
         # constraint error at INSERT (a schema change is its own prerequisite, never hidden here).
