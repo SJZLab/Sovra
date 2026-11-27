@@ -95,6 +95,76 @@ def parse_focus(body: str, integration_jobs: list[str]) -> tuple[list[str], list
     return known, unknown
 
 
+RUN_LINE = re.compile(r"^[ \t]*ci-run:[ \t]*(\S.*)$", re.M | re.I)
+FULL_LINE = re.compile(r"^[ \t]*ci-full[ \t]*$", re.M | re.I)
+# A change to one of these can move the result of every job, so the whole suite runs.
+FULL_RUN_FILES = {
+    "scripts/ci_policy.py",
+    "pyproject.toml",
+    "uv.lock",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+}
+TEST_PATH = re.compile(r"(?:tests|apps/web/tests)/[\w./-]+\.(?:py|ts)")
+MODULE_NAME = re.compile(r"\b(?:apps|workers|packages|evals)(?:\.[A-Za-z_]\w*)+")
+# The app entry point is imported by nearly every API test; a new router mount there is covered by
+# the item's own job, so it does not select every job.
+SELECT_IGNORED_MODULES = {"apps/api/app/main"}
+
+
+def _module_prefixes(test_text: str) -> set[str]:
+    """Source path prefixes a test file names (`apps.api.app.x.y` -> `apps/api/app/x/y`)."""
+    prefixes = {m.group(0).replace(".", "/") for m in MODULE_NAME.finditer(test_text)}
+    return prefixes - SELECT_IGNORED_MODULES
+
+
+def select_jobs(
+    files: list[str],
+    workflow_text: str,
+    base_workflow_text: str | None,
+    body: str,
+    integration_jobs: list[str],
+    root: Path = Path("."),
+) -> tuple[list[str], list[str]]:
+    """Integration jobs a pull request runs -> (selected, unknown `ci-run:` names).
+
+    A job is selected when (a) its block in ci.yml is new or changed, (b) its block names a changed
+    file, (c) a test file its block runs names a changed source module, or (d) the PR body lists
+    it on a `ci-run:` line. Everything else waits for the nightly full run on main. Selection can
+    only add jobs to the gate; it never removes a gate check."""
+    _, head_blocks = _job_blocks(workflow_text)
+    base_blocks = _job_blocks(base_workflow_text)[1] if base_workflow_text is not None else None
+    sources = [f[: -len(".py")] if f.endswith(".py") else f for f in files]
+    selected: set[str] = set()
+    for job in integration_jobs:
+        block = head_blocks.get(job, "")
+        if base_blocks is not None and base_blocks.get(job) != block:
+            selected.add(job)
+            continue
+        if any(f in block for f in files):
+            selected.add(job)
+            continue
+        prefixes: set[str] = set()
+        for test in sorted(set(TEST_PATH.findall(block))):
+            try:
+                prefixes |= _module_prefixes((root / test).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                continue
+        if any(
+            s == p or s.startswith(p + "/") or p.startswith(s + "/")
+            for s in sources
+            for p in prefixes
+        ):
+            selected.add(job)
+    names: list[str] = []
+    for m in RUN_LINE.finditer(body or ""):
+        names += [n for n in re.split(r"[\s,]+", m.group(1).strip()) if n]
+    selected |= {n for n in names if n in integration_jobs}
+    unknown = sorted({n for n in names if n not in integration_jobs})
+    return sorted(selected), unknown
+
+
 def git(*args: str) -> str:
     return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
 
@@ -122,12 +192,12 @@ def cmd_classify(args: argparse.Namespace) -> int:
             files = changed_files(args.base)
             scope, reason = classify_files(files)
             if scope == "full" and args.workflow:
+                workflow_text = Path(args.workflow).read_text()
                 integration = [
-                    j
-                    for j in workflow_jobs(Path(args.workflow).read_text())
-                    if j.endswith("-integration")
+                    j for j in workflow_jobs(workflow_text) if j.endswith("-integration")
                 ]
-                focus, unknown = parse_focus(os.environ.get("PR_BODY", ""), integration)
+                body = os.environ.get("PR_BODY", "")
+                focus, unknown = parse_focus(body, integration)
                 for name in unknown:
                     print(f"::warning::ci-focus names no integration job {name!r}; ignored")
                 if focus:
@@ -135,6 +205,33 @@ def cmd_classify(args: argparse.Namespace) -> int:
                     reason = (
                         f"ci-focus in the PR body: only {', '.join(focus)} of the integration jobs "
                         "run; this run can never pass ci-verdict"
+                    )
+                elif os.environ.get("PR_DRAFT", "").strip().lower() == "true":
+                    # A draft cannot be merged, so its pushes get the gate only. Marking the PR
+                    # ready starts the run that can pass ci-verdict.
+                    scope = "draft"
+                    reason = (
+                        "draft PR: the gate runs, the integration jobs wait until the PR is "
+                        "marked ready; this run can never pass ci-verdict"
+                    )
+                elif FULL_LINE.search(body) or FULL_RUN_FILES.intersection(files):
+                    reason = "full run: ci-full in the PR body or a suite-wide input changed"
+                else:
+                    try:
+                        rel = os.path.relpath(args.workflow)
+                        base_workflow: str | None = git("show", f"{args.base}:{rel}")
+                    except Exception:  # no base copy (new workflow file): no block comparison
+                        base_workflow = None
+                    focus, unknown = select_jobs(
+                        files, workflow_text, base_workflow, body, integration
+                    )
+                    for name in unknown:
+                        print(f"::warning::ci-run names no integration job {name!r}; ignored")
+                    scope = "pr"
+                    reason = (
+                        f"change-scoped run: the gate plus {len(focus)} of {len(integration)} "
+                        "integration jobs touched by this change; the nightly full run on main "
+                        "covers the rest"
                     )
     except Exception as exc:  # any doubt -> widest scope, never a silent narrow run
         scope, reason, files, focus = (
@@ -392,6 +489,10 @@ def skip_exemption(job: str, scope: str, is_relay: bool) -> str | None:
         return "tracker-only change set: integration jobs test code that did not change"
     if job.endswith("-integration") and scope == "focused":
         return "not in ci-focus (the focused run itself fails the verdict)"
+    if job.endswith("-integration") and scope == "draft":
+        return "draft PR (the draft run itself fails the verdict)"
+    if job.endswith("-integration") and scope == "pr":
+        return "not touched by this change set; the nightly full run on main covers it"
     if job in {"mutation-gate", "relay-policy"} and not is_relay:
         return "runs only on [relay] PRs"
     return None
@@ -425,8 +526,13 @@ def evaluate(
             "focused run (ci-focus in the PR body) verified only part of the change; "
             "remove the ci-focus line and push to get a merge verdict"
         )
-    elif scope not in {"tracker", "full"}:
-        problems.append(f"scope {scope!r} is unknown; classify must decide tracker or full")
+    elif scope == "draft":
+        problems.append(
+            "draft run verified the gate only; mark the PR ready for review to get the full run "
+            "and a merge verdict"
+        )
+    elif scope not in {"tracker", "full", "pr"}:
+        problems.append(f"scope {scope!r} is unknown; classify must decide tracker, pr or full")
     return problems, exempt
 
 
