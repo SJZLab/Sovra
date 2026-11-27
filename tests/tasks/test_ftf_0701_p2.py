@@ -1257,6 +1257,8 @@ def part_s_request_values() -> None:
             ("NUL", "a\x00b"),
             ("unit separator", "a\x1fb"),
             ("201 characters", "n" * 201),
+            ("a lone surrogate", "exp\ud800"),
+            ("only a lone surrogate", "\udfff"),
             ("an int", 5),
             ("None", None),
             ("bytes", b"exp"),
