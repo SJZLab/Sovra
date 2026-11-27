@@ -19,6 +19,8 @@ export interface Route {
   reject?: boolean;
   /** Resolves `ok: true` with a body that is not valid JSON (a malformed 200). */
   malformedJson?: boolean;
+  /** Echo the sent `idempotency_key` into `body` (the server's assign row binds to the request). */
+  echoKey?: boolean;
 }
 
 function stubFetch(routes: Route[]): void {
@@ -39,10 +41,18 @@ function stubFetch(routes: Route[]): void {
           },
         } as unknown as Response);
       }
+      const body =
+        route.echoKey && typeof init?.body === "string"
+          ? {
+              ...(route.body as Record<string, unknown>),
+              idempotency_key: (JSON.parse(init.body) as { idempotency_key: string })
+                .idempotency_key,
+            }
+          : route.body;
       return Promise.resolve({
         ok: status >= 200 && status < 300,
         status,
-        json: async () => route.body,
+        json: async () => body,
       } as Response);
     }
     return Promise.resolve({

@@ -213,7 +213,10 @@ const STATES: UiState[] = [
   },
   {
     id: "assigned notice",
-    routes: [{ method: "POST", path: ROLES, status: 201, body: role("candidate") }, ...base()],
+    routes: [
+      { method: "POST", path: ROLES, status: 201, body: role("candidate"), echoKey: true },
+      ...base(),
+    ],
     steps: [{ tid: "assign-open" }, { tid: "dialog-confirm" }],
     ready: '[data-testid="role-notice"]',
   },

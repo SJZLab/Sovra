@@ -234,6 +234,10 @@ const M = {
   tryAgain: { en: "Try again", ar: "حاول مجددًا" },
   failedAssign: { en: "The role was not assigned.", ar: "لم يتم تعيين الدور." },
   failedRevoke: { en: "The role was not revoked.", ar: "لم يتم إلغاء الدور." },
+  unboundOutcome: {
+    en: "The server's answer does not confirm this change. The list below shows the current state; check it before trying again.",
+    ar: "رد الخادم لا يؤكد هذا التغيير. تعرض القائمة أدناه الحالة الحالية؛ تحقق منها قبل المحاولة مجددًا.",
+  },
   actions: { en: "Actions", ar: "الإجراءات" },
   actionsCaption: {
     en: "What may be done with this version, as decided by the server",
@@ -383,6 +387,24 @@ export interface RoleRow {
   revoked_at: string | null;
 }
 
+/**
+ * A write counts as done only when the returned row is the one asked for (UI CHECKLIST b/d/e, Law
+ * 17): same role and version; for an assign the same idempotency key and still active, for a revoke
+ * now revoked. A non-JSON 200, a `{}` 200 or another row is NOT success.
+ */
+export function bindsTo(
+  body: unknown,
+  sent: { kind: "assign" | "revoke"; role: string; key?: string },
+  versionId: string,
+): boolean {
+  const rows = parseRoles([body], versionId);
+  if (!rows || rows.length !== 1 || !isRec(body)) return false;
+  const row = rows[0]!;
+  if (row.role !== sent.role) return false;
+  if (sent.kind === "assign") return body.idempotency_key === sent.key && row.revoked_at === null;
+  return row.revoked_at !== null;
+}
+
 export function parseRoles(v: unknown, versionId: string): RoleRow[] | null {
   if (!Array.isArray(v)) return null;
   const out: RoleRow[] = [];
@@ -441,7 +463,14 @@ export function parseActions(v: unknown, versionId: string): Decision[] | null {
     const code = isStr(d.code) ? d.code : null;
     const allowed = known && d.allowed === true && d.code === null;
     if (!known) return { action, allowed: false, code: code ?? "unknown_action", plan: null };
-    return { action, allowed, code, plan: allowed ? parsePlan(d.plan) : null };
+    const plan = allowed ? parsePlan(d.plan) : null;
+    // continue_tuning and exact_resume are only meaningful with the server's plan: an "allowed"
+    // without a valid one (e.g. a resume at step 0) is not shown as allowed (fail closed).
+    const wanted =
+      action === "continue_tuning" ? "new_run" : action === "exact_resume" ? "exact_resume" : null;
+    if (allowed && wanted !== null && plan?.kind !== wanted)
+      return { action, allowed: false, code: null, plan: null };
+    return { action, allowed, code, plan };
   });
 }
 
@@ -657,7 +686,15 @@ function Inner({
       }
       if (!alive.current) return;
       const code = detailOf(reply.body);
-      if (reply.ok) {
+      if (reply.ok && !bindsTo(reply.body, a, modelVersionId)) {
+        // A 2xx that does not name the row asked for: the outcome is unknown. Keep the attempt (an
+        // assign retry reuses its key and replays; a revoke retry gets role_not_assigned) and re-read.
+        setOutcome({
+          kind: "error",
+          error: uiError(tr("unboundOutcome", locale), "verify-state"),
+          retry: true,
+        });
+      } else if (reply.ok) {
         attempt.current = null;
         setOutcome({
           kind: "notice",

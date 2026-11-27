@@ -80,6 +80,14 @@ function role(r: string, extra: Record<string, unknown> = {}) {
   };
 }
 
+/** The row the server returns for an assign: the role and the key that were SENT. */
+const echo =
+  (status = 201) =>
+  (init?: RequestInit): Reply => {
+    const sent = JSON.parse(String(init?.body)) as { role: string; idempotency_key: string };
+    return { status, body: role(sent.role, { idempotency_key: sent.idempotency_key }) };
+  };
+
 function decisions(over: Record<string, unknown> = {}) {
   const base: Record<string, unknown> = {};
   for (const a of MODEL_ACTIONS) base[a] = { allowed: true, code: null, plan: null };
@@ -116,7 +124,7 @@ type Reply = {
   reject?: boolean;
   hang?: boolean;
 };
-type Routes = Record<string, Reply | (() => Reply)>;
+type Routes = Record<string, Reply | ((init?: RequestInit) => Reply)>;
 let calls: { method: string; url: string; body?: string; credentials?: RequestCredentials }[] = [];
 let routes: Routes = {};
 
@@ -136,7 +144,7 @@ beforeEach(() => {
       credentials: init?.credentials,
     });
     const r = routes[`${method} ${url}`];
-    const reply = typeof r === "function" ? r() : r;
+    const reply = typeof r === "function" ? r(init) : r;
     if (!reply)
       return Promise.resolve({
         ok: false,
@@ -435,7 +443,7 @@ test("H010P6-R4: assign confirm dialog names the role and the version; cancel se
 });
 
 test("H010P6-R5: a confirmed assign POSTs exactly {role, idempotency_key=uuid} with credentials and shows the notice", async () => {
-  routes[`POST ${ROLES}`] = { status: 201, body: role("candidate") };
+  routes[`POST ${ROLES}`] = echo();
   mount();
   await openAssign("candidate");
   fireEvent.click(screen.getByTestId("dialog-confirm"));
@@ -457,8 +465,7 @@ test("H010P6-R5: a confirmed assign POSTs exactly {role, idempotency_key=uuid} w
 
 test("H010P6-R6: a lost assign response is retried with the SAME idempotency key; a new confirm uses a new one", async () => {
   let n = 0;
-  routes[`POST ${ROLES}`] = () =>
-    ++n === 1 ? { reject: true } : { status: 200, body: role("teacher") };
+  routes[`POST ${ROLES}`] = (init) => (++n === 1 ? { reject: true } : echo(200)(init));
   mount();
   await openAssign("teacher");
   fireEvent.click(screen.getByTestId("dialog-confirm"));
@@ -540,7 +547,7 @@ test("H010P6-R9: revoke confirm -> POST .../roles/{role}/revoke with no body; a 
 });
 
 test("H010P6-R10: focus lands on the outcome region after a confirmed write, never <body>", async () => {
-  routes[`POST ${ROLES}`] = { status: 201, body: role("candidate") };
+  routes[`POST ${ROLES}`] = echo();
   mount();
   await openAssign("candidate");
   fireEvent.click(screen.getByTestId("dialog-confirm"));
@@ -617,4 +624,163 @@ test("H010P6-R12: the idempotency key is a v4 UUID with or without crypto.random
   } finally {
     Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
   }
+});
+
+// ---- review round 1: bound writes, every GET's malformed replies, strict parsing ---------------
+
+for (const [label, reply] of [
+  ["a non-JSON 200", { status: 200, malformed: true }],
+  ["a {} 200", { status: 201, body: {} }],
+  ["a row naming another role", { status: 201, body: role("judge") }],
+  [
+    "a row with another idempotency key",
+    { status: 201, body: role("candidate", { idempotency_key: "other" }) },
+  ],
+  ["a row that is already revoked", { status: 201, body: "REVOKED" }],
+  ["another version's row", { status: 201, body: role("candidate", { model_version_id: PARENT }) }],
+] as [string, Reply][]) {
+  test(`H010P6-W1: an assign 2xx with ${label} is NOT success: announced unknown outcome, retry keeps the key`, async () => {
+    routes[`POST ${ROLES}`] =
+      reply.body === "REVOKED"
+        ? (init) => {
+            const r = echo()(init);
+            (r.body as Record<string, unknown>).revoked_at = "2026-11-05T00:00:00+00:00";
+            return r;
+          }
+        : reply;
+    mount();
+    await openAssign("candidate");
+    fireEvent.click(screen.getByTestId("dialog-confirm"));
+    await waitFor(() => screen.getByTestId("role-error"));
+    expect(screen.queryByTestId("role-notice")).toBeNull();
+    expect(screen.getByTestId("role-error").getAttribute("role")).toBe("alert");
+    expect(screen.getByTestId("role-error").textContent).toContain("does not confirm");
+    routes[`POST ${ROLES}`] = echo(200);
+    fireEvent.click(screen.getByTestId("role-retry"));
+    await waitFor(() => screen.getByTestId("role-notice"));
+    const keys = posts().map((p) => JSON.parse(p.body!).idempotency_key as string);
+    expect(keys[1]).toBe(keys[0]);
+  });
+}
+
+for (const [label, body] of [
+  ["a {} 200", {}],
+  ["a row still active", role("candidate")],
+  ["a row naming another role", role("baseline", { revoked_at: "2026-11-05T00:00:00+00:00" })],
+] as [string, unknown][]) {
+  test(`H010P6-W2: a revoke 200 with ${label} is NOT success`, async () => {
+    routes[`GET ${ROLES}`] = { body: [role("candidate")] };
+    routes[`POST ${ROLES}/candidate/revoke`] = { status: 200, body };
+    mount();
+    await waitFor(() => screen.getByTestId("revoke-candidate"));
+    fireEvent.click(screen.getByTestId("revoke-candidate"));
+    await waitFor(() => screen.getByTestId("role-dialog"));
+    fireEvent.click(screen.getByTestId("dialog-confirm"));
+    await waitFor(() => screen.getByTestId("role-error"));
+    expect(screen.queryByTestId("role-notice")).toBeNull();
+  });
+}
+
+test("H010P6-W3: a bound revoke 200 shows the revoked notice", async () => {
+  routes[`GET ${ROLES}`] = { body: [role("candidate")] };
+  routes[`POST ${ROLES}/candidate/revoke`] = {
+    status: 200,
+    body: role("candidate", { revoked_at: "2026-11-05T00:00:00+00:00" }),
+  };
+  mount();
+  await waitFor(() => screen.getByTestId("revoke-candidate"));
+  fireEvent.click(screen.getByTestId("revoke-candidate"));
+  await waitFor(() => screen.getByTestId("role-dialog"));
+  fireEvent.click(screen.getByTestId("dialog-confirm"));
+  await waitFor(() => screen.getByTestId("role-notice"));
+  expect(screen.getByTestId("role-notice").textContent).toBe("Role revoked: Candidate");
+});
+
+for (const section of ["roles", "actions"] as const) {
+  for (const [label, reply] of [
+    ["a rejected fetch", { reject: true }],
+    ["a non-JSON 200", { malformed: true }],
+    ["a {} 200", { body: {} }],
+    ["a null item", { body: section === "roles" ? [null] : { ...decisions(), actions: null } }],
+    ["a 500", { status: 500, body: {} }],
+  ] as [string, Reply][]) {
+    test(`H010P6-G1: ${section} GET ${label} -> one announced error with recovery, never data or an empty state`, async () => {
+      routes[`GET ${section === "roles" ? ROLES : ACTIONS}`] = reply;
+      mount();
+      await waitFor(() => screen.getByTestId(`${section}-error`));
+      expect(screen.getByTestId(`${section}-error`).getAttribute("role")).toBe("alert");
+      expect(screen.getByTestId(`${section}-error-recovery`).textContent).not.toBe("");
+      if (section === "roles") expect(screen.queryByText("No roles yet")).toBeNull();
+      else expect(screen.queryByTestId("decision-evaluate")).toBeNull();
+    });
+  }
+}
+
+for (const [field, value] of [
+  ["version_number", "7"],
+  ["parent_model_version_id", 5],
+  ["weights_digest", { a: 1 }],
+  ["external_provider_model_ref", 1],
+  ["observed_deployment_fingerprint", true],
+  ["origin", null],
+  ["lineage_completeness", 3],
+] as [string, unknown][]) {
+  test(`H010P6-P1: item ${field} of the wrong type is malformed, never rendered`, async () => {
+    routes[`GET ${ITEM}`] = { body: endpointItem({ [field]: value }) };
+    mount();
+    await waitFor(() => screen.getByTestId("lineage-error"));
+    expect(screen.queryByTestId("lineage-facts")).toBeNull();
+  });
+}
+
+for (const [field, value] of [
+  ["revoked_at", undefined],
+  ["revoked_at", 0],
+  ["assigned_by", null],
+  ["assigned_at", 1],
+  ["role", 2],
+  ["id", null],
+] as [string, unknown][]) {
+  test(`H010P6-P2: role row ${field}=${String(value)} is malformed, never a role state`, async () => {
+    const row: Record<string, unknown> = role("candidate");
+    if (value === undefined) delete row[field];
+    else row[field] = value;
+    routes[`GET ${ROLES}`] = { body: [row] };
+    mount();
+    await waitFor(() => screen.getByTestId("roles-error"));
+    expect(screen.queryByText("Revoked")).toBeNull();
+    expect(screen.queryByText("Active")).toBeNull();
+  });
+}
+
+test("H010P6-P3: an exact_resume 'allowed' at step 0 or without a plan is not shown as allowed", async () => {
+  for (const plan of [
+    { kind: "exact_resume", start_step: 0 },
+    null,
+    { kind: "new_run", start_step: 3 },
+  ]) {
+    routes[`GET ${ACTIONS}`] = {
+      body: decisions({
+        exact_resume: { allowed: true, code: null, plan },
+        continue_tuning: { allowed: true, code: null, plan },
+      }),
+    };
+    mount();
+    await waitFor(() => screen.getByTestId("decision-exact_resume"));
+    expect(screen.getByTestId("decision-exact_resume").dataset.allowed).toBe("false");
+    expect(screen.getByTestId("decision-continue_tuning").dataset.allowed).toBe("false");
+    expect(screen.getByTestId("actions-section").textContent).not.toMatch(/step 0\b(?!,)/);
+    cleanup();
+  }
+});
+
+test("H010P6-P4: a plan of the other kind (resume carrying a new run) is not shown as allowed", async () => {
+  routes[`GET ${ACTIONS}`] = {
+    body: decisions({
+      exact_resume: { allowed: true, code: null, plan: { kind: "new_run", start_step: 0 } },
+    }),
+  };
+  mount();
+  await waitFor(() => screen.getByTestId("decision-exact_resume"));
+  expect(screen.getByTestId("decision-exact_resume").dataset.allowed).toBe("false");
 });
