@@ -237,7 +237,7 @@ def main() -> None:
     # ---------------------------------------------------------------- M: migration
     for label, args in (
         ("upgrade head", ["upgrade", "head"]),
-        ("downgrade -1", ["downgrade", "-1"]),
+        ("downgrade to 0036", ["downgrade", "0036_argilla_identity_hardening"]),
         ("upgrade head again", ["upgrade", "head"]),
     ):
         result = _alembic(args, migration_url)
@@ -246,7 +246,7 @@ def main() -> None:
             f"alembic {label} runs cleanly\n{result.stdout}\n{result.stderr}",
             result.returncode == 0,
         )
-        if label == "downgrade -1":
+        if label == "downgrade to 0036":
             owner_probe = create_engine(migration_url)
             with Session(owner_probe) as s:
                 gone = s.execute(
@@ -264,10 +264,11 @@ def main() -> None:
                 gone is None and uq == 0,
             )
     heads = _alembic(["heads"], migration_url)
+    history = _alembic(["history"], migration_url)
     check(
         "M",
         f"exactly one head, 0037 on its chain: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0037_model_role_assignments" in heads.stdout,
+        heads.stdout.count("(head)") == 1 and "0037_model_role_assignments" in history.stdout,
     )
     if FAILURES:
         print("\n".join(FAILURES))

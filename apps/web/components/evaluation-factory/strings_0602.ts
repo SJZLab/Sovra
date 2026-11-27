@@ -1,7 +1,10 @@
 /**
  * FTF-0602 (evaluation case editor/import) en/ar catalogue (FTF-UX06 round 1). Every system
- * string the component shows -- labels, hints, notices and error text -- lives here, so no
- * English can survive in an Arabic render and no raw code is a label. The English value of every
+ * string the component shows -- labels, hints, notices and error text -- lives here. Round 3
+ * correction: that header previously claimed "no English can survive in an Arabic render", which
+ * was false (raw store codes and three Latin identifiers leaked). It is now true by test: every
+ * store code is mapped, an unmapped code shows `codeUnknown`, and a catalogue test rejects Latin
+ * text in any `ar` value except an allow-list (`JSON`, `JSON Lines`). The English value of every
  * dynamic/error entry is copied byte-for-byte from the pre-UX06 component so the certified
  * `ftf_0602.spec.ts` suite's exact-substring assertions keep passing unchanged at the default
  * `locale="en"`.
@@ -81,9 +84,9 @@ const STRINGS = {
   },
   errDuplicateCaseKey: {
     en: "A case with that case_key already exists; nothing was imported.",
-    ar: "توجد حالة بهذا case_key مسبقًا؛ لم يتم استيراد أي شيء.",
+    ar: "توجد حالة بهذا المفتاح مسبقًا؛ لم يتم استيراد أي شيء.",
   },
-  errRoleNotAuthorized: { en: "Your role may not do this.", ar: "قد لا يسمح دورك بهذا." },
+  errRoleNotAuthorized: { en: "Your role may not do this.", ar: "لا يسمح دورك بهذا الإجراء." },
   errFinalRestricted: {
     en: "This is a final suite; its case content is restricted to evaluators and administrators.",
     ar: "هذه مجموعة نهائية؛ محتوى حالاتها مقيَّد بالمقيِّمين والمسؤولين.",
@@ -145,11 +148,11 @@ const STRINGS = {
   },
   expectedMustNotBeEmpty: {
     en: "expected_json must not be empty.",
-    ar: "يجب ألا يكون expected_json فارغًا.",
+    ar: "يجب ألا تكون الحالة المتوقعة فارغة.",
   },
   weightMustBePositive: {
     en: "weight must be a number greater than 0.",
-    ar: "يجب أن يكون weight عددًا أكبر من 0.",
+    ar: "يجب أن يكون الوزن عددًا أكبر من 0.",
   },
   rowWord: { en: "Row", ar: "الصف" },
   requestWord: { en: "Request", ar: "الطلب" },
@@ -194,6 +197,36 @@ const STRINGS = {
     ar: "تحتاج الحالة الحرِجة إلى أداة تقييم مستقلة",
   },
   codeBodyMalformed: { en: "the request body is malformed", ar: "محتوى الطلب غير سليم" },
+  codeInvalidType: { en: "wrong type of value", ar: "نوع القيمة غير صحيح" },
+  codeUnknownField: { en: "unknown field", ar: "حقل غير معروف" },
+  codeEmptyObject: { en: "must not be empty", ar: "يجب ألا يكون فارغًا" },
+  codeTooLarge: { en: "too large", ar: "كبير جدًا" },
+  codeImmutable: { en: "cannot be changed", ar: "لا يمكن تغييره" },
+  codeEmptyPatch: { en: "nothing to change", ar: "لا يوجد ما يمكن تغييره" },
+  codeInvalidJson: { en: "not valid JSON", ar: "ليس JSON صالحًا" },
+  /** An unmapped store code under Arabic: a localized generic phrase, never the raw code. */
+  codeUnknown: { en: "not accepted", ar: "غير مقبول" },
+  fieldUnknown: { en: "a field", ar: "حقل" },
+  /** A 403 role_not_authorized or a 5xx is never fixed by editing a field or the file. */
+  recoverAccess: {
+    en: "Ask an administrator to change your role, then try again.",
+    ar: "اطلب من أحد المسؤولين تغيير دورك، ثم حاول مرة أخرى.",
+  },
+  /** 404/409 (not found, suite locked): editing the field or file cannot help. */
+  errNotAuthenticated: { en: "You are not signed in.", ar: "لم تسجّل الدخول." },
+  recoverSignIn: {
+    en: "Sign in again, then retry.",
+    ar: "سجّل الدخول مرة أخرى، ثم أعد المحاولة.",
+  },
+  recoverNoFix: {
+    en: "Reload the list, or ask an administrator if you expected this to work.",
+    ar: "أعد تحميل القائمة، أو اسأل أحد المسؤولين إن كنت تتوقع أن ينجح هذا.",
+  },
+  restrictedSaveNotice: {
+    en: "Your save was refused and the case form was closed. No case content is shown.",
+    ar: "رُفض الحفظ وأُغلق نموذج الحالة. لا يُعرض أي محتوى للحالات.",
+  },
+  summaryTitle: { en: "Fix these fields", ar: "أصلح هذه الحقول" },
   codeDuplicateCaseKeyField: {
     en: "this case_key already exists",
     ar: "مفتاح الحالة هذا موجود مسبقًا",
