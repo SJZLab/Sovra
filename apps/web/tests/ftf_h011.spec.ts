@@ -10,7 +10,15 @@
 // (apps/web/tests/real_api/ftf_h011_ui_real_api.realapi.ts).
 import { createElement } from "react";
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  configure,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import {
@@ -30,6 +38,11 @@ import {
   type Draft,
   type MappingRow,
 } from "../components/dataset-factory/dataset_mapping_wizard_ui";
+
+// Each case drives the full wizard; on a loaded CI runner the 1 s `findBy` default and the 5 s
+// test default are too tight (the assertions themselves are unchanged).
+configure({ asyncUtilTimeout: 15_000 });
+vi.setConfig({ testTimeout: 60_000 });
 
 const API = "http://api.h011.test:8011";
 const ORG = "aaaaaaaa-0000-4000-8000-0000000000a1";
