@@ -148,7 +148,8 @@ def _page(request: Request) -> tuple[int, tuple[str, int] | None]:
 
 
 def _decimal(raw: str, low: int, high: int) -> int:
-    if not raw.isascii() or not raw.isdecimal() or len(raw) > 10 or raw != str(int(raw)):
+    # canonical decimal digits only: no sign, no leading zero (every lower bound here is >= 1)
+    if not raw.isascii() or not raw.isdecimal() or len(raw) > 10 or raw.startswith("0"):
         raise _invalid_body()
     value = int(raw)
     if not low <= value <= high:
@@ -252,7 +253,7 @@ def build_training_experiment_router(
             raise _not_found() from None
         except TrainingExperimentError as exc:
             raise HTTPException(status_code=exc.status, detail=exc.code) from None
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     @router.get(EXPERIMENT_PATH)
     async def get_experiment(
@@ -273,6 +274,6 @@ def build_training_experiment_router(
             raise _not_found() from None
         except TrainingExperimentError as exc:
             raise HTTPException(status_code=exc.status, detail=exc.code) from None
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)
 
     return router

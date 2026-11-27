@@ -996,6 +996,17 @@ def route_suite(mod: ModuleType) -> None:
             ),
         )
 
+        stub.reset()
+        cased = b'{"name": "a", "idempotency_key": "k", "config": {"mode": "advanced", "Mode": "x", " mode": 1}}'
+        got = call(base, "POST", BASE, "org1:ml_engineer", cased)
+        check(
+            "BODY",
+            "keys differing only in case or padding are different keys, not duplicates",
+            got.status == 201
+            and len(stub.calls) == 1
+            and stub.calls[0][4]["config_body"] == {"mode": "advanced", "Mode": "x", " mode": 1},
+        )
+
         # ---- every store code, with its status, on every operation
         operations = (
             ("POST", BASE, post_body()),
@@ -1132,6 +1143,12 @@ def route_suite(mod: ModuleType) -> None:
             ("limit 200", "limit=200", {"limit": 200, "after": None}),
             ("a cursor", "after_name=exp-a&after_version=2", {"limit": 50, "after": ("exp-a", 2)}),
             (
+                "a one-character cursor name",
+                "after_name=a&after_version=1",
+                {"limit": 50, "after": ("a", 1)},
+            ),
+            ("limit 10", "limit=10", {"limit": 10, "after": None}),
+            (
                 "a cursor and a limit",
                 "limit=7&after_name=a%20b&after_version=2147483647",
                 {"limit": 7, "after": ("a b", 2147483647)},
@@ -1151,6 +1168,9 @@ def route_suite(mod: ModuleType) -> None:
             )
         for label, query in (
             ("limit 0", "limit=0"),
+            ("limit 00", "limit=00"),
+            ("limit padded", "limit=%205"),
+            ("after_version 01", "after_name=a&after_version=01"),
             ("limit 201", "limit=201"),
             ("limit -1", "limit=-1"),
             ("limit 1.0", "limit=1.0"),
