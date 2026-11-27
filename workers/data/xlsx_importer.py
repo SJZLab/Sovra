@@ -1005,6 +1005,23 @@ def _open_workbook(spool: IO[bytes], *, limits: XlsxLimits, tick: Callable[[], N
     return _Workbook(archive, parts, sheets, by_id, budget)
 
 
+def _importable_sheet_part(workbook: _Workbook, sheet_index: int) -> str:
+    """The folded part name of sheet `sheet_index`, or `OoxmlRefused` with the importer's own
+    code when the importer cannot read it (a dangling or target-less relationship id, a
+    relationship that is not a worksheet -- a chartsheet, say -- or a missing part). The one
+    rule shared by `open_package` and `list_worksheets`, so a picker never offers a sheet the
+    importer then refuses."""
+    sheet_rel = workbook.by_id.get(workbook.sheets[sheet_index][1])
+    if sheet_rel is None or "Target" not in sheet_rel:
+        raise OoxmlRefused("xlsx_malformed")
+    sheet_part = _resolve_target(sheet_rel["Target"]).casefold()
+    if sheet_rel.get("Type") != _REL_WORKSHEET:
+        raise OoxmlRefused("unsupported_workbook")
+    if sheet_part not in workbook.parts:
+        raise OoxmlRefused("xlsx_malformed")
+    return sheet_part
+
+
 def open_package(
     spool: IO[bytes],
     sheet_name: str,
@@ -1029,14 +1046,7 @@ def open_package(
     if not matches:
         raise XlsxAborted("mapping_column_missing")
     sheet_index = matches[0]
-    sheet_rel = by_id.get(sheets[sheet_index][1])
-    if sheet_rel is None or "Target" not in sheet_rel:
-        raise OoxmlRefused("xlsx_malformed")
-    sheet_part = _resolve_target(sheet_rel["Target"]).casefold()
-    if sheet_rel.get("Type") != _REL_WORKSHEET:
-        raise OoxmlRefused("unsupported_workbook")
-    if sheet_part not in parts:
-        raise OoxmlRefused("xlsx_malformed")
+    sheet_part = _importable_sheet_part(workbook, sheet_index)
 
     shared = _SharedStrings()
     for item in by_id.values():
@@ -1396,6 +1406,14 @@ class WorksheetListing:
     sheets: tuple[WorksheetInfo, ...]
 
 
+def _is_importable_sheet(workbook: _Workbook, sheet_index: int) -> bool:
+    try:
+        _importable_sheet_part(workbook, sheet_index)
+    except OoxmlRefused:
+        return False
+    return True
+
+
 def list_worksheets(
     reader: ChunkReader,
     *,
@@ -1432,7 +1450,8 @@ def list_worksheets(
                     None,
                     tuple(
                         WorksheetInfo(name, state, state != "visible")
-                        for name, _rid, state in workbook.sheets
+                        for index, (name, _rid, state) in enumerate(workbook.sheets)
+                        if _is_importable_sheet(workbook, index)
                     ),
                 )
             finally:

@@ -905,7 +905,7 @@ def test_padded_part_targets_are_not_silently_trimmed() -> None:
 
 def test_a_reader_that_fails_with_an_os_error_is_a_blocked_listing() -> None:
     class Broken(ic.ChunkReader):
-        def __iter__(self) -> Iterator[bytes]:  # type: ignore[override]
+        def __iter__(self) -> Iterator[bytes]:
             raise OSError("storage gone")
 
     reader = Broken(
@@ -951,6 +951,241 @@ def test_listing_guards_are_pinned_against_type_padding_and_name_trimming() -> N
             f"sheet state {state!r} is kept verbatim and flagged hidden",
             [(s.state, s.hidden) for s in listed.sheets] == [(state, True)],
         )
+
+
+def _listed(data: bytes) -> Any:
+    return xi.list_worksheets(
+        reader_for(data), verified_content_type=XLSX, dataset_sha256=sha(data)
+    )
+
+
+def test_list_worksheets_omits_sheets_the_importer_refuses() -> None:
+    # H011-P6 gap 2 (Control-plane ruling 2026-11-27): a picker never offers a dead-end sheet.
+    only_chart = _listed(t505.book(sheet_type="chartsheet"))
+    check(
+        "LIST-1",
+        "a workbook whose only sheet is a chartsheet lists no sheets and does not raise "
+        f"(got {only_chart.state}/{only_chart.failure_code}/{only_chart.sheets})",
+        only_chart.state == "completed"
+        and only_chart.failure_code is None
+        and only_chart.sheets == (),
+    )
+    dangling = _listed(
+        t505.book(
+            extra_sheets=[("Ghost", "rIdNone", None), ("Tail", "rId2", None)],
+            rel_extra=(
+                f'<Relationship Id="rId2" Type="{t505.REL}/worksheet" '
+                'Target="worksheets/sheet1.xml"/>'
+            ),
+        )
+    )
+    check(
+        "LIST-2",
+        "a dangling-rId sheet is omitted, the others keep workbook order "
+        f"(got {[s.name for s in dangling.sheets]})",
+        dangling.state == "completed" and [s.name for s in dangling.sheets] == ["Data", "Tail"],
+    )
+    missing_part = _listed(
+        t505.book(
+            extra_sheets=[("NoPart", "rId2", None)],
+            rel_extra=(
+                f'<Relationship Id="rId2" Type="{t505.REL}/worksheet" '
+                'Target="worksheets/nothere.xml"/>'
+            ),
+        )
+    )
+    check(
+        "LIST-3",
+        "a sheet whose part is not in the package is omitted",
+        [s.name for s in missing_part.sheets] == ["Data"],
+    )
+    no_target = _listed(
+        t505.book(
+            extra_sheets=[("NoTarget", "rId2", None)],
+            rel_extra=f'<Relationship Id="rId2" Type="{t505.REL}/worksheet"/>',
+        )
+    )
+    check(
+        "LIST-4",
+        "a sheet whose relationship has no Target is omitted",
+        [s.name for s in no_target.sheets] == ["Data"],
+    )
+    # a sheet named directly that is unimportable keeps the importer's existing code
+    outcome = t505.run(t505.book(sheet_type="chartsheet"))[1]
+    check(
+        "LIST-5",
+        "importing an unimportable named sheet is still unsupported_workbook",
+        t505.failed_with(outcome, "unsupported_workbook"),
+    )
+    # the probe (what the wizard's picker reads) shows the same filtered list
+    probed = sheets(t505.book(sheet_type="chartsheet"))
+    check(
+        "LIST-6",
+        "run_worksheet_probe over a chartsheet-only workbook is completed with no sheets",
+        probed.state == "completed" and probed.sheets == (),
+    )
+    hidden_ok = _listed(t505.book(state="hidden"))
+    check(
+        "LIST-7",
+        "a hidden importable sheet is still listed, flagged hidden",
+        [(s.name, s.hidden) for s in hidden_ok.sheets] == [("Data", True)],
+    )
+
+
+def _probe_mapping_for(importer_content_type: str, options: object) -> Any:
+    """Drives the real `review_probe` with only its three collaborators faked (visibility, the
+    authorised dataset, the byte reader) and returns the probe mapping it built, or the store's
+    refusal code."""
+    import app.datasets.dataset_mapping_store as store
+
+    seen: list[Any] = []
+    saved = (store.dataset_visibility, store._authorized_dataset, store.probe_dataset_source)
+    store.dataset_visibility = lambda *a, **k: (True, True)
+    store._authorized_dataset = lambda *a, **k: (
+        None,
+        None,
+        [],
+        store.importer_for_content_type(importer_content_type),
+    )
+
+    def _fake_probe(*_a: Any, **k: Any) -> Any:
+        seen.append(k["probe_mapping"])
+        return rev.ProbeResult("completed", None, None, (), True)
+
+    store.probe_dataset_source = _fake_probe
+    try:
+        try:
+            store.review_probe(
+                None,
+                None,
+                project_id=None,
+                dataset_id=None,
+                format_options=options,
+                role="workspace_admin",
+                storage=None,
+            )
+        except store.MappingStoreError as exc:
+            return str(exc)
+        return seen[0]
+    finally:
+        store.dataset_visibility, store._authorized_dataset, store.probe_dataset_source = saved
+
+
+def test_the_probe_route_reads_an_xlsx_sheet() -> None:
+    # H011-P6 gap 1 (Control-plane ruling 2026-11-27): XLSX rows in the P3 probe tables.
+    options = {"xlsx": {"sheet_name": "Data", "header_row": 0}}
+    mapping = _probe_mapping_for(XLSX, options)
+    check(
+        "ROUTE-5",
+        f"an XLSX probe accepts the xlsx block and builds a letters-A slot (got {mapping!r})",
+        not isinstance(mapping, str)
+        and (mapping.prompt.kind, mapping.prompt.value) == ("letters", "A")
+        and (mapping.completion.kind, mapping.completion.value) == ("letters", "A"),
+    )
+    check(
+        "ROUTE-6",
+        "the sheet and header row reach the importer",
+        not isinstance(mapping, str)
+        and dict(mapping.document.get("xlsx", {})) == {"sheet_name": "Data", "header_row": 0},
+    )
+    if not isinstance(mapping, str):
+        data = t505.book([[S("q"), S("a")], [S("hi"), S("there")]])
+        result = rev.run_mapping_probe(
+            reader_for(data),
+            mapping,
+            verified_content_type=XLSX,
+            dataset_sha256=sha(data),
+            reveal=True,
+        )
+        check(
+            "ROUTE-7",
+            "the real probe over the real workbook shows every header and the first column's "
+            "values (the importer keeps only mapped columns, so the probe's one slot is column "
+            f"A: got {result.state}/{result.failure_code}/{result.headers}/{result.raw_rows})",
+            result.state == "completed"
+            and tuple(result.headers) == ("q", "a")
+            and [dict(r)["q"] for r in result.raw_rows] == ["hi"],
+        )
+    for label, bad in (
+        ("an empty xlsx block", {"xlsx": {}}),
+        ("an xlsx block with no header_row", {"xlsx": {"sheet_name": "Data"}}),
+        ("an xlsx block with an unknown key", {"xlsx": {**options["xlsx"], "x": 1}}),
+        ("a mapping key beside it", {**options, "shape": "messages"}),
+    ):
+        got = _probe_mapping_for(XLSX, bad)
+        check("ROUTE-8", f"{label} is mapping_invalid (got {got!r})", got == "mapping_invalid")
+
+
+def test_every_non_xlsx_probe_is_unchanged() -> None:
+    expected = {
+        "text/csv": ("index", 0),
+        "application/json": ("key", "probe"),
+        "application/jsonl": ("key", "probe"),
+    }
+    for ct, (kind, value) in expected.items():
+        mapping = _probe_mapping_for(ct, {})
+        check(
+            "ROUTE-9",
+            f"the {ct} probe slot is still {kind}/{value!r} (got {mapping!r})",
+            not isinstance(mapping, str)
+            and (mapping.prompt.kind, mapping.prompt.value) == (kind, value)
+            and "xlsx" not in mapping.document,
+        )
+    check(
+        "ROUTE-10",
+        "the csv and json blocks are still accepted",
+        not isinstance(
+            _probe_mapping_for(
+                "text/csv",
+                {
+                    "csv": {
+                        "encoding": "utf-8",
+                        "delimiter": ",",
+                        "has_header": True,
+                        "header_row": 1,
+                    }
+                },
+            ),
+            str,
+        ),
+    )
+    check(
+        "ROUTE-11",
+        "an unknown block is still mapping_invalid",
+        _probe_mapping_for("text/csv", {"yaml": {}}) == "mapping_invalid",
+    )
+
+
+def test_a_malformed_probe_block_is_refused_before_anything_is_read() -> None:
+    import app.datasets.dataset_mapping_store as store
+
+    reached: list[str] = []
+    saved = store.dataset_visibility
+
+    def _fake_visibility(*_a: Any, **_k: Any) -> tuple[bool, bool]:
+        reached.append("visibility")
+        return (True, True)
+
+    store.dataset_visibility = _fake_visibility
+    try:
+        for bad in ({"xlsx": {}}, {"xlsx": {"sheet_name": "D"}}, {"csv": {}}, {"json": 3}):
+            try:
+                store.review_probe(
+                    None,
+                    None,
+                    project_id=None,
+                    dataset_id=None,
+                    format_options=bad,
+                    role="workspace_admin",
+                    storage=None,
+                )
+                got = "no refusal"
+            except store.MappingStoreError as exc:
+                got = str(exc)
+            check("ROUTE-12", f"{bad!r} is mapping_invalid (got {got})", got == "mapping_invalid")
+    finally:
+        store.dataset_visibility = saved
+    check("ROUTE-12", "no visibility read happened for any malformed block", reached == [])
 
 
 def main() -> int:

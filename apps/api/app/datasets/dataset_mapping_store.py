@@ -129,12 +129,16 @@ MAX_LIST_LIMIT: Final = 200
 # Section 67.2 "masked unless the user has preview permission": admins always; an ml_engineer only
 # on a connection classified public or internal.
 REVEAL_CLASSIFICATIONS: Final = frozenset({"public", "internal"})
-_PROBE_BLOCKS: Final = frozenset({"csv", "json"})
+_PROBE_BLOCKS: Final = frozenset({"csv", "json", "xlsx"})
 # The verdicts a read-only probe or preview may show (`blocked` is a refusal: `_verdict_refusal`).
 _SHOWN_STATES: Final = frozenset({"completed", "failed"})
 # The probe's server-built slot per importer: a tabular source is read by column index, an object
-# source by key. The caller never supplies a slot.
-_PROBE_SLOTS: Final = {csv_importer.IMPORTER_NAME: {"index": 0}}
+# source by key, a spreadsheet by column letters (FTF-H011-P6: first column). The caller never
+# supplies a slot.
+_PROBE_SLOTS: Final[dict[str, dict[str, object]]] = {
+    csv_importer.IMPORTER_NAME: {"index": 0},
+    xlsx_importer.IMPORTER_NAME: {"letters": "A"},
+}
 _RESOURCE: Final = "dataset_mapping"
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _CRITICAL_ROW_CODES: Final = ("rejected:unmapped_role", "rejected:unmapped_message_key")
@@ -1146,6 +1150,12 @@ def review_probe(
     written."""
     if type(format_options) is not dict or not _PROBE_BLOCKS.issuperset(format_options):
         raise MappingStoreError("mapping_invalid")
+    # The block grammar is checked before anything is read or authorised, whichever importer the
+    # dataset later selects: a malformed block never costs a database or storage read.
+    _parse_document(
+        {"shape": "prompt_completion", "prompt": {"key": "probe"}, "completion": {"key": "probe"}}
+        | format_options
+    )
     include_held_out, reveal = dataset_visibility(
         session, context, project_id=project_id, dataset_id=dataset_id, role=role
     )
