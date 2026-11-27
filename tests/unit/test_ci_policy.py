@@ -406,9 +406,85 @@ def test_classify_draft_runs_the_gate_only(tmp_path, monkeypatch):
     assert o["focus"].strip() == "", "no integration job is selected for a draft"
 
 
-def test_classify_ready_pr_is_a_full_run(tmp_path, monkeypatch):
+def test_classify_ready_pr_is_change_scoped(tmp_path, monkeypatch):
     monkeypatch.setenv("PR_DRAFT", "false")
-    assert _classify(tmp_path, monkeypatch, "", ["a.py"])["scope"] == "full"
+    o = _classify(tmp_path, monkeypatch, "", ["a.py"])
+    assert o["scope"] == "pr"
+    assert o["focus"].strip() == "", "a.py is named by no integration job"
+
+
+def test_classify_ci_run_adds_named_jobs(tmp_path, monkeypatch):
+    o = _classify(tmp_path, monkeypatch, f"ci-run: {JOBS[0]}, nonsense-job", ["a.py"])
+    assert o["scope"] == "pr" and o["focus"] == f" {JOBS[0]} "
+
+
+def test_classify_ci_full_and_suite_wide_inputs_run_everything(tmp_path, monkeypatch):
+    assert _classify(tmp_path, monkeypatch, "notes\nci-full\n", ["a.py"])["scope"] == "full"
+
+
+def test_classify_lockfile_change_runs_everything(tmp_path, monkeypatch):
+    assert _classify(tmp_path, monkeypatch, "", ["uv.lock"])["scope"] == "full"
+
+
+_SELECT_WF = """jobs:
+  gate:
+    x: 1
+  db-integration:
+    run: python3 tests/integration/test_db.py
+  s3-integration:
+    run: python3 tests/integration/test_s3.py
+"""
+
+
+def _select(tmp_path, files, body="", head=_SELECT_WF, base=_SELECT_WF):
+    tests = tmp_path / "tests" / "integration"
+    tests.mkdir(parents=True, exist_ok=True)
+    (tests / "test_db.py").write_text(
+        "from apps.api.app.store import crud\nimport apps.api.app.main\n"
+    )
+    (tests / "test_s3.py").write_text("from packages.storage import s3_client\n")
+    jobs = ["db-integration", "s3-integration"]
+    return cp.select_jobs(files, head, base, body, jobs, root=tmp_path)
+
+
+def test_select_job_whose_test_file_changed(tmp_path):
+    assert _select(tmp_path, ["tests/integration/test_s3.py"])[0] == ["s3-integration"]
+
+
+def test_select_job_whose_test_names_the_changed_module(tmp_path):
+    assert _select(tmp_path, ["apps/api/app/store/crud.py"])[0] == ["db-integration"]
+    assert _select(tmp_path, ["packages/storage/s3_client.py"])[0] == ["s3-integration"]
+    assert _select(tmp_path, ["apps/web/pages/index.tsx"])[0] == []
+
+
+def test_select_ignores_the_app_entry_point(tmp_path):
+    assert _select(tmp_path, ["apps/api/app/main.py"])[0] == []
+
+
+def test_select_new_or_changed_job_block(tmp_path):
+    head = _SELECT_WF + "  new-integration:\n    run: python3 tests/integration/test_new.py\n"
+    jobs = ["db-integration", "s3-integration", "new-integration"]
+    assert cp.select_jobs(["x.md"], head, _SELECT_WF, "", jobs, root=tmp_path)[0] == [
+        "new-integration"
+    ]
+    changed = _SELECT_WF.replace("test_db.py", "test_db.py --strict")
+    assert _select(tmp_path, ["x.md"], head=changed)[0] == ["db-integration"]
+
+
+def test_select_reports_unknown_ci_run_names(tmp_path):
+    selected, unknown = _select(tmp_path, ["x.md"], body="ci-run: s3-integration bogus")
+    assert selected == ["s3-integration"] and unknown == ["bogus"]
+
+
+def test_change_scoped_run_passes_with_unselected_jobs_skipped():
+    problems, exempt = cp.evaluate(_ok(**{"db-integration": "skipped"}), EXPECTED, "pr", False)
+    assert problems == []
+    assert "nightly full run" in exempt["db-integration"]
+
+
+def test_change_scoped_run_still_fails_on_a_failed_or_cancelled_job():
+    assert cp.evaluate(_ok(**{"db-integration": "failure"}), EXPECTED, "pr", False)[0]
+    assert cp.evaluate(_ok(gate="skipped"), EXPECTED, "pr", False)[0], "the gate is never exempt"
 
 
 def test_classify_draft_never_widens_a_tracker_run(tmp_path, monkeypatch):
@@ -428,9 +504,9 @@ def test_classify_focus_never_widens_a_tracker_run(tmp_path, monkeypatch):
     assert o["scope"] == "tracker" and o["focus"].strip() == ""
 
 
-def test_classify_unknown_focus_stays_full(tmp_path, monkeypatch):
+def test_classify_unknown_focus_is_not_a_focused_run(tmp_path, monkeypatch):
     o = _classify(tmp_path, monkeypatch, "ci-focus: gate", ["a.py"])
-    assert o["scope"] == "full" and o["focus"].strip() == ""
+    assert o["scope"] == "pr" and o["focus"].strip() == ""
 
 
 def test_verdict_writes_bound_evidence_and_exit_code(tmp_path, monkeypatch):
