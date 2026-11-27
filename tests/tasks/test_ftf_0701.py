@@ -1499,10 +1499,14 @@ FAULTS: list[tuple[str, str, str]] = [
     ),
     (
         "control characters accepted in the cursor",
-        "    if any(ord(ch) < 0x20 or 0xD800 <= ord(ch) <= 0xDFFF for ch in name):\n        raise _invalid_body()\n",
+        "    if any(ord(ch) < 0x20 for ch in name):\n        raise _invalid_body()\n",
         "",
     ),
-    ("only NUL refused in the cursor", "ord(ch) < 0x20 or 0xD800", "ord(ch) < 0x01 or 0xD800"),
+    (
+        "only NUL refused in the cursor",
+        "ord(ch) < 0x20 for ch in name",
+        "ord(ch) < 0x01 for ch in name",
+    ),
     (
         "page limit widened",
         "limit = _decimal(raw_limit, 1, MAX_PAGE_SIZE)",
