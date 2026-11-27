@@ -534,3 +534,18 @@ def test_model_import_ui_real_api_job_is_wired_into_the_verdict():
     assert "image: postgres@sha256:" in block
     assert "      - model-import-ui-real-api-integration\n" in _jobs_block(text, "ci-verdict")
     assert "tests/tasks/test_ftf_h010_p5.py" in text
+
+
+def test_training_experiment_store_job_is_wired_into_the_verdict():
+    """FTF-0701-P2: the real-Postgres job exists, is scope/focus-gated like its siblings, runs its
+    proof and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""
+    text = CI.read_text()
+    block = _jobs_block(text, "training-experiment-store-integration")
+    assert "needs: classify" in block
+    assert (
+        "contains(needs.classify.outputs.focus, ' training-experiment-store-integration ')" in block
+    )
+    assert "tests/integration/test_ftf_0701_p2_training_experiments.py" in block
+    assert "image: postgres@sha256:" in block
+    assert "      - training-experiment-store-integration\n" in _jobs_block(text, "ci-verdict")
+    assert "tests/tasks/test_ftf_0701_p2.py" in text
