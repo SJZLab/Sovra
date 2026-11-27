@@ -905,7 +905,7 @@ def test_padded_part_targets_are_not_silently_trimmed() -> None:
 
 def test_a_reader_that_fails_with_an_os_error_is_a_blocked_listing() -> None:
     class Broken(ic.ChunkReader):
-        def __iter__(self) -> Iterator[bytes]:  # type: ignore[override]
+        def __iter__(self) -> Iterator[bytes]:
             raise OSError("storage gone")
 
     reader = Broken(
@@ -1049,7 +1049,8 @@ def test_an_unsafe_sheet_target_refuses_the_whole_listing() -> None:
     result = sheets(data)
     check(
         "LIST-8",
-        f"a sheet with an unsafe target is never quietly left out: the listing is unsafe_archive ({result})",
+        "a sheet with an unsafe target is never quietly left out: "
+        f"the listing is unsafe_archive ({result})",
         (result.state, result.failure_code, result.sheets) == ("failed", "unsafe_archive", ()),
     )
     _e, outcome = t505.run(data, sheet="Evil")
@@ -1180,7 +1181,8 @@ def test_probe_rows_are_additive() -> None:
     schemas = yaml.safe_load(contract)["components"]["schemas"]
     check(
         "PROBE-ADD-2",
-        "the contract's probe request names exactly the route's blocks, xlsx by the XLSX options schema",
+        "the contract's probe request names exactly the route's blocks, "
+        "xlsx by the XLSX options schema",
         set(schemas["DatasetMappingProbeRequest"]["properties"]) == set(routes._PROBE_FIELDS)
         and schemas["DatasetMappingProbeRequest"]["properties"]["xlsx"]["$ref"].endswith(
             "/DatasetMappingXlsxOptions"

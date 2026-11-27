@@ -1165,8 +1165,8 @@ def review_probe(
     storage: DatasetObjectStorage,
 ) -> tuple[ProbeResult, bool]:
     """Headers and raw rows of the dataset for `role`, read with the caller's `format_options`
-    (the `csv` / `json` / `xlsx` blocks of the mapping grammar) and a server-built probe mapping: the
-    caller never supplies a slot. Returns the probe and whether values were revealed. Nothing is
+    (the `csv` / `json` / `xlsx` blocks of the mapping grammar) and a server-built probe mapping:
+    the caller never supplies a slot. Returns the probe and whether values were revealed. Nothing is
     written."""
     if type(format_options) is not dict or not _PROBE_BLOCKS.issuperset(format_options):
         raise MappingStoreError("mapping_invalid")
