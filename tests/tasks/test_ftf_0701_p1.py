@@ -268,6 +268,7 @@ ENUM_DEF_TYPES = {
     "SequenceLength": "integer",
     "TrainingConfigErrorCode": "string",
 }
+OTHER_JSON: tuple[Any, ...] = (None, True, 1.5, [], {})
 WRONG_TYPES: list[Any] = [True, False, 1.0, "3", None, [], {}, [3]]
 
 
@@ -3041,7 +3042,13 @@ def hostile_key_suite(m: Any) -> None:
                 code_of(m, lambda b=body: m.resolve_training_config(_FakeReq(b), facts))
                 == "invalid_body",
             )
-    for label, key in (("int", 1), ("None", None), ("bytes", b"mode"), ("tuple", ("mode",))):
+    odd_keys: tuple[tuple[str, Any], ...] = (
+        ("int", 1),
+        ("None", None),
+        ("bytes", b"mode"),
+        ("tuple", ("mode",)),
+    )
+    for label, key in odd_keys:
         body = valid_body()
         body[key] = 1
         check(
@@ -3092,7 +3099,7 @@ def hostile_key_suite(m: Any) -> None:
     for _ in range(100000):
         deep_tuple = (deep_tuple,)
 
-    class _BoomMap(dict):  # type: ignore[type-arg]
+    class _BoomMap(dict):
         def items(self) -> Any:
             raise RuntimeError("boom")
 
@@ -3277,7 +3284,7 @@ def resolved_schema_suite(m: Any) -> None:
             "L6",
             f"{name} accepts each member and refuses the other JSON types",
             all(_validate(defs[name], defs, e) for e in defs[name]["enum"])
-            and not any(_validate(defs[name], defs, w) for w in (None, True, 1.5, [], {})),
+            and not any(_validate(defs[name], defs, w) for w in OTHER_JSON),
         )
     check(
         "L6",
