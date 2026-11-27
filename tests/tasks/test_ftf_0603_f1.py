@@ -612,6 +612,24 @@ def test_n2_final_plan_must_name_every_section_26_category() -> None:
     )
 
 
+def test_n2_section_26_list_is_the_spec_text() -> None:
+    packet = (ROOT / "docs/implementation/task-packets/FTF-0603.md").read_text(encoding="utf-8")
+    section = packet.split("# 26. Evaluation Categories", 1)[1].split("Project-specific", 1)[0]
+    spec = [line[2:].rstrip(",.") for line in section.splitlines() if line.startswith("- ")]
+    check(
+        "N2",
+        f"SECTION_26_CATEGORIES is Section 26's list verbatim and in order ({spec})",
+        len(spec) == 22 and list(gate.SECTION_26_CATEGORIES) == spec,
+    )
+    variant = tuple("Happy-Path Tasks" if c == "happy-path tasks" else c for c in S26)
+    check(
+        "N2",
+        "a Section 26 category spelled in another case does not satisfy the final plan",
+        gate.plan_floor_findings(gate.SamplePlan(variant, 1000, 100, 1), "final")
+        == [gate.Finding("missing_critical_category", "happy-path tasks")],
+    )
+
+
 def test_n2_final_suite_below_floor_on_content() -> None:
     suite_id = _final_suite(groups=999, critical=99)
     _refused(
