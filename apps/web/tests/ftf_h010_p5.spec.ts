@@ -563,12 +563,11 @@ test("H010P5-F6: 403/404/400 are shown as alerts and take focus", async () => {
     mount();
     await toReviewEndpoint();
     await confirmAndStart();
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 5));
-    });
-    const alert = screen.getByTestId("import-submit-error");
+    // The component focuses the alert on a later timer tick; wait for the focus itself. A fixed
+    // 5 ms sleep raced on a loaded 2-core CI runner (three red gates on 2026-11-27).
+    const alert = await waitFor(() => screen.getByTestId("import-submit-error"));
     expect(alert.getAttribute("role")).toBe("alert");
-    expect(document.activeElement).toBe(alert);
+    await waitFor(() => expect(document.activeElement).toBe(alert));
   }
 });
 
