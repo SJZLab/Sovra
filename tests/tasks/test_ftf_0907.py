@@ -505,6 +505,45 @@ def test_r4_fallback_bound_and_no_assert() -> None:
         )
 
 
+def test_r4_send_mutation_cannot_rebind_admission() -> None:
+    """Reviewer finding: the object handed to `send` must be a private copy, not the registry
+    snapshot, so a `send` that mutates it cannot rebind what the admission authorizes."""
+    p = _profiles("standard")
+    auth = _std_auth()
+    route = _route(upstream=EXTERNAL)
+    adm = admit_judge_route(route, p, auth)
+    seen: list[JudgeRoute] = []
+
+    def mutate(r: JudgeRoute) -> str:
+        seen.append(r)
+        object.__setattr__(r, "judge_model_id", "other")
+        return "sent"
+
+    check(
+        "FTF-0907-R4-B1",
+        "mutating send is called",
+        guarded_judge_call(adm, route, p, mutate, auth) == "sent",
+    )
+    other = _route(upstream=EXTERNAL, judge_model_id="other")
+    check(
+        "FTF-0907-R4-B1",
+        "mutated route is not admitted afterwards",
+        _code(lambda: check_judge_request(adm, other, p, auth)) == "external_judge_route_changed",
+    )
+    check(
+        "FTF-0907-R4-B1",
+        "original route is still allowed",
+        _code(lambda: check_judge_request(adm, route, p, auth)) == "allowed",
+    )
+    second: list[JudgeRoute] = []
+    guarded_judge_call(adm, route, p, lambda r: second.append(r) or "x", auth)
+    check(
+        "FTF-0907-R4-B1",
+        "consecutive sends get distinct objects",
+        bool(second) and second[0] is not seen[0],
+    )
+
+
 def test_net0_no_socket() -> None:
     original = socket.socket
 
