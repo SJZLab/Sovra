@@ -2617,15 +2617,17 @@ function Inner({
                 onChange: (v) => update({ groupKey: v }),
                 required: false,
               })}
-              {METADATA_SLOTS.map((name) =>
-                SlotInput({
-                  field: `meta-${name}`,
-                  label: tr(metaWords[name], locale),
-                  value: draft.metadata[name],
-                  onChange: (v) => update({ metadata: { ...draft.metadata, [name]: v } }),
-                  required: false,
-                }),
-              )}
+              {METADATA_SLOTS.map((name) => (
+                <div key={name}>
+                  {SlotInput({
+                    field: `meta-${name}`,
+                    label: tr(metaWords[name], locale),
+                    value: draft.metadata[name],
+                    onChange: (v) => update({ metadata: { ...draft.metadata, [name]: v } }),
+                    required: false,
+                  })}
+                </div>
+              ))}
             </div>
           </fieldset>
         ) : null}

@@ -534,3 +534,19 @@ def test_model_import_ui_real_api_job_is_wired_into_the_verdict():
     assert "image: postgres@sha256:" in block
     assert "      - model-import-ui-real-api-integration\n" in _jobs_block(text, "ci-verdict")
     assert "tests/tasks/test_ftf_h010_p5.py" in text
+
+
+def test_dataset_mapping_ui_real_api_job_is_wired_into_the_verdict():
+    """FTF-H011-P4: the real-API job exists, is scope/focus-gated like its siblings, runs its
+    harness and is aggregated by ci-verdict; the task gate runs in gate."""
+    text = CI.read_text()
+    block = _jobs_block(text, "dataset-mapping-ui-real-api-integration")
+    assert "needs: classify" in block
+    assert (
+        "contains(needs.classify.outputs.focus, ' dataset-mapping-ui-real-api-integration ')"
+        in block
+    )
+    assert "tests/integration/test_ftf_h011_ui_real_api.py" in block
+    assert "image: postgres@sha256:" in block
+    assert "      - dataset-mapping-ui-real-api-integration\n" in _jobs_block(text, "ci-verdict")
+    assert "tests/tasks/test_ftf_h011_p4.py" in _jobs_block(text, "gate")

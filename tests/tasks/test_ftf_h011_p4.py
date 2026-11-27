@@ -39,10 +39,11 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
+from workers.data import csv_importer  # noqa: E402
+
 from app.datasets import dataset_mapping_request_store, dataset_mapping_routes  # noqa: E402
 from app.datasets.dataset_mapping_store import CODES as STORE_CODES  # noqa: E402
 from app.datasets.dataset_source_connection_schema import ALLOWED_PURPOSES  # noqa: E402
-from workers.data import csv_importer  # noqa: E402
 
 COMPONENT = ROOT / "apps/web/components/dataset-factory/dataset_mapping_wizard_ui.tsx"
 ROUTES = ROOT / "apps/api/app/datasets/dataset_mapping_routes.py"
@@ -98,19 +99,32 @@ def test_p4_codes() -> None:
     src = COMPONENT.read_text()
     codes = backend_codes()
     check(CID + "-CODES", f"the backend exposes its codes ({len(codes)})", len(codes) >= 35)
-    for code in ("not_authenticated", "role_not_authorized", "storage_unavailable", "importer_unavailable"):
+    for code in (
+        "not_authenticated",
+        "role_not_authorized",
+        "storage_unavailable",
+        "importer_unavailable",
+    ):
         check(CID + "-CODES", f"{code} is one of the collected backend codes", code in codes)
     check(CID + "-CODES", f"every code has en+ar: {code_problems(src)}", not code_problems(src))
     first = "purpose_not_authorized"
     check(
         CID + "-CODES",
         "FAULT a missing entry is detected",
-        bool(code_problems(re.sub(rf"^\s{{2}}{first}: \{{.*?\}},\s*$\n", "", src, flags=re.S | re.M, count=1))),
+        bool(
+            code_problems(
+                re.sub(rf"^\s{{2}}{first}: \{{.*?\}},\s*$\n", "", src, flags=re.S | re.M, count=1)
+            )
+        ),
     )
     check(
         CID + "-CODES",
         "FAULT a missing ar is detected",
-        bool(code_problems(re.sub(rf'({first}: \{{\s*en:\s*"[^"]+",)\s*ar:\s*"[^"]+"', r"\1", src, count=1))),
+        bool(
+            code_problems(
+                re.sub(rf'({first}: \{{\s*en:\s*"[^"]+",)\s*ar:\s*"[^"]+"', r"\1", src, count=1)
+            )
+        ),
     )
     check(
         CID + "-CODES",
@@ -124,7 +138,10 @@ def ts_array(src: str, name: str) -> list[str]:
     m = re.search(rf"export const {name}(?:: [^=]+)? =\s*\[(.*?)\](?: as const)?;", src, re.S)
     if not m:
         return []
-    return [bytes(v, "utf-8").decode("unicode_escape") for v in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))]
+    return [
+        bytes(v, "utf-8").decode("unicode_escape")
+        for v in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))
+    ]
 
 
 def ts_int(src: str, name: str) -> int | None:
@@ -142,8 +159,14 @@ def const_problems(src: str) -> list[str]:
         ("ROLE_TARGETS", sorted(contract["DatasetMappingRoleMap"]["additionalProperties"]["enum"])),
         ("METADATA_SLOTS", sorted(contract["DatasetMappingMetadata"]["properties"])),
         ("MAPPING_STATUSES", sorted(contract["DatasetMapping"]["properties"]["status"]["enum"])),
-        ("VERDICT_STATES", sorted(contract["DatasetMappingPreview"]["properties"]["state"]["enum"])),
-        ("ROW_OUTCOMES", sorted(contract["DatasetMappingPreviewRow"]["properties"]["outcome"]["enum"])),
+        (
+            "VERDICT_STATES",
+            sorted(contract["DatasetMappingPreview"]["properties"]["state"]["enum"]),
+        ),
+        (
+            "ROW_OUTCOMES",
+            sorted(contract["DatasetMappingPreviewRow"]["properties"]["outcome"]["enum"]),
+        ),
     ]
     for name, expected in pairs:
         got = ts_array(src, name)
@@ -159,7 +182,11 @@ def const_problems(src: str) -> list[str]:
 
 def test_p4_const() -> None:
     src = COMPONENT.read_text()
-    check(CID + "-CONST", f"constants equal the backend: {const_problems(src)}", not const_problems(src))
+    check(
+        CID + "-CONST",
+        f"constants equal the backend: {const_problems(src)}",
+        not const_problems(src),
+    )
     check(
         CID + "-CONST",
         "FAULT a drifted encoding is detected",
@@ -168,7 +195,13 @@ def test_p4_const() -> None:
     check(
         CID + "-CONST",
         "FAULT a drifted role target is detected",
-        bool(const_problems(src.replace('ROLE_TARGETS = ["user", "assistant"', 'ROLE_TARGETS = ["user", "agent"', 1))),
+        bool(
+            const_problems(
+                src.replace(
+                    'ROLE_TARGETS = ["user", "assistant"', 'ROLE_TARGETS = ["user", "agent"', 1
+                )
+            )
+        ),
     )
     check(
         CID + "-CONST",
@@ -189,7 +222,10 @@ def negative_problems(src: str) -> list[str]:
     for pattern, what in (
         (r"\beval\s*\(", "eval"),
         (r"\bnew\s+Function\b|\bFunction\s*\(", "Function constructor"),
-        (r"dangerouslySetInnerHTML|\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML", "HTML injection"),
+        (
+            r"dangerouslySetInnerHTML|\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML",
+            "HTML injection",
+        ),
         (r"\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|document\.cookie", "browser storage"),
     ):
         if re.search(pattern, body):
@@ -199,14 +235,20 @@ def negative_problems(src: str) -> list[str]:
 
 def test_p4_negative() -> None:
     src = COMPONENT.read_text()
-    check(CID + "-NEG", f"no eval/HTML/storage: {negative_problems(src)}", not negative_problems(src))
+    check(
+        CID + "-NEG", f"no eval/HTML/storage: {negative_problems(src)}", not negative_problems(src)
+    )
     for fault in (
         "\nconst a = eval(x);",
         "\nconst b = new Function('return 1');",
         "\nconst c = <div dangerouslySetInnerHTML={{ __html: v }} />;",
         "\nlocalStorage.setItem('draft', JSON.stringify(d));",
     ):
-        check(CID + "-NEG", f"FAULT {fault.strip()[:30]} is detected", bool(negative_problems(src + fault)))
+        check(
+            CID + "-NEG",
+            f"FAULT {fault.strip()[:30]} is detected",
+            bool(negative_problems(src + fault)),
+        )
 
 
 # ------------------------------------------------------------------------------------ fault injection
@@ -303,7 +345,11 @@ def test_p4_fault_injection() -> None:
             text=True,
             timeout=900,
         )
-        check(CID + "-FAULT", f"the unmodified spec is GREEN ({baseline.stdout[-800:]})", baseline.returncode == 0)
+        check(
+            CID + "-FAULT",
+            f"the unmodified spec is GREEN ({baseline.stdout[-800:]})",
+            baseline.returncode == 0,
+        )
         for name, old, new, pattern in FAULTS:
             mutated = _apply(src, old, new)
             check(CID + "-FAULT", f"{name}: the fault applies to the source", mutated is not None)
@@ -323,7 +369,11 @@ def test_p4_fault_injection() -> None:
             print(f"  fault {'RED  ' if red else 'GREEN'} {name}")
     finally:
         COMPONENT.write_bytes(original)
-    check(CID + "-FAULT", "the component is restored byte for byte", hashlib.sha256(COMPONENT.read_bytes()).hexdigest() == digest)
+    check(
+        CID + "-FAULT",
+        "the component is restored byte for byte",
+        hashlib.sha256(COMPONENT.read_bytes()).hexdigest() == digest,
+    )
 
 
 def main() -> int:
