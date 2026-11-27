@@ -317,7 +317,7 @@ FAULTS: list[tuple[str, str, str, str]] = [
     (
         "a failed probe verdict has no alert",
         '{p.state !== "completed" ? (\n          <AlertMessage',
-        '{(false as boolean) ? (\n          <AlertMessage',
+        "{(false as boolean) ? (\n          <AlertMessage",
         "probe 200 with state failed",
     ),
     (
