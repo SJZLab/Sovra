@@ -1,48 +1,166 @@
 // @vitest-environment jsdom
 //
-// Wiring: every journey page that mounts a certified UI component must actually RENDER it, hand it
-// each journey value in the right place, and reach the real /api/v1 route. wiring.spec.ts only proves
-// a page imports a component; this proves the mount. Each case renders the real page and the real
-// component (only `fetch` and the Next router are stubbed). Every query key has its own distinct
-// value and a non-default API host, so swapping two values, hardcoding the host, dropping a value or
-// pointing at another route changes the asserted request path and reddens the case. The front-door
-// test proves "/" offers a form with every parameter for every journey (Law 6).
+// Wiring: the front door "/" and every journey page that mounts a certified UI component.
+// Each case walks the whole path a user takes: it renders the real "/" page, fills the journey's form
+// by its visible labels, builds the page's query ONLY from what the form submits (names, method GET),
+// renders the real journey page with that query and checks, with only `fetch` and the Next router
+// stubbed, that
+//   - the page title and the component's own element are rendered,
+//   - the component sends exactly the expected requests (full URLs, no extras), and
+//   - nothing is hardcoded: two different value sets and two different API hosts are run.
+// Faults this reddens: a placeholder for the component, a journey slug or label or parameter name
+// changed, a swapped or dropped value, a hardcoded host or value, a wrong or extra route, a form
+// whose method, input name or submit button is wrong, a journey missing from "/".
 import { createElement } from "react";
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { JOURNEYS } from "../lib/journeys";
+import Home from "../pages/index";
 
-const API_BASE = "http://api.test.invalid:8123";
-const V: Record<string, string> = {
-  organizationId: "aaaaaaaa-0000-4000-8000-000000000001",
-  projectId: "bbbbbbbb-0000-4000-8000-000000000002",
-  manifestId: "cccccccc-0000-4000-8000-000000000003",
-  datasetId: "dddddddd-0000-4000-8000-000000000004",
-  suiteId: "eeeeeeee-0000-4000-8000-000000000005",
-  connectionId: "ffffffff-0000-4000-8000-000000000006",
-  modelName: "model-x",
-  securityProfile: "strict",
-};
-const ORG = V.organizationId;
-const PRJ = V.projectId;
-const proj = `/api/v1/organizations/${ORG}/projects/${PRJ}`;
+type Query = Record<string, string | string[] | undefined>;
+const router = vi.hoisted(() => ({ isReady: true, query: {} as Query }));
 
-vi.mock("next/router", () => ({
-  useRouter: () => ({
-    isReady: true,
-    query: new Proxy({}, { get: (_t, key) => V[String(key)] }),
-  }),
+vi.mock("next/router", () => ({ useRouter: () => router }));
+vi.mock("next/head", () => ({
+  default: ({ children }: { children?: unknown }) =>
+    createElement("div", { "data-testid": "head" }, children as never),
 }));
-vi.mock("next/head", () => ({ default: () => null }));
+
+const SETS = [
+  {
+    host: "http://api-a.test.invalid:8123",
+    v: {
+      organizationId: "aaaaaaaa-0000-4000-8000-000000000001",
+      projectId: "bbbbbbbb-0000-4000-8000-000000000002",
+      manifestId: "cccccccc-0000-4000-8000-000000000003",
+      datasetId: "dddddddd-0000-4000-8000-000000000004",
+      suiteId: "eeeeeeee-0000-4000-8000-000000000005",
+      connectionId: "ffffffff-0000-4000-8000-000000000006",
+      modelName: "model-x",
+      securityProfile: "strict",
+    } as Record<string, string>,
+  },
+  {
+    host: "http://api-b.test.invalid:9911",
+    v: {
+      organizationId: "a1a1a1a1-1111-4111-8111-111111111111",
+      projectId: "b2b2b2b2-2222-4222-8222-222222222222",
+      manifestId: "c3c3c3c3-3333-4333-8333-333333333333",
+      datasetId: "d4d4d4d4-4444-4444-8444-444444444444",
+      suiteId: "e5e5e5e5-5555-4555-8555-555555555555",
+      connectionId: "f6f6f6f6-6666-4666-8666-666666666666",
+      modelName: "model-y",
+      securityProfile: "standard",
+    } as Record<string, string>,
+  },
+];
+
+type Case = {
+  slug: string;
+  title: string;
+  params: Array<[string, string]>; // [query name, visible label], exactly as the front door shows
+  mount: () => HTMLElement; // the component's own rendered element
+  trigger?: () => void; // control the user uses to send the first request, when not made on mount
+  urls: (v: Record<string, string>) => string[]; // exact request paths (with query string)
+};
+
+const org = (v: Record<string, string>) => `/api/v1/organizations/${v.organizationId}`;
+const proj = (v: Record<string, string>) => `${org(v)}/projects/${v.projectId}`;
+const ORG_PROJECT: Array<[string, string]> = [
+  ["organizationId", "Organization ID"],
+  ["projectId", "Project ID"],
+];
+
+const CASES: Case[] = [
+  {
+    slug: "artifact-mapping",
+    title: "Map a model to a trainable artifact",
+    params: [
+      ["organizationId", "Organization ID"],
+      ["connectionId", "Connection ID"],
+      ["modelName", "Model name"],
+    ],
+    mount: () => screen.getByTestId("model-to-artifact-mapping-ui"),
+    trigger: () => fireEvent.click(screen.getByTestId("load-mapping-button")),
+    urls: (v) => [
+      `${org(v)}/connections/litellm/${v.connectionId}/models/${v.modelName}/training-artifact`,
+    ],
+  },
+  {
+    slug: "requirements",
+    title: "Project requirements",
+    params: [...ORG_PROJECT, ["securityProfile", "Security profile"]],
+    mount: () => screen.getByTestId("requirements-panel"),
+    urls: (v) => [`${proj(v)}/requirements`, `${proj(v)}/budget-policy`],
+  },
+  {
+    slug: "manifest-review",
+    title: "Manifest review",
+    params: [...ORG_PROJECT, ["manifestId", "Manifest ID"]],
+    mount: () => screen.getByTestId("manifest-review-ui"),
+    urls: (v) => [
+      `${proj(v)}/manifests/${v.manifestId}`,
+      `${proj(v)}/manifests/${v.manifestId}/evidence`,
+    ],
+  },
+  {
+    slug: "mandate-editor",
+    title: "Mandate editor",
+    params: [...ORG_PROJECT, ["manifestId", "Manifest ID"]],
+    mount: () => screen.getByTestId("mandate-editor-ui"),
+    urls: (v) => [`${proj(v)}/manifests/${v.manifestId}`, `${proj(v)}/requirements`],
+  },
+  {
+    slug: "dataset-source",
+    title: "Dataset source and purpose authorization",
+    params: ORG_PROJECT,
+    mount: () => screen.getByTestId("dataset-source-selector"),
+    urls: (v) => [`${proj(v)}/dataset-sources`],
+  },
+  {
+    slug: "dataset-issues",
+    title: "Dataset issue resolution",
+    params: [...ORG_PROJECT, ["datasetId", "Dataset ID"]],
+    mount: () => screen.getByRole("region", { name: "Dataset issue resolution" }),
+    trigger: () => fireEvent.click(screen.getByRole("button", { name: "Load quality report" })),
+    urls: (v) => [
+      `${proj(v)}/datasets/${v.datasetId}/quality-report`,
+      `${proj(v)}/datasets/${v.datasetId}/issues?limit=50`,
+      `${proj(v)}/datasets/${v.datasetId}/issue-resolutions?limit=50`,
+    ],
+  },
+  {
+    slug: "evaluation-cases",
+    title: "Evaluation case editor and import",
+    params: [...ORG_PROJECT, ["suiteId", "Suite ID"]],
+    mount: () => screen.getByRole("region", { name: "Evaluation cases" }),
+    trigger: () => fireEvent.click(screen.getByTestId("load-cases-button")),
+    urls: (v) => [`${proj(v)}/evaluation-suites/${v.suiteId}/cases`],
+  },
+  {
+    slug: "github-repositories",
+    title: "GitHub repositories",
+    params: ORG_PROJECT,
+    mount: () => screen.getByTestId("github-repository-selector"),
+    trigger: () => {
+      fireEvent.change(screen.getByTestId("github-credential-input"), {
+        target: { value: "ghp_pagewiring" },
+      });
+      fireEvent.click(screen.getByTestId("github-load-repositories-button"));
+    },
+    urls: (v) => [`${proj(v)}/target-connections/github-repositories`],
+  },
+];
 
 beforeEach(() => {
+  router.isReady = true;
+  router.query = {};
   vi.stubGlobal(
     "fetch",
     vi.fn(() => new Promise(() => {})),
   );
-  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", API_BASE);
 });
 afterEach(() => {
   cleanup();
@@ -50,98 +168,139 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-type Case = {
-  slug: string;
-  marker: string; // data-testid of the component's own element
-  click?: () => void; // control that triggers the first request, when it is not made on mount
-  paths: string[]; // every path the first requests must hit, exactly
-};
+const fetchMock = () => fetch as unknown as ReturnType<typeof vi.fn>;
+const requested = () => fetchMock().mock.calls.map((call) => String((call as unknown[])[0]));
+const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
-const CASES: Case[] = [
-  {
-    slug: "artifact-mapping",
-    marker: "model-to-artifact-mapping-ui",
-    click: () => fireEvent.click(screen.getByTestId("load-mapping-button")),
-    paths: [
-      `/api/v1/organizations/${ORG}/connections/litellm/${V.connectionId}/models/${V.modelName}/training-artifact`,
-    ],
-  },
-  { slug: "requirements", marker: "requirements-panel", paths: [`${proj}/requirements`] },
-  {
-    slug: "manifest-review",
-    marker: "manifest-review-ui",
-    paths: [`${proj}/manifests/${V.manifestId}`],
-  },
-  {
-    slug: "mandate-editor",
-    marker: "mandate-editor-ui",
-    paths: [`${proj}/manifests/${V.manifestId}`, `${proj}/requirements`],
-  },
-  { slug: "dataset-source", marker: "dataset-source-selector", paths: [`${proj}/dataset-sources`] },
-  {
-    slug: "dataset-issues",
-    marker: "dataset-issue-resolution-ui",
-    click: () => fireEvent.click(screen.getByRole("button", { name: "Load quality report" })),
-    paths: [`${proj}/datasets/${V.datasetId}/quality-report`],
-  },
-  {
-    slug: "evaluation-cases",
-    marker: "load-cases-button",
-    click: () => fireEvent.click(screen.getByTestId("load-cases-button")),
-    paths: [`${proj}/evaluation-suites/${V.suiteId}/cases`],
-  },
-];
+// Render "/" and submit one journey's form the way a browser does: fill each input by its visible
+// label, then read the query string from what the form would actually send.
+function submitFrontDoor(c: Case, values: Record<string, string>): Query {
+  const { container } = render(createElement(Home));
+  const form = container.querySelector(`form[action="/${c.slug}"]`) as HTMLFormElement | null;
+  expect(form, `front door has no form for /${c.slug}`).toBeTruthy();
+  const f = form as HTMLFormElement;
+  expect(f.method, `/${c.slug}: form method`).toBe("get");
+  expect(f.querySelector('button[type="submit"]'), `/${c.slug}: no submit button`).toBeTruthy();
+  expect(f.querySelectorAll("input").length, `/${c.slug}: input count`).toBe(c.params.length);
+  for (const [name, label] of c.params) {
+    const input = within(f).getByLabelText(label) as HTMLInputElement;
+    expect(input.name, `/${c.slug}: input named for "${label}"`).toBe(name);
+    expect(input.required, `/${c.slug}: "${label}" must be required`).toBe(true);
+    fireEvent.change(input, { target: { value: values[name] } });
+  }
+  const query: Query = {};
+  new FormData(f).forEach((value, key) => {
+    query[key] = String(value);
+  });
+  cleanup();
+  return query;
+}
+
+async function openPage(slug: string) {
+  const mod = await import(`../pages/${slug}.tsx`);
+  return render(createElement(mod.default));
+}
 
 for (const c of CASES) {
-  test(`[WIRE-PAGE] ${c.slug} renders its component with each value in place`, async () => {
-    const mod = await import(`../pages/${c.slug}.tsx`);
-    const { container } = render(createElement(mod.default));
-    const el = c.marker.startsWith("dataset-issue")
-      ? container.querySelector("section[aria-label='Dataset issue resolution']")
-      : screen.getByTestId(c.marker);
-    expect(el, `${c.slug}: component not rendered`).toBeTruthy();
-    c.click?.();
-    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
-    const urls = fetchMock.mock.calls.map((call) => String((call as unknown[])[0]));
-    for (const path of c.paths) {
-      expect(urls, `${c.slug}: expected ${API_BASE}${path}`).toContain(`${API_BASE}${path}`);
-    }
-  });
+  for (const set of SETS) {
+    test(`[WIRE-PAGE] ${c.slug}: "/" form to page to exact requests (${new URL(set.host).port})`, async () => {
+      vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", set.host);
+      router.query = submitFrontDoor(c, set.v);
+      expect(Object.keys(router.query).sort()).toEqual(c.params.map(([name]) => name).sort());
+
+      await openPage(c.slug);
+      expect(screen.getByTestId("head").textContent, `${c.slug}: page title`).toBe(
+        `${c.title} · Sovra Factory`,
+      );
+      expect(c.mount(), `${c.slug}: component not rendered`).toBeTruthy();
+      c.trigger?.();
+
+      const expected = c.urls(set.v).map((path) => `${set.host}${path}`);
+      await waitFor(() =>
+        expect(fetchMock().mock.calls.length).toBeGreaterThanOrEqual(expected.length),
+      );
+      await settle();
+      expect(requested().sort(), `${c.slug}: requests`).toEqual([...expected].sort());
+    });
+  }
 }
 
 test("[WIRE-PAGE] requirements shows the security profile it was given", async () => {
-  const mod = await import("../pages/requirements");
-  render(createElement(mod.default));
-  expect(screen.getByTestId("security-profile-value").textContent).toBe(V.securityProfile);
+  const c = CASES[1] as Case;
+  for (const set of SETS) {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", set.host);
+    router.query = submitFrontDoor(c, set.v);
+    await openPage(c.slug);
+    expect(screen.getByTestId("security-profile-value").textContent).toBe(set.v.securityProfile);
+    cleanup();
+  }
 });
 
-test("[WIRE-PAGE] github-repositories renders the selector and lists from the real route", async () => {
-  const mod = await import("../pages/github-repositories");
-  render(createElement(mod.default));
-  expect(screen.getByTestId("github-repository-selector")).toBeTruthy();
-  fireEvent.change(screen.getByTestId("github-credential-input"), {
-    target: { value: "ghp_pagewiring" },
-  });
-  fireEvent.click(screen.getByTestId("github-load-repositories-button"));
-  const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
-  await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1));
-  const url = String((fetchMock.mock.calls[0] as unknown[])[0]);
-  expect(url.startsWith(`${API_BASE}${proj}/`), url).toBe(true);
-  expect(url).toContain("github");
+test("[WIRE-FRONT-DOOR] the registry pins every journey's slug, label and parameter list", () => {
+  for (const c of CASES) {
+    const j = JOURNEYS.find((journey) => journey.slug === c.slug);
+    expect(j, `no journey ${c.slug}`).toBeTruthy();
+    expect(j?.title).toBe(c.title);
+    expect(j?.params.map((p) => [p.name, p.label])).toEqual(c.params);
+  }
 });
 
-test("[WIRE-FRONT-DOOR] / offers a form with every parameter for every journey", async () => {
-  const mod = await import("../pages/index");
-  const { container } = render(createElement(mod.default));
+test("[WIRE-FRONT-DOOR] / offers a form with every parameter for every journey", () => {
+  const { container } = render(createElement(Home));
   for (const j of JOURNEYS) {
     const form = container.querySelector(`form[action="/${j.slug}"]`) as HTMLFormElement | null;
     expect(form, `front door has no form for /${j.slug}`).toBeTruthy();
+    expect((form as HTMLFormElement).method).toBe("get");
+    expect((form as HTMLFormElement).querySelector('button[type="submit"]')).toBeTruthy();
     for (const p of j.params) {
-      expect(
-        within(form as HTMLElement).getByLabelText(p.label),
-        `/${j.slug}: no input for ${p.label}`,
-      ).toBeTruthy();
+      const input = within(form as HTMLElement).getByLabelText(p.label) as HTMLInputElement;
+      expect(input.name, `/${j.slug}: ${p.label}`).toBe(p.name);
     }
   }
+});
+
+test("[WIRE-SHELL] a missing journey value is shown, never defaulted, and nothing is requested", async () => {
+  const set = SETS[0]!;
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", set.host);
+  router.query = {
+    organizationId: set.v.organizationId,
+    projectId: set.v.projectId,
+  };
+  await openPage("dataset-issues");
+  expect(screen.getByRole("alert").textContent).toContain("Missing Dataset ID");
+  await settle();
+  expect(fetchMock()).not.toHaveBeenCalled();
+});
+
+test("[WIRE-SHELL] an unset NEXT_PUBLIC_API_BASE_URL is shown and nothing is requested", async () => {
+  const set = SETS[0]!;
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+  router.query = { organizationId: set.v.organizationId, projectId: set.v.projectId };
+  await openPage("dataset-source");
+  expect(screen.getByRole("alert").textContent).toContain("NEXT_PUBLIC_API_BASE_URL");
+  await settle();
+  expect(fetchMock()).not.toHaveBeenCalled();
+});
+
+test("[WIRE-SHELL] before the router is ready the page loads and requests nothing", async () => {
+  const set = SETS[0]!;
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", set.host);
+  router.isReady = false;
+  router.query = { organizationId: set.v.organizationId, projectId: set.v.projectId };
+  await openPage("dataset-source");
+  expect(screen.getByText("Loading…")).toBeTruthy();
+  await settle();
+  expect(fetchMock()).not.toHaveBeenCalled();
+});
+
+test("[WIRE-SHELL] a repeated query key uses its first value", async () => {
+  const set = SETS[0]!;
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", set.host);
+  router.query = {
+    organizationId: [set.v.organizationId!, "ffffffff-9999-4999-8999-999999999999"],
+    projectId: [set.v.projectId!, "ffffffff-8888-4888-8888-888888888888"],
+  };
+  await openPage("dataset-source");
+  await waitFor(() => expect(fetchMock().mock.calls.length).toBe(1));
+  expect(requested()).toEqual([`${set.host}${proj(set.v)}/dataset-sources`]);
 });
