@@ -700,7 +700,7 @@ def _group_rows(value: object) -> GroupRows:
     order_type = block["order_type"]
     if type(order_type) is not str:
         raise _bad("wrong_type")
-    if not _CONSECUTIVE_ORDER.keys() >= {order_type}:
+    if order_type not in _CONSECUTIVE_ORDER:
         raise _bad("bad_value")
     return GroupRows(_slot(block["group_key"]), _slot(block["order_key"]), order_type)
 
