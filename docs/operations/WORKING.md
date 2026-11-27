@@ -14,6 +14,8 @@ rules where they differ. The Laws and hard stops in CLAUDE.md are unchanged.
 3. **Before every push.** Run lint, format and type checks, the proving tests the way CI runs
    them, and the mutation gate on the changed modules, locally. CI confirms; it is not the first
    run.
+   A draft PR runs the `gate` job only and its `ci-verdict` is red by design: judge a draft by
+   `gate`. Mark the PR ready to start the full run; only that run gives a merge verdict.
 4. **Review, then merge, then certify.** The worker runs ONE bounded review by a fresh subagent
    that wrote none of the code (docs/operations/l2-review-brief.md), fixes only its numbered
    blocking items, and merges on a green `ci-verdict` as PROVISIONAL. The Control plane then
@@ -27,4 +29,8 @@ rules where they differ. The Laws and hard stops in CLAUDE.md are unchanged.
 6. **Blocked.** The Control plane decides technical questions the same day under the
    default-resolution rule. Only a CLAUDE.md hard stop goes to the owner, as one dated line in
    QUEUE.md "Owner actions — current".
-7. **Capacity.** Up to four workers at once, on tasks with different parents.
+7. **Fresh base, only when it matters.** A PR merges on a green `ci-verdict` for a head that has
+   seen every code change on main. If main has only gained tracker files since (QUEUE.md,
+   PROGRESS.md, docs/certifications/, docs/progress/), no re-run is needed. A tracker-only PR
+   merges on its own green run.
+8. **Capacity.** About five workers at once, on tasks with different parents.
