@@ -141,6 +141,7 @@ REJECTION_CODES: Final = frozenset(
         "formula_cell",
         "cell_error_value",
         # FTF-H011-P5 (additive)
+        "group_metadata_conflict",
         "incomplete_group",
         "invalid_order_key",
         "unmapped_label",
@@ -161,6 +162,7 @@ FAILURE_CODES: Final = frozenset(
         "limit_exceeded",
         "mapping_column_missing",
         "mapping_unsupported",
+        "non_contiguous_group",
         "parse_timeout",
         "sheet_out_of_bounds",
         "source_changed",
@@ -1215,13 +1217,17 @@ class GroupAssembler:
 
     Rows of one group must be contiguous and strictly ordered by `order_key` (`int`: each
     exactly one more than the last; `rfc3339`: strictly later). A gap, a repeated or earlier
-    order, a group key seen again after its group closed, a group whose last turn is not the
-    assistant's, or a row of unknown group that failed while a group was open (`poison`) makes
-    the whole group ONE rejection, `incomplete_group`, at the locator of its first row. A group
-    whose rows add up to more than `max_record_bytes` is `record_too_large`; its rows are
-    counted but no longer buffered, so memory is bounded by one group of at most
-    `max_record_bytes`. The group's metadata is its first row's. Closed group keys are kept as
-    SHA-256 digests (32 bytes each) only to detect a non-contiguous group."""
+    order, a group whose last turn is not the assistant's, or a row that failed to map
+    (`poison`: its group is unknown, so BOTH the group open at that moment and the next group
+    the source opens are suspect) makes the whole group ONE rejection, `incomplete_group`, at the
+    locator of its first row. Every row of a group must carry the same mapped metadata (labels
+    and consent are never chosen from one row and dropped from another): a difference is
+    `group_metadata_conflict`. A group whose rows add up to more than `max_record_bytes` is
+    `record_too_large`; its rows are counted but no longer buffered, so memory is bounded by one
+    group of at most `max_record_bytes`. A group key that reappears after its group closed
+    means the source is not grouped contiguously; the earlier part was already streamed, so the
+    whole import stops fail-closed (`failed` / `non_contiguous_group`) instead of keeping a
+    truncated conversation. Closed group keys are kept as SHA-256 digests (32 bytes each)."""
 
     def __init__(self, mapping: ImportMapping, *, max_record_bytes: int) -> None:
         if mapping.group_rows is None:
@@ -1230,6 +1236,7 @@ class GroupAssembler:
         self._max = max_record_bytes
         self._closed: set[bytes] = set()
         self._open: _OpenGroup | None = None
+        self._pending_poison = False
 
     @staticmethod
     def _digest(key: str) -> bytes:
@@ -1245,6 +1252,8 @@ class GroupAssembler:
             out.append(self._close())
         group = self._open
         if group is None:
+            if self._digest(key) in self._closed:
+                raise ImportAborted("failed", "non_contiguous_group")
             group = _OpenGroup(
                 key=key,
                 locator=locator,
@@ -1252,9 +1261,12 @@ class GroupAssembler:
                 messages=[],
                 last_order=None,
                 size=0,
-                problem="incomplete_group" if self._digest(key) in self._closed else None,
+                problem="incomplete_group" if self._pending_poison else None,
             )
             self._open = group
+        self._pending_poison = False
+        if mapped.raw_record["metadata"] != group.metadata:
+            group.problem = group.problem or "group_metadata_conflict"
         order = mapped.order
         last = group.last_order
         if last is not None:
@@ -1276,6 +1288,7 @@ class GroupAssembler:
         """A row whose group cannot be read failed: the open group may be missing a turn."""
         if self._open is not None:
             self._open.problem = self._open.problem or "incomplete_group"
+        self._pending_poison = True
 
     def finish(self) -> list[GroupedRecord | RowRejection]:
         """Closes the last group at the end of the source."""

@@ -3744,6 +3744,7 @@ _EXPECTED_ROW_ONLY = {
     "canonical_schema_invalid",
     "cell_error_value",
     # FTF-H011-P5 (additive): grouped rows and label maps
+    "group_metadata_conflict",
     "incomplete_group",
     "invalid_order_key",
     "unmapped_label",
@@ -3772,6 +3773,7 @@ _EXPECTED_FAILURE = {
     "limit_exceeded",
     "mapping_column_missing",
     "mapping_unsupported",  # FTF-H011-P5: a grouped mapping outside the CSV importer
+    "non_contiguous_group",  # FTF-H011-P5: a group key reappears after its group closed
     "parse_timeout",
     "sheet_out_of_bounds",
     "source_changed",

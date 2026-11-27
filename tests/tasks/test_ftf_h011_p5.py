@@ -264,19 +264,6 @@ def test_incomplete_groups_are_quarantined() -> None:
             0,
         ),
         (
-            "a non-contiguous group",
-            [
-                ["c1", "1", "u", "q"],
-                ["c1", "2", "a", "r"],
-                ["c2", "1", "u", "q"],
-                ["c2", "2", "a", "r"],
-                ["c1", "3", "u", "late"],
-                ["c1", "4", "a", "late"],
-            ],
-            [("line:6", "incomplete_group")],
-            2,
-        ),
-        (
             "no assistant at the end",
             [["c1", "1", "u", "q"], ["c1", "2", "a", "r"], ["c1", "3", "u", "more?"]],
             [("line:2", "incomplete_group")],
@@ -801,6 +788,97 @@ def test_csv_importer_requalifies() -> None:
         "LAW15-0504",
         f"tests/tasks/test_ftf_0504.py passes ({ran.stdout[-300:]})",
         ran.returncode == 0,
+    )
+
+
+def test_review_round_1_pins() -> None:
+    # (1) a failed row at a group boundary also flags the NEXT group (its first turn may be lost)
+    for order_type, a, b, c in (
+        ("int", "1", "2", "3"),
+        ("rfc3339", "2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z", "2026-01-01T00:00:02Z"),
+    ):
+        rows = [
+            ["c1", a, "u", "q"],
+            ["c1", b, "a", "r"],
+            ["c2", a, "s", "sys\x00"],
+            ["c2", b, "u", "q"],
+            ["c2", c, "a", "r"],
+        ]
+        report, accepted = run_csv(csv_bytes(rows), grouped(order_type))
+        got = sorted(rejections(report))
+        check(
+            "BOUND-1",
+            f"{order_type}: a NUL first row of c2 quarantines c2 (and the open c1) ({got}, {len(accepted)})",
+            got
+            == [
+                ("line:2", "incomplete_group"),
+                ("line:4", "nul_character"),
+                ("line:5", "incomplete_group"),
+            ]
+            and not accepted,
+        )
+        rows = [["c1", a, "x", "?"], ["c1", b, "u", "q"], ["c1", c, "a", "r"]]
+        report, accepted = run_csv(csv_bytes(rows), grouped(order_type))
+        got = sorted(rejections(report))
+        check(
+            "BOUND-2",
+            f"{order_type}: an unreadable first data row quarantines the group it may have opened ({got})",
+            got == [("line:2", "unmapped_role"), ("line:3", "incomplete_group")] and not accepted,
+        )
+    # (2) a key that reappears stops the whole import fail-closed
+    rows = [
+        ["c1", "1", "u", "q"],
+        ["c1", "2", "a", "r"],
+        ["c2", "1", "u", "q"],
+        ["c2", "2", "a", "r"],
+        ["c1", "3", "u", "late"],
+        ["c1", "4", "a", "late"],
+    ]
+    report, _accepted = run_csv(csv_bytes(rows), grouped())
+    check(
+        "NONCONT-1",
+        f"a non-contiguous group fails the import (got {report.state}/{report.failure_code})",
+        (report.state, report.failure_code) == ("failed", "non_contiguous_group"),
+    )
+    # (3) every row of a group carries the same metadata: no label is chosen from one row
+    header = ("conv", "turn", "who", "text", "qual", "ok")
+    doc = {
+        **grouped(),
+        "metadata": {"quality_label": {"header": "qual"}, "consent": {"header": "ok"}},
+    }
+    for label, r1, r2 in (
+        ("approved then rejected", ["approved", "y"], ["rejected", "y"]),
+        ("empty then rejected", ["", "y"], ["rejected", "y"]),
+        ("consent granted then revoked", ["gold", "granted"], ["gold", "revoked"]),
+    ):
+        rows = [["c1", "1", "u", "q", *r1], ["c1", "2", "a", "r", *r2]]
+        report, accepted = run_csv(csv_bytes(rows, header), doc)
+        check(
+            "META-1",
+            f"{label}: group_metadata_conflict and nothing accepted ({rejections(report)})",
+            rejections(report) == [("line:2", "group_metadata_conflict")] and not accepted,
+        )
+    rows = [["c1", "1", "u", "q", "gold", "y"], ["c1", "2", "a", "r", "gold", "y"]]
+    report, accepted = run_csv(csv_bytes(rows, header), doc)
+    check(
+        "META-2",
+        "identical metadata on every row is kept verbatim",
+        len(accepted) == 1
+        and accepted[0]["content"]["metadata"] == {"quality_label": "gold", "consent": "y"},
+    )
+    # (4) a short row poisons an rfc3339 group (no gap rule to catch it)
+    rows = [
+        ["c1", "2026-01-01T00:00:00Z", "u", "q"],
+        ["c1", "2026-01-01T00:00:01Z"],
+        ["c1", "2026-01-01T00:00:02Z", "a", "r"],
+    ]
+    report, accepted = run_csv(csv_bytes(rows), grouped("rfc3339"))
+    check(
+        "EDGE-12",
+        f"a short row inside an rfc3339 group quarantines it ({rejections(report)})",
+        sorted(rejections(report))
+        == [("line:2", "incomplete_group"), ("line:3", "column_count_mismatch")]
+        and not accepted,
     )
 
 
