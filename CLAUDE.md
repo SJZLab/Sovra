@@ -44,7 +44,7 @@ FRAMEWORK: Groundwork v0.6.10 (owner-confirmed 2026-10-01), adapted to Sovra. So
 CERTIFIER_IDENTITY: same-account (every session pushes as the owner's GitHub account, so
   independence is proven by Claude-Session trailers + PR text, never by PR author).
 CERTIFIER_TRIGGER_MODE: event (the "Sovra certifier Repo" routine fires on PR opened).
-RELAY_LANES: 1
+RELAY_LANES: 3 (A, B, C; disjoint top-level parents, one PR per item for its whole life — docs/operations/routines.md Relay)
 DATASTORE_BACKENDS: postgres_rls, s3_identity (scripts/data_exposure_check.py, CI gate).
 CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   sha256sum of this file, one line, no prefix) — do not hardcode a hash value

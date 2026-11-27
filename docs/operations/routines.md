@@ -85,17 +85,25 @@ any item that docs/certifications/queue.md lists as NOT CERTIFIED / returned to 
 newer fix PR. These items are relay-owned even though spec-matrix shows PROVISIONAL.
 
 STEP 2 — otherwise pick the top QUEUE.md "## Active (decided by Control plane …)" item, then
-"## Backlog" in order. Skip an item only if it has an OPEN [relay] PR, or an unmerged `relay/<ID>*`
-branch pushed in the last 3 hours. A `relay/<ID>` branch already merged into main
-(`git merge-base --is-ancestor origin/relay/<ID> origin/main`) is NOT a claim.
-State "Working: <ID>".
+"## Backlog" in order. An item with an OPEN [relay] PR is CLAIMED. If that PR's branch was pushed
+in the last 3 hours, skip it (a live claim). If its last push is older than 3 hours, the claim is
+STALE: do not skip it and do not open a second PR; CONTINUE it (STEP 3). A `relay/<ID>` branch
+already merged into main (`git merge-base --is-ancestor origin/relay/<ID> origin/main`) is NOT a
+claim. State "Working: <ID>".
 
-STEP 3 — claim, atomically. The claim branch is exactly `relay/<ID>-r<round>` (e.g.
-relay/FTF-0500D-r4; round 1 = r1), never any other spelling. Create it with a plain
-`git push origin HEAD:refs/heads/relay/<ID>-r<round>` (never --force). If the push is rejected
-because the branch already exists, another lane owns the item: skip it. Then open a DRAFT PR
-titled "[relay] <ID>: <description>" before writing code. CI's `relay-policy` job fails a second
-open PR for an item another open PR owns; if yours is the newer one, close it and move on.
+STEP 3 — claim or continue, atomically. ONE PR PER ITEM, FOR ITS WHOLE LIFE (this is what
+`relay-policy` enforces: the oldest open PR owns the item).
+(a) NEW item (no open [relay] PR): the claim branch is exactly `relay/<ID>-r1`. Create it with a
+plain `git push origin HEAD:refs/heads/relay/<ID>-r1` (never --force). If the push is rejected
+because the branch already exists, another lane owns the item: skip it. Then open a DRAFT PR titled
+"[relay] <ID>: <description>" before writing code, with the line `Round: 1` in its body.
+(b) STALE claim (open [relay] PR, last push older than 3 hours): continue it. Check out its branch,
+merge current main, and push to the SAME branch and PR. Never create `relay/<ID>-r<N+1>` and never
+open another PR for the item: a second PR deadlocks `relay-policy` and the park PR. Raise the
+`Round: N` line in the PR body by one and add the trailer `Relay-Round: N` to your commits. If the
+push is rejected because the branch moved, another lane is working it: skip the item.
+(c) After a PR for the item was merged or closed, the next claim is a fresh `relay/<ID>-r<N>` branch
+with N = the previous round + 1.
 
 STEP 4 — contract. Run `python tools/r1_handoff.py packet <ID> --plan
 FINE_TUNING_FACTORY_RELEASE_1.md`. For an owner-approved addendum task (ID present in
@@ -141,7 +149,7 @@ Paste its final report into the submission. This is evidence, not certification 
 STEP 6 — submit. Merge current main into the branch. Set the item's spec-matrix entry to
 PROVISIONAL/L1-PROVEN (never CERTIFIED). Write the submission as a NEW file
 docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>.md and the shift log as a NEW file
-docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md (except to park), PROGRESS.md or
+docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md, PROGRESS.md or
 docs/certifications/queue.md: those are Control-plane files, and shared edits put every other open
 relay PR into conflict. Mark the PR ready, wait in this session for its run to finish, and merge it
 only when the latest `ci-verdict` check on the PR's current head SHA concluded success (merge =
@@ -160,14 +168,21 @@ same failure, park the item. A job that "was not started because recent account 
 failed or your spending limit needs to be increased" is a billing stop: do not push or re-run; report
 it once and move on.
 
-LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
-QUEUE.md order that has no open `[relay]` PR and no fresh unmerged `relay/<ID>*` branch, and claims it
-at once (STEP 3), so lanes never collide. A lane never works an item another lane has claimed.
+LANES: 3 relay lanes (A, B, C), each dispatched on its own schedule. A lane takes the first item in
+QUEUE.md order that has no LIVE claim (STEP 2) and whose TOP-LEVEL PARENT is not already being worked
+by another lane. The parent of an item is its ID without the `-P<n>`, `-F<n>` or `-UI` suffix (for
+example FTF-H010-P5 -> FTF-H010, FTF-1504-F1 -> FTF-1504), so no two lanes touch the same module or
+files; a lane takes the next item whose parent is free. A lane claims or continues at once (STEP 3),
+so lanes never collide, and never works an item another lane has claimed. Dispatch refuses only the
+lane whose OWN previous session is still working.
 
 PARK, not stop: after 3 failed attempts on the same step, an unclear DoD, or an ask-first need,
-move the item to QUEUE.md "## Parked" (what failed, what was tried, three route options). An
-ask-first park also adds a dated line under "Owner actions — current". Then continue with the
-next item in this shift.
+PARK ON THE ITEM'S OWN PR: commit the parking note (what failed, what was tried, three route
+options) as `docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>-parked.md` on the item's own
+branch, add the line `Parked: yes` to the PR body, and leave the PR a draft. Never open a separate
+"park" PR (it is a second PR for the item and `relay-policy` fails it). The Control plane moves the
+item to QUEUE.md "## Parked" on its next sweep, and adds the dated "Owner actions — current" line
+for an ask-first park. Then continue with the next item in this shift.
 
 BLOCKER.md only for: a hash mismatch, a systemic CI/config failure, or nothing unparked left.
 Never report "frontier exhausted" while Active, Backlog or returned items exist.
