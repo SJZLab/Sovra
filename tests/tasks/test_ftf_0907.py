@@ -536,7 +536,12 @@ def test_r4_send_mutation_cannot_rebind_admission() -> None:
         _code(lambda: check_judge_request(adm, route, p, auth)) == "allowed",
     )
     second: list[JudgeRoute] = []
-    _code(lambda: guarded_judge_call(adm, route, p, lambda r: second.append(r) or "x", auth))
+
+    def keep(r: JudgeRoute) -> str:
+        second.append(r)
+        return "x"
+
+    _code(lambda: guarded_judge_call(adm, route, p, keep, auth))
     check(
         "FTF-0907-R4-B1",
         "consecutive sends get distinct objects",
