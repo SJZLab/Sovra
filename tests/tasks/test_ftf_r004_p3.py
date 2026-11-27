@@ -28,18 +28,16 @@ test_a_generic_agent_solver_cannot_pass (NEG2, fault FI),
 test_no_remote_destination_no_telemetry_and_private_log_dir (NEG3),
 test_result_and_errors_are_content_free (NEG4).
 
-Fault injection (Law 1): the table at the bottom rewrites the real modules in a fresh
-subprocess; each behavioural probe key must change.
+Fault injection (Law 1): every check is pinned by the uncapped mutation gate
+(scripts/mutation_gate.py over both modules, CI-enforced on the PR) and the round-3 fault -> RED
+table in docs/certifications/submissions/ (the r1 opt-in `--faults` probe table targeted code
+shapes r2/r3 replaced and is removed).
 
 Run directly: python3 tests/tasks/test_ftf_r004_p3.py
-The fault table re-runs the real modules mutated, one probe subprocess per row (slow); it is
-opt-in so the mutation gate (which re-runs this file once per mutant) stays fast:
-python3 tests/tasks/test_ftf_r004_p3.py --faults
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -52,7 +50,7 @@ import threading
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -1658,864 +1656,6 @@ def _exc(fn: Any, *args: Any, **kwargs: Any) -> BaseException:
     return RuntimeError("no raise")
 
 
-# --------------------------------------------------------------------------- fault injection
-
-_PROBE = r"""
-import json, socket, sys, uuid, dataclasses
-sys.path.insert(0, {root!r}); sys.path.insert(0, {api!r})
-from types import SimpleNamespace as NS
-import workers.evaluation.adapters.inspect_adapter.case_adapter as ca
-from workers.evaluation.adapters.inspect_adapter.runtime_bridge import *
-import workers.evaluation.adapters.inspect_adapter.runtime_bridge as rb
-from workers.evaluation.adapters.inspect_adapter.provider_boundary import ScreeningPolicy
-from app.target_connectors.isolated_real_tool_backend_adapter_contract_tests import build_isolated_tool_backend_adapter
-from app.target_connectors.production_faithful_target_agent_harness_contract import ModelBinding, ParityCaseCategory, ReconstructedAdapterDeclaration
-
-def code(fn, *a, **k):
-    try:
-        fn(*a, **k)
-    except (BridgeError, ca.CaseAdapterError) as e:
-        return e.code
-    except BaseException as e:
-        return "OTHER:" + type(e).__name__
-    return "NO_RAISE"
-
-def rec(key, **extra):
-    v = dict(id=uuid.uuid4(), case_key=key, category="c", severity="low", critical=False, group_key="g", language="en",
-             grader_type="exact_match", input_json={{"tool_name": "search_records", "subject_id": "subject-a1", "arguments": {{"query": "q"}}}},
-             expected_json={{"x": 1}})
-    v.update(extra)
-    return NS(**v)
-
-def cs(recs=None, purpose="development"):
-    return ca.samples_from_cases(suite_id="s", project_id="p", agent_manifest_id="m", purpose=purpose, grading_logic_version=1,
-                                 records=recs if recs is not None else [rec("k1"), rec("k2")])
-
-def hook(approved=None):
-    return BridgeHook(policy=ScreeningPolicy("standard","standard",None,frozenset({{"search_records"}})), approved_settings=approved or {{}})
-
-class Spy:
-    def __init__(self, inner, **h):
-        self.inner = inner; self.h = h; self.invokes = []
-    def describe(self):
-        d = self.inner.describe()
-        if self.h.get("describe_drift") and self.invokes:
-            return dataclasses.replace(d, runtime_digest="x")
-        return d
-    def preflight(self, r): return self.h.get("preflight", self.inner.preflight)(r)
-    def invoke(self, r):
-        self.invokes.append(r)
-        if "on_invoke" in self.h: self.h["on_invoke"](r)
-        return self.inner.invoke(r)
-    def cancel(self, c): return self.inner.cancel(c)
-    def collect_outcome(self, c):
-        if "collect" in self.h: return self.h["collect"](c, self.inner)
-        return self.inner.collect_outcome(c)
-    def reset(self, t): return self.inner.reset(t)
-    def attest(self):
-        a = self.inner.attest()
-        if self.h.get("attest_drift") and self.invokes:
-            return dataclasses.replace(a, prompt_fingerprint="d" * 64)
-        return a
-
-def run(adapter=None, cset=None, **o):
-    kw = dict(hook=hook(), entry_kind="signed_container", is_reconstructed_adapter=False, model_binding=ModelBinding("n/a","n/a"),
-              tenant_namespace="tenant-a", deadline_seconds=30.0, run_id="r1")
-    kw.update(o)
-    return run_suite_through_runtime(adapter or build_isolated_tool_backend_adapter(), cset or cs(), **kw)
-
-def chat(**extra):
-    b = {{"model":"m","messages":[{{"role":"user","content":"hi"}}],
-          "tools":[{{"type":"function","function":{{"name":"search_records","parameters":{{"type":"object"}}}}}}],
-          "temperature":0.2,"max_tokens":64}}
-    b.update(extra); return b
-
-def resp(calls):
-    return {{"id":"x","object":"chat.completion","choices":[{{"index":0,"message":{{"role":"assistant","content":"ok",
-      "tool_calls":[{{"id":c,"type":"function","function":{{"name":n,"arguments":"{{}}"}}}} for c,n in calls]}},"finish_reason":"tool_calls"}}]}}
-
-out = {{}}
-# case adapter
-out["dup_key"] = code(cs, [rec("a"), rec("a", id=uuid.uuid4())])
-out["dup_id"] = code(cs, [rec("a"), rec("b", id=None)]) if False else code(cs, [rec("a", id=uuid.UUID(int=1)), rec("b", id=uuid.UUID(int=1))])
-out["empty"] = code(cs, [])
-out["input_list"] = code(cs, [rec("a", input_json=["x"])])
-out["input_set"] = code(cs, [rec("a", input_json={{"a": {{1}}}})])
-out["input_intkey"] = code(cs, [rec("a", input_json={{1: "x"}})])
-out["crit_int"] = code(cs, [rec("a", critical=1)])
-out["blank_cat"] = code(cs, [rec("a", category="")])
-deep = "x"
-for _ in range(80): deep = {{"a": deep}}
-out["deep"] = code(cs, [rec("a", input_json=deep)])
-c0 = cs()
-out["sample_ids"] = [s.id for s in c0.samples]
-out["sample_meta_keys"] = sorted(c0.samples[0].metadata)
-out["sample_meta_suite"] = c0.samples[0].metadata["suite_id"] + c0.samples[0].metadata["agent_manifest_id"]
-out["sample_meta_crit"] = c0.samples[0].metadata["critical"]
-out["frozen"] = repr(c0.cases[0].declared_inputs)
-out["target_leak"] = "expected" in repr(c0.cases)
-# loader
-class Suite:
-    def __init__(self, p, s):
-        self.id = uuid.UUID(int=1); self.project_id = uuid.UUID(int=2); self.agent_manifest_id = uuid.UUID(int=3)
-        self.purpose = p; self.status = s; self.grading_logic_version = 3
-def load(p, s, pages):
-    calls = []
-    it = iter(pages)
-    ca.get_evaluation_suite = lambda *a, **k: Suite(p, s)
-    def fl(*a, **k):
-        calls.append(k); return next(it)
-    ca.list_cases = fl
-    r = code(ca.load_locked_development_suite, None, None, project_id=uuid.UUID(int=2), suite_id=uuid.UUID(int=1), role="x")
-    return r, len(calls)
-out["load_draft"] = load("development", "draft", [([rec("a")], None)])
-out["load_final_locked"] = load("final", "locked", [([rec("a")], None)])
-out["load_final_draft"] = load("final", "draft", [([rec("a")], None)])
-out["load_unknown"] = load("holdout", "locked", [([rec("a")], None)])
-out["load_ok"] = load("development", "locked", [([rec("a")], None)])
-out["load_cycle"] = load("development", "locked", [([rec("a")], "a"), ([rec("b")], "a"), ([rec("c")], "a"), ([rec("d")], "a")])
-out["load_pages"] = load("development", "locked", [([rec("a")], "a"), ([rec("b")], None)])
-# bridge
-try:
-    r = run()
-    out["run_status"] = [c.status for c in r.cases]
-    out["run_digest"] = [c.business_outcome_sha256 is not None for c in r.cases]
-    out["run_match"] = [c.collected_matches_invoke for c in r.cases]
-    import hashlib
-    out["run_sha"] = r.log_sha256 == hashlib.sha256(open(r.log_path, "rb").read()).hexdigest()
-    out["run_net"] = r.network_attempts
-    import os, stat
-    out["run_mode"] = oct(stat.S_IMODE(os.stat(r.log_dir).st_mode))
-    out["run_fp"] = [bool(c.runtime_fingerprint) for c in r.cases]
-except BaseException as e:
-    out["run_status"] = "ERR:" + type(e).__name__ + str(e)[:80]
-s = Spy(build_isolated_tool_backend_adapter())
-run(s)
-out["invokes"] = len(s.invokes)
-out["idem"] = len({{i.idempotency_key for i in s.invokes}})
-out["req_tenant"] = s.invokes[0].tenant_namespace + s.invokes[0].agent_manifest_id + s.invokes[0].case_id
-out["req_deadline"] = s.invokes[0].deadline_seconds
-out["req_binding"] = repr(s.invokes[0].model_binding)
-s2 = Spy(build_isolated_tool_backend_adapter(), preflight=lambda r: False)
-out["preflight_refused"] = [code(run, s2), len(s2.invokes)]
-out["attest_drift"] = code(run, Spy(build_isolated_tool_backend_adapter(), attest_drift=True))
-sd = Spy(build_isolated_tool_backend_adapter(), attest_drift=True)
-code(run, sd)
-out["attest_drift_stops"] = len(sd.invokes)
-out["describe_drift"] = code(run, Spy(build_isolated_tool_backend_adapter(), describe_drift=True))
-out["bind_key"] = code(run, model_binding=ModelBinding("n/a","n/a",(("zzz","1"),)))
-out["bind_ok"] = code(run, model_binding=ModelBinding("n/a","n/a",(("temperature","1"),)))
-out["entry_kind"] = code(run, entry_kind="ssh")
-out["final_purpose"] = code(run, cset=cs(purpose="final"))
-out["other_purpose"] = code(run, cset=cs(purpose="holdout"))
-out["no_hook"] = code(run, hook=None)
-out["recon_none"] = code(run, is_reconstructed_adapter=True)
-out["recon_partial"] = code(run, is_reconstructed_adapter=True, reconstructed_declaration=ReconstructedAdapterDeclaration("f", frozenset({{ParityCaseCategory.SUCCESS}})))
-out["recon_full"] = code(run, is_reconstructed_adapter=True, reconstructed_declaration=ReconstructedAdapterDeclaration("f", frozenset(ParityCaseCategory)))
-out["adapter_mismatch"] = code(run, Spy(build_isolated_tool_backend_adapter(), collect=lambda c, i: dataclasses.replace(i.collect_outcome(c), case_id="x")))
-out["adapter_boom"] = [(c.status, c.adapter_exception_type) for c in run(Spy(build_isolated_tool_backend_adapter(), on_invoke=lambda r: 1/0)).cases]
-# network
-def dial(r):
-    try:
-        socket.create_connection(("127.0.0.1", 9), timeout=0.2)
-    except BridgeError:
-        raise
-    except OSError:
-        pass
-out["net_dial"] = code(run, Spy(build_isolated_tool_backend_adapter(), on_invoke=dial))
-def lookup(r):
-    try: socket.getaddrinfo("example.invalid", 80)
-    except Exception: pass
-out["net_lookup"] = code(run, Spy(build_isolated_tool_backend_adapter(), on_invoke=lookup))
-def conn_ex(r):
-    try: socket.socket().connect_ex(("127.0.0.1", 9))
-    except Exception: pass
-out["net_connect_ex"] = code(run, Spy(build_isolated_tool_backend_adapter(), on_invoke=conn_ex))
-def host(r):
-    try: socket.gethostbyname("example.invalid")
-    except Exception: pass
-out["net_gethost"] = code(run, Spy(build_isolated_tool_backend_adapter(), on_invoke=host))
-real = socket.socket.connect
-out["net_restored"] = socket.socket.connect is real and socket.getaddrinfo.__module__ == "socket"
-# telemetry
-import os
-os.environ["INSPECT_TELEMETRY"] = "x"
-out["telemetry"] = code(run)
-del os.environ["INSPECT_TELEMETRY"]
-os.environ["INSPECT_REQUIRED_HOOKS"] = "x"
-out["req_hooks"] = code(run)
-del os.environ["INSPECT_REQUIRED_HOOKS"]
-# generic agent
-from inspect_ai.agent import react
-from inspect_ai.solver import system_message
-orig = rb._build_solver
-rb._build_solver = lambda st: react(prompt="x")
-out["generic"] = code(run)
-rb._build_solver = lambda st: [system_message("x"), orig(st)]
-out["chained"] = code(run)
-rb._build_solver = orig
-# hook
-h = hook({{"temperature": 0.2, "max_tokens": 64}})
-out["hook_ok"] = code(h.screen_request, chat())
-out["hook_hosted"] = code(hook().screen_request, chat(tools=[{{"type": "web_search_preview"}}]))
-out["hook_mcp"] = code(hook().screen_request, chat(tools=[{{"type": "mcp", "server_label": "x", "server_url": "https://x"}}]))
-out["hook_remote"] = code(hook().screen_request, chat(messages=[{{"role":"user","content":[{{"type":"image_url","image_url":{{"url":"https://x.test/a.png"}}}}]}}]))
-out["hook_unapproved"] = code(hook().screen_request, chat(tools=[{{"type":"function","function":{{"name":"zzz","parameters":{{"type":"object"}}}}}}]))
-out["hook_bad"] = code(hook().screen_request, ["x"])
-hh = hook()
-hh.screen_request(chat())
-out["hook_count"] = hh.requests_screened
-hd = hook()
-code(hd.screen_request, chat(tools=[{{"type": "web_search_preview"}}]))
-out["hook_denied_count"] = hd.requests_denied
-h3 = hook()
-o = h3.capture_and_filter_response(resp([("c1","search_records"),("c2","wire")]))
-out["filter_removed"] = list(o.removed_call_ids)
-out["filter_evidence"] = [a.name for a in h3.attempt_evidence()[0].attempts]
-out["filter_captured"] = h3.attempts_captured
-out["filter_body"] = len(o.body["choices"][0]["message"]["tool_calls"])
-out["filter_bad"] = code(hook().capture_and_filter_response, "x")
-out["parity_default"] = code(hook({{"temperature": 0.2, "max_tokens": 64}}).check_generation_parity, chat(), forward_generation_config=False)
-hp = hook({{"temperature": 0.2, "max_tokens": 64}})
-out["parity_forward"] = hp.check_generation_parity(chat(), forward_generation_config=True).verdict
-out["parity_count"] = hp.parity_checks
-out["parity_changed"] = code(hook({{"temperature": 0.7, "max_tokens": 64}}).check_generation_parity, chat(), forward_generation_config=True)
-b2 = chat(top_p=0.9, seed=7, stop=["END"], n=2, max_completion_tokens=99); del b2["max_tokens"]
-out["obs_off"] = sorted(observe_inspect_generation_forwarding(b2, forward_generation_config=False))
-out["obs_on"] = sorted(observe_inspect_generation_forwarding(b2, forward_generation_config=True))
-out["obs_bad"] = code(observe_inspect_generation_forwarding, "x", forward_generation_config=True)
-b3 = chat(logprobs=True, top_logprobs=2, presence_penalty=0.1, frequency_penalty=0.2, parallel_tool_calls=False, reasoning_effort="low", logit_bias={{"1": 2}}, max_tokens=7)
-out["obs_on_all"] = sorted(observe_inspect_generation_forwarding(b3, forward_generation_config=True))
-print(json.dumps(out, sort_keys=True, default=str))
-"""
-
-
-def _run_probe(path: Path | None = None, source: str | None = None) -> dict[str, Any]:
-    originals = {name: p.read_bytes() for name, p in MODULES.items()}
-    cache_dir = tempfile.mkdtemp(prefix="ftf-r004-p3-pyc-")
-    try:
-        if source is not None and path is not None:
-            path.write_text(source, encoding="utf-8")
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-X",
-                "pycache_prefix=" + cache_dir,
-                "-c",
-                _PROBE.format(root=str(ROOT), api=str(ROOT / "apps" / "api")),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
-        )
-    finally:
-        for name, p in MODULES.items():
-            p.write_bytes(originals[name])
-        shutil.rmtree(cache_dir, ignore_errors=True)
-    if any(p.read_bytes() != originals[name] for name, p in MODULES.items()):
-        raise RuntimeError("module not restored")
-    if result.returncode != 0:
-        return {"ERROR": result.stderr[-600:]}
-    return cast(dict[str, Any], json.loads(result.stdout.strip().splitlines()[-1]))
-
-
-def _keys(prefix: str, baseline: dict[str, Any]) -> tuple[str, ...]:
-    return tuple(k for k in baseline if k.startswith(prefix))
-
-
-# (label, module, regex, replacement, probe keys that must change)
-_MUTATIONS: list[tuple[str, str, str, str, tuple[str, ...]]] = [
-    # ---- case adapter
-    (
-        "final-suite-not-refused",
-        "cases",
-        r'    if suite\.purpose == "final":\n        raise CaseAdapterError\(CODE_FINAL_SUITE\)\n',
-        "",
-        ("load_final_locked", "load_final_draft"),
-    ),
-    (
-        "unknown-purpose-allowed",
-        "cases",
-        r'    if suite\.purpose != "development":\n        raise CaseAdapterError\(CODE_UNSUPPORTED_PURPOSE\)\n',
-        "",
-        ("load_unknown",),
-    ),
-    (
-        "draft-suite-allowed",
-        "cases",
-        r'    if suite\.status != "locked":\n        raise CaseAdapterError\(CODE_SUITE_NOT_LOCKED\)\n',
-        "",
-        ("load_draft",),
-    ),
-    (
-        "cursor-cycle-not-detected",
-        "cases",
-        r"        if after is not None and next_after <= after:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "",
-        ("load_cycle",),
-    ),
-    (
-        "duplicate-key-allowed",
-        "cases",
-        r"        if case_key in seen_keys or case_id in seen_ids:\n            raise CaseAdapterError\(CODE_DUPLICATE_CASE_ID\)\n",
-        "",
-        ("dup_key", "dup_id"),
-    ),
-    (
-        "duplicate-id-allowed",
-        "cases",
-        r"case_key in seen_keys or case_id in seen_ids",
-        "case_key in seen_keys",
-        ("dup_id",),
-    ),
-    (
-        "duplicate-key-only-by-id",
-        "cases",
-        r"case_key in seen_keys or case_id in seen_ids",
-        "case_id in seen_ids",
-        ("dup_key",),
-    ),
-    (
-        "empty-suite-allowed",
-        "cases",
-        r"    if not records:\n        raise CaseAdapterError\(CODE_EMPTY_SUITE\)\n",
-        "",
-        ("empty",),
-    ),
-    (
-        "non-object-input-allowed",
-        "cases",
-        r"    if not isinstance\(input_json, Mapping\):\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "",
-        ("input_list",),
-    ),
-    (
-        "non-string-key-allowed",
-        "cases",
-        r"            if type\(key\) is not str:\n                raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "",
-        ("input_intkey",),
-    ),
-    (
-        "unsupported-value-allowed",
-        "cases",
-        r"    raise CaseAdapterError\(CODE_INVALID_CASE\)\n\n\ndef freeze_declared_inputs",
-        "    return value\n\n\ndef freeze_declared_inputs",
-        ("input_set",),
-    ),
-    (
-        "depth-unbounded",
-        "cases",
-        r"    if depth > _MAX_FREEZE_DEPTH:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "",
-        ("deep",),
-    ),
-    (
-        "critical-not-bool-checked",
-        "cases",
-        r"        if type\(record\.critical\) is not bool:\n            raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "",
-        ("crit_int",),
-    ),
-    (
-        "blank-text-allowed",
-        "cases",
-        r"    if type\(value\) is not str or not value:\n        raise CaseAdapterError\(CODE_INVALID_CASE\)\n",
-        "    return value\n",
-        ("blank_cat",),
-    ),
-    (
-        "sample-id-not-case-key",
-        "cases",
-        r"                id=case_key,",
-        "                id=case_id,",
-        ("sample_ids",),
-    ),
-    (
-        "sample-metadata-suite-dropped",
-        "cases",
-        r'                    "suite_id": suite_id,\n                    "agent_manifest_id": agent_manifest_id,\n',
-        "",
-        ("sample_meta_keys", "sample_meta_suite"),
-    ),
-    (
-        "sample-metadata-critical-dropped",
-        "cases",
-        r'                    "critical": case\.critical,\n',
-        "",
-        ("sample_meta_keys",),
-    ),
-    (
-        "sample-metadata-group-dropped",
-        "cases",
-        r'                    "group_key": case\.group_key,\n',
-        "",
-        ("sample_meta_keys",),
-    ),
-    (
-        "sample-metadata-grader-dropped",
-        "cases",
-        r'                    "grader_type": case\.grader_type,\n',
-        "",
-        ("sample_meta_keys",),
-    ),
-    (
-        "inputs-not-frozen",
-        "cases",
-        r"    frozen = _freeze\(input_json\)\n    assert isinstance\(frozen, tuple\)\n    return frozen",
-        "    return tuple(input_json.items())",
-        ("frozen",),
-    ),
-    # ---- bridge
-    (
-        "reconstructed-adapter-always-qualified",
-        "bridge",
-        r"    if status != QualificationStatus\.QUALIFIED:\n        raise BridgeError\(CODE_INTEGRATION_REQUIRED\)\n",
-        "",
-        ("recon_none", "recon_partial"),
-    ),
-    (
-        "binding-not-validated",
-        "bridge",
-        r"        validate_model_binding_override\(describe, model_binding\)\n",
-        "        pass\n",
-        ("bind_key",),
-    ),
-    (
-        "entry-kind-not-validated",
-        "bridge",
-        r"        kind = validate_runtime_entry_kind\(entry_kind\)\n",
-        "        kind = None\n",
-        ("entry_kind",),
-    ),
-    (
-        "no-pre-run-attest",
-        "bridge",
-        r"    pinned = adapter\.attest\(\)\n",
-        "    pinned = None\n",
-        ("run_status",),
-    ),
-    (
-        "identity-not-checked-before-case",
-        "bridge",
-        r"                state\.check_identity\(\)\n                record = _run_case\(state, case\)\n",
-        "                record = _run_case(state, case)\n",
-        ("attest_drift_stops",),
-    ),
-    (
-        "identity-not-rechecked-after-run",
-        "bridge",
-        r"    log_sha256, version = _verify_log\(log_path, frozenset\(cases\)\)\n    state\.check_identity\(\)\n",
-        "    log_sha256, version = _verify_log(log_path, frozenset(cases))\n",
-        ("attest_drift",),
-    ),
-    (
-        "attest-drift-ignored",
-        "bridge",
-        r"        if changed:\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \",\"\.join\(sorted\(changed\)\)\)\n",
-        "",
-        ("attest_drift",),
-    ),
-    (
-        "describe-drift-ignored",
-        "bridge",
-        r"        if _describe_view\(self\.adapter\.describe\(\)\) != _describe_view\(self\.pinned_describe\):\n            raise BridgeError\(CODE_IDENTITY_CHANGED, \"describe\"\)\n",
-        "",
-        ("describe_drift",),
-    ),
-    (
-        "observed-time-counts-as-drift",
-        "bridge",
-        r'        if f\.name != "observed_at_epoch_seconds"\n',
-        "",
-        ("run_status",),
-    ),
-    (
-        "generic-solver-allowed",
-        "bridge",
-        r"    if steps != \[NATIVE_SOLVER_NAME\]:\n        raise BridgeError\(CODE_GENERIC_AGENT\)\n",
-        "",
-        ("generic", "chained"),
-    ),
-    (
-        "chained-solver-allowed",
-        "bridge",
-        r"    if steps != \[NATIVE_SOLVER_NAME\]:",
-        "    if NATIVE_SOLVER_NAME not in steps:",
-        ("chained",),
-    ),
-    (
-        "model-call-allowed",
-        "bridge",
-        r"    if log\.eval\.model != _MODEL_LESS or \(log\.stats and log\.stats\.model_usage\):\n        raise BridgeError\(CODE_GENERIC_AGENT, \"model call\"\)\n",
-        "",
-        ("run_status",),
-    ),
-    (
-        "telemetry-allowed",
-        "bridge",
-        r"        if os\.environ\.get\(name\):\n            raise BridgeError\(CODE_TELEMETRY, name\)\n",
-        "        pass\n",
-        ("telemetry", "req_hooks"),
-    ),
-    (
-        "required-hooks-not-refused",
-        "bridge",
-        r'_TELEMETRY_ENV = \("INSPECT_TELEMETRY", "INSPECT_REQUIRED_HOOKS"\)',
-        '_TELEMETRY_ENV = ("INSPECT_TELEMETRY",)',
-        ("req_hooks",),
-    ),
-    (
-        "network-guard-off",
-        "bridge",
-        r"    with _private_workspace\(workspace_parent\) as log_dir, _NetworkGuard\(\) as guard:",
-        "    import contextlib\n    guard = type('G', (), {'attempts': 0})()\n    with _private_workspace(workspace_parent) as log_dir, contextlib.nullcontext():",
-        ("net_dial", "net_lookup", "net_connect_ex", "net_gethost"),
-    ),
-    (
-        "network-attempts-not-checked",
-        "bridge",
-        r"    if guard\.attempts:\n        raise BridgeError\(CODE_OUTBOUND\)\n",
-        "",
-        ("net_lookup", "net_gethost", "net_connect_ex"),
-    ),
-    (
-        "connect-not-guarded",
-        "bridge",
-        r'        for name in \("connect", "connect_ex"\):',
-        '        for name in ("connect_ex",):',
-        ("net_dial",),
-    ),
-    (
-        "connect-ex-not-guarded",
-        "bridge",
-        r'        for name in \("connect", "connect_ex"\):',
-        '        for name in ("connect",):',
-        ("net_connect_ex",),
-    ),
-    (
-        "getaddrinfo-not-guarded",
-        "bridge",
-        r'"getaddrinfo", "gethostbyname", "gethostbyname_ex"',
-        '"gethostbyname", "gethostbyname_ex"',
-        ("net_lookup",),
-    ),
-    (
-        "gethostbyname-not-guarded",
-        "bridge",
-        r'"gethostbyname", "gethostbyname_ex"\)',
-        '"gethostbyname_ex")',
-        ("net_gethost",),
-    ),
-    (
-        "guard-not-restored",
-        "bridge",
-        r"        for owner, name, original in reversed\(self\._saved\):\n            setattr\(owner, name, original\)\n",
-        "",
-        ("net_restored",),
-    ),
-    (
-        "unix-sockets-blocked",
-        "bridge",
-        r"            if sock\.family == getattr\(socket, \"AF_UNIX\", None\):\n                return original\(sock, address, \*args, \*\*kwargs\)\n",
-        "",
-        ("run_status",),
-    ),
-    (
-        "preflight-ignored",
-        "bridge",
-        r"    if not state\.adapter\.preflight\(request\):",
-        "    if False:",
-        ("preflight_refused",),
-    ),
-    (
-        "case-id-mismatch-allowed",
-        "bridge",
-        r"    if invoked\.case_id != case\.case_key or collected\.case_id != case\.case_key:\n        raise BridgeError\(CODE_ADAPTER_MISMATCH\)\n",
-        "",
-        ("adapter_mismatch",),
-    ),
-    (
-        "collected-not-independent",
-        "bridge",
-        r"        collected = state\.adapter\.collect_outcome\(case\.case_key\)",
-        "        collected = invoked",
-        ("run_match",),
-    ),
-    (
-        "exception-class-not-recorded",
-        "bridge",
-        r"adapter_exception_type=type\(exc\)\.__name__,",
-        "adapter_exception_type=None,",
-        ("adapter_boom",),
-    ),
-    (
-        "adapter-exception-hidden-as-completed",
-        "bridge",
-        r'            status="adapter_exception",',
-        '            status="completed",',
-        ("adapter_boom",),
-    ),
-    (
-        "idempotency-key-constant",
-        "bridge",
-        r'        idempotency_key=_sha256\(f"\{state\.run_id\}\\0\{case\.case_key\}"\.encode\(\)\),',
-        '        idempotency_key="k",',
-        ("idem",),
-    ),
-    (
-        "deadline-not-passed",
-        "bridge",
-        r"        deadline_seconds=state\.deadline_seconds,\n        idempotency_key",
-        "        deadline_seconds=1.0,\n        idempotency_key",
-        ("req_deadline",),
-    ),
-    (
-        "tenant-not-passed",
-        "bridge",
-        r"        tenant_namespace=state\.tenant_namespace,",
-        '        tenant_namespace="tenant-b",',
-        ("req_tenant", "run_status"),
-    ),
-    (
-        "binding-not-passed",
-        "bridge",
-        r"        model_binding=state\.binding,",
-        '        model_binding=ModelBinding("other", "other"),',
-        ("req_binding",),
-    ),
-    (
-        "manifest-not-passed",
-        "bridge",
-        r"        agent_manifest_id=state\.agent_manifest_id,",
-        '        agent_manifest_id="other",',
-        ("req_tenant",),
-    ),
-    (
-        "log-hash-not-real",
-        "bridge",
-        r"    return _sha256\(log_path\.read_bytes\(\)\), str\(inspect_ai\.__version__\)",
-        '    return "0" * 64, str(inspect_ai.__version__)',
-        ("run_sha",),
-    ),
-    (
-        "workspace-world-readable",
-        "bridge",
-        r"    os\.chmod\(path, 0o700\)\n",
-        "    os.chmod(path, 0o755)\n",
-        ("run_mode",),
-    ),
-    (
-        "workspace-not-restricted",
-        "bridge",
-        r"    os\.chmod\(path, 0o700\)\n",
-        "    os.chmod(path, 0o777)\n",
-        ("run_mode",),
-    ),
-    (
-        "final-purpose-bridge-allowed",
-        "bridge",
-        r'    if case_set\.purpose != "development":\n        raise BridgeError\(CODE_INVALID_REQUEST, "purpose"\)\n',
-        "",
-        ("final_purpose", "other_purpose"),
-    ),
-    (
-        "hook-not-required",
-        "bridge",
-        r'    if not isinstance\(hook, BridgeHook\):\n        raise BridgeError\(CODE_INVALID_REQUEST, "hook"\)\n',
-        "",
-        ("no_hook",),
-    ),
-    (
-        "sample-set-not-checked",
-        "bridge",
-        r'    if sample_ids != case_keys:\n        raise BridgeError\(CODE_RUN_FAILED, "sample set"\)\n',
-        "",
-        ("run_status",),
-    ),
-    # ---- hook (P2 / P1 applied)
-    (
-        "hook-skips-p2-screening",
-        "bridge",
-        r"            decision = screen_outbound_model_request\(body, self\.policy\)",
-        "            decision = SimpleNamespace(allowed=True, denials=())",
-        ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved"),
-    ),
-    (
-        "hook-ignores-denial",
-        "bridge",
-        r"        if not decision\.allowed:\n            detail = ",
-        "        if False:\n            detail = ",
-        ("hook_hosted", "hook_mcp", "hook_remote", "hook_unapproved"),
-    ),
-    (
-        "hook-boundary-error-swallowed",
-        "bridge",
-        r"            raise BridgeError\(CODE_PROVIDER_DENIED, exc\.code\) from exc\n        with self\._lock:\n            self\.requests_screened",
-        "            return\n        with self._lock:\n            self.requests_screened",
-        ("hook_bad",),
-    ),
-    (
-        "hook-count-dropped",
-        "bridge",
-        r"            self\.requests_screened \+= 1\n",
-        "",
-        ("hook_count",),
-    ),
-    (
-        "hook-denied-count-dropped",
-        "bridge",
-        r"            if not decision\.allowed:\n                self\.requests_denied \+= 1\n",
-        "",
-        ("hook_denied_count",),
-    ),
-    (
-        "filter-before-capture",
-        "bridge",
-        r"            evidence = capture_response_attempts\(response_body\)\n            outcome = apply_approval_filter\(\n                response_body,\n                evidence,",
-        "            outcome = apply_approval_filter(\n                response_body,\n                capture_response_attempts({}),",
-        ("filter_removed", "filter_bad"),
-    ),
-    (
-        "filter-evidence-dropped",
-        "bridge",
-        r"            self\._evidence\.append\(outcome\.evidence\)\n",
-        "",
-        ("filter_evidence",),
-    ),
-    (
-        "filter-attempt-count-dropped",
-        "bridge",
-        r"            self\.attempts_captured \+= len\(outcome\.evidence\.attempts\)\n",
-        "",
-        ("filter_captured",),
-    ),
-    (
-        "filter-approved-names-empty",
-        "bridge",
-        r"                approved_tool_names=self\.policy\.approved_tool_names,",
-        "                approved_tool_names=frozenset({'search_records', 'wire'}),",
-        ("filter_removed", "filter_body"),
-    ),
-    (
-        "parity-skipped",
-        "bridge",
-        r"        result = compare_generation_parity\(\n            self\.approved_settings, before, after, self\.declared_change\n        \)",
-        "        result = compare_generation_parity(self.approved_settings, before, before, self.declared_change)",
-        ("parity_default",),
-    ),
-    (
-        "parity-block-ignored",
-        "bridge",
-        r'        if result\.verdict in \("blocked", "insufficient_evidence"\):\n            raise BridgeError\(CODE_PARITY_BLOCKED, ",".join\(result\.blocking_keys\) or result\.verdict\)\n',
-        "",
-        ("parity_default", "parity_changed"),
-    ),
-    (
-        "parity-insufficient-evidence-passes",
-        "bridge",
-        r'if result\.verdict in \("blocked", "insufficient_evidence"\):',
-        'if result.verdict == "blocked":',
-        ("parity_default",),
-    ),
-    (
-        "parity-count-dropped",
-        "bridge",
-        r"            self\.parity_checks \+= 1\n",
-        "",
-        ("parity_count",),
-    ),
-    (
-        "parity-declared-change-ignored",
-        "bridge",
-        r"self\.approved_settings, before, after, self\.declared_change",
-        "self.approved_settings, before, after, None",
-        ("parity_default",),
-    ),
-    (
-        "inspect-clearing-assumed-off",
-        "bridge",
-        r"    if not forward_generation_config:\n        clear_generation_params\(config\)\n",
-        "",
-        ("obs_off",),
-    ),
-    (
-        "inspect-clearing-assumed-on",
-        "bridge",
-        r"    if not forward_generation_config:",
-        "    if True:",
-        ("obs_on",),
-    ),
-    (
-        "observation-max-completion-key-lost",
-        "bridge",
-        r'        if config_field == "max_tokens" and "max_completion_tokens" in body:\n            key = "max_completion_tokens"\n',
-        "",
-        ("obs_on",),
-    ),
-    (
-        "observation-stop-key-lost",
-        "bridge",
-        r'    "stop_seqs": "stop",\n',
-        "",
-        ("obs_on", "obs_off"),
-    ),
-    ("observation-n-key-lost", "bridge", r'    "num_choices": "n",\n', "", ("obs_on",)),
-    ("observation-seed-key-lost", "bridge", r'    "seed": "seed",\n', "", ("obs_on", "obs_off")),
-    ("observation-top-p-key-lost", "bridge", r'    "top_p": "top_p",\n', "", ("obs_on",)),
-    (
-        "observation-logprobs-key-lost",
-        "bridge",
-        r'    "logprobs": "logprobs",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-top-logprobs-key-lost",
-        "bridge",
-        r'    "top_logprobs": "top_logprobs",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-penalty-keys-lost",
-        "bridge",
-        r'    "frequency_penalty": "frequency_penalty",\n    "presence_penalty": "presence_penalty",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-logit-bias-key-lost",
-        "bridge",
-        r'    "logit_bias": "logit_bias",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-parallel-key-lost",
-        "bridge",
-        r'    "parallel_tool_calls": "parallel_tool_calls",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-reasoning-key-lost",
-        "bridge",
-        r'    "reasoning_effort": "reasoning_effort",\n',
-        "",
-        ("obs_on_all",),
-    ),
-    (
-        "observation-non-mapping-allowed",
-        "bridge",
-        r"    if not isinstance\(request_body, Mapping\):\n        raise BridgeError\(CODE_INVALID_REQUEST, \"request body must be a mapping\"\)\n",
-        "",
-        ("obs_bad",),
-    ),
-]
-
-
 # --------------------------------------------------------------------------- round 2 (pre-review findings)
 
 
@@ -2854,11 +1994,6 @@ def test_round2_mutation_survivors_have_real_tests() -> None:
         ca_mod.get_evaluation_suite = real_get
 
     # only a datagram socket that is not local is a connectionless outbound send
-    listener = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
-    listener.bind(("127.0.0.1", 0))
-    listener.listen(1)
-    client = sk.create_connection(listener.getsockname())  # before the run, outside the guard
-    server, _ = listener.accept()
     seen: list[bytes] = []
 
     def local_sends(_r: Any) -> None:
@@ -2870,43 +2005,44 @@ def test_round2_mutation_survivors_have_real_tests() -> None:
             a.close()
             b.close()
 
-    try:
-        res = _run(
-            _Spy(build_isolated_tool_backend_adapter(), on_invoke=local_sends),
-            _case_set(_records()[:1]),
-        )
-        server.settimeout(0.2)
-        try:
-            leaked = server.recv(5)
-        except OSError:
-            leaked = b""
-        check("FTF-R004-P3-AC8", "nothing reached the peer of the pre-opened stream", leaked == b"")
-    finally:
-        for sock in (client, server, listener):
-            sock.close()
+    res = _run(
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=local_sends),
+        _case_set(_records()[:1]),
+    )
     check(
         "FTF-R004-P3-AC8",
         "a local AF_UNIX datagram pair is not blocked",
         seen == [b"dg"] and res.network_attempts == 0,
     )
 
+    listener = sk.socket(sk.AF_INET, sk.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    client = sk.create_connection(listener.getsockname())  # before the run, outside the guard
+    server, _ = listener.accept()
+
     def stream_out(_r: Any) -> None:
         try:
             client.sendall(b"EXFIL")  # a connection opened before the run
-        except BridgeError:
-            raise
-        except OSError:
+        except Exception:  # noqa: BLE001
             pass
 
+    spy = _Spy(build_isolated_tool_backend_adapter(), on_invoke=stream_out)
+    try:
+        got = _code(_run, spy, _case_set(_records()[:1]))
+        server.settimeout(0.2)
+        try:
+            leaked = server.recv(5)
+        except OSError:
+            leaked = b""
+    finally:
+        for sock in (client, server, listener):
+            sock.close()
     check(
         "FTF-R004-P3-AC8",
-        "a send on a stream connection opened before the run is an outbound call",
-        _code(
-            _run,
-            _Spy(build_isolated_tool_backend_adapter(), on_invoke=stream_out),
-            _case_set(_records()[:1]),
-        )
-        == "outbound_call_blocked",
+        f"a run while a stream connection opened before it is still open -> outbound_call_blocked "
+        f"before any adapter call, nothing reached the peer (got {got}, {leaked!r})",
+        got == "outbound_call_blocked" and spy.invokes == [] and leaked == b"",
     )
 
 
@@ -3470,39 +2606,291 @@ def test_round3_provenance_is_bound_to_content() -> None:
     )
 
 
+def _tcp_pair() -> tuple[socket.socket, socket.socket, socket.socket]:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    client = socket.create_connection(listener.getsockname())
+    server, _ = listener.accept()
+    return listener, client, server
+
+
+def _received(server: socket.socket) -> bytes:
+    server.settimeout(0.2)
+    try:
+        return server.recv(16)
+    except OSError:
+        return b""
+
+
+_PEER = (
+    "import socket\n"
+    "l = socket.socket(); l.bind(('127.0.0.1', 0)); l.listen(1)\n"
+    "print(l.getsockname()[1], flush=True)\n"
+    "l.settimeout(30); c, _ = l.accept(); c.settimeout(5)\n"
+    "try:\n    d = c.recv(64)\nexcept Exception:\n    d = b''\n"
+    "print(d.hex(), flush=True)\n"
+)
+
+
+def _external_peer() -> tuple[subprocess.Popen[str], int]:
+    """A listener in another process: the only Python socket in THIS process is the client the
+    test opens, so the open-socket check is exercised on exactly that socket."""
+    proc = subprocess.Popen([sys.executable, "-c", _PEER], stdout=subprocess.PIPE, text=True)
+    assert proc.stdout is not None
+    return proc, int(proc.stdout.readline())
+
+
+def _peer_received(proc: subprocess.Popen[str]) -> bytes:
+    out, _ = proc.communicate(timeout=30)
+    return bytes.fromhex(out.strip())
+
+
+def test_review2_sockets_open_before_the_run_refuse_it() -> None:
+    import _socket
+    import ssl
+
+    # a TLS connection opened before the run (a keep-alive HTTPS pool)
+    proc, port = _external_peer()
+    plain = socket.create_connection(("127.0.0.1", port))
+    plain.settimeout(0.5)  # the peer never answers a handshake: a leak attempt must not hang
+    tls = ssl.create_default_context().wrap_socket(
+        plain, server_hostname="peer.invalid", do_handshake_on_connect=False
+    )
+
+    def tls_out(_r: Any) -> None:
+        for send in (tls.sendall, tls.write):
+            try:
+                send(b"EXFIL")
+            except Exception:  # noqa: BLE001
+                pass
+
+    spy = _Spy(build_isolated_tool_backend_adapter(), on_invoke=tls_out)
+    try:
+        got = _code(_run, spy, _case_set(_records()[:1]))
+    finally:
+        tls.close()
+    leaked = _peer_received(proc)
+    check(
+        "FTF-R004-P3-AC8",
+        f"an open TLS connection made before the run -> outbound_call_blocked before any adapter "
+        f"call, nothing leaked (got {got}, {leaked!r})",
+        got == "outbound_call_blocked" and spy.invokes == [] and leaked == b"",
+    )
+
+    # a raw _socket connection opened before the run
+    proc, port = _external_peer()
+    raw = _socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    raw.connect(("127.0.0.1", port))
+
+    def raw_out(_r: Any) -> None:
+        try:
+            raw.send(b"EXFIL")
+        except Exception:  # noqa: BLE001
+            pass
+
+    spy = _Spy(build_isolated_tool_backend_adapter(), on_invoke=raw_out)
+    try:
+        got = _code(_run, spy, _case_set(_records()[:1]))
+    finally:
+        raw.close()
+    leaked = _peer_received(proc)
+    check(
+        "FTF-R004-P3-AC8",
+        f"an open raw _socket connection made before the run -> outbound_call_blocked, nothing "
+        f"leaked (got {got}, {leaked!r})",
+        got == "outbound_call_blocked" and spy.invokes == [] and leaked == b"",
+    )
+
+    # what is NOT refused at start: a listener, an unconnected socket, a closed one, AF_UNIX pairs
+    idle_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    idle_listener.bind(("127.0.0.1", 0))
+    idle_listener.listen(1)
+    unconnected = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    closed.close()
+    a, b = socket.socketpair()
+    try:
+        res = _run(None, _case_set(_records()[:1]))
+        ok = res.network_attempts == 0 and len(res.cases) == 1
+    except BridgeError:
+        ok = False
+    finally:
+        for sock in (idle_listener, unconnected, a, b):
+            sock.close()
+    check(
+        "FTF-R004-P3-AC8",
+        "a listener, an unconnected or closed inet socket and an AF_UNIX pair do not refuse a run",
+        ok,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "the open-socket scan counts exactly the connected non-local sockets",
+        bridge._connected_non_local_sockets() == 0,
+    )
+
+
+def test_review2_sockets_made_during_the_run_and_lookups() -> None:
+    import _socket
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def swallow(fn: Any) -> Any:
+        def call(_r: Any) -> None:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                pass
+
+        return call
+
+    attempts: dict[str, Any] = {
+        "a new AF_INET socket": lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM).close(),
+        "a new raw _socket AF_INET6 socket": lambda: _socket.socket(
+            socket.AF_INET6, socket.SOCK_DGRAM
+        ).close(),
+        "a socket wrapping a dup of a pre-opened descriptor (fileno=)": lambda: socket.socket(
+            fileno=os.dup(listener.fileno())
+        ).close(),
+        "socket.gethostbyaddr": lambda: socket.gethostbyaddr("127.0.0.1"),
+        "socket.getnameinfo": lambda: socket.getnameinfo(("127.0.0.1", 80), 0),
+        "_socket.getaddrinfo": lambda: _socket.getaddrinfo("localhost", 80),
+        "socket.gethostbyname": lambda: socket.gethostbyname("localhost"),
+        "socket.gethostbyname_ex": lambda: socket.gethostbyname_ex("localhost"),
+    }
+    try:
+        for label, fn in attempts.items():
+            got = _code(
+                _run,
+                _Spy(build_isolated_tool_backend_adapter(), on_invoke=swallow(fn)),
+                _case_set(_records()[:1]),
+            )
+            check(
+                "FTF-R004-P3-AC8",
+                f"{label} during the run (error swallowed) -> outbound_call_blocked (got {got})",
+                got == "outbound_call_blocked",
+            )
+    finally:
+        listener.close()
+    made: list[int] = []
+
+    def local_socket(_r: Any) -> None:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        made.append(sock.family)
+        sock.close()
+
+    res = _run(
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=local_socket),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "a new AF_UNIX socket during the run is allowed",
+        made == [socket.AF_UNIX] and res.network_attempts == 0,
+    )
+
+
+def test_review2_audit_events_match_exactly() -> None:
+    inet = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    guard = bridge._NetworkGuard()
+    try:
+        with guard:
+            outcomes: dict[str, bool] = {}
+            for event, args in (
+                ("socket.connect", (inet, ("127.0.0.1", 9))),
+                ("socket.getaddrinfo", ("localhost", 80, 0, 0, 0)),
+                ("socket.__new__", (inet, socket.AF_INET, socket.SOCK_STREAM, 0)),
+                ("os.system", (b"true",)),
+            ):
+                for variant in (event, event.upper(), f" {event} "):
+                    try:
+                        bridge._audit(variant, args)
+                        outcomes[variant] = False
+                    except BridgeError:
+                        outcomes[variant] = True
+    finally:
+        inet.close()
+    check(
+        "FTF-R004-P3-AC8",
+        f"only the exact audit event names are refused (got {outcomes})",
+        all(blocked == (name == name.strip().lower()) for name, blocked in outcomes.items()),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "the guard counted exactly the four exact events it refused",
+        guard.attempts == 4,
+    )
+
+
+def test_review2_process_allowlist_is_exact() -> None:
+    git = shutil.which("git") or "/usr/bin/git"
+    marker = Path(tempfile.mkdtemp(prefix="p3r3b-")) / "ran"
+
+    def try_run(fn: Any) -> Any:
+        def call(_r: Any) -> None:
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                pass
+
+        return call
+
+    def no_git_on_path() -> None:
+        saved = os.environ.get("PATH")
+        os.environ["PATH"] = ""
+        try:
+            subprocess.run([git, "rev-parse", "--short", "HEAD"], capture_output=True, check=False)
+        finally:
+            if saved is not None:
+                os.environ["PATH"] = saved
+
+    cases: dict[str, Any] = {
+        "another executable given Inspect's git argv": lambda: subprocess.run(
+            ["/bin/sh", "-c", f"touch {marker}", "rev-parse", "--short", "HEAD"], check=False
+        ),
+        "echo with Inspect's git argv": lambda: subprocess.run(
+            ["/bin/echo", "rev-parse", "--short", "HEAD"], capture_output=True, check=False
+        ),
+        "os.posix_spawn of git with Inspect's argv": lambda: os.waitpid(
+            os.posix_spawn(git, [git, "rev-parse", "--short", "HEAD"], dict(os.environ)), 0
+        ),
+        "git when no git is on PATH": no_git_on_path,
+    }
+    for label, fn in cases.items():
+        got = _code(
+            _run,
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=try_run(fn)),
+            _case_set(_records()[:1]),
+        )
+        check(
+            "FTF-R004-P3-AC8",
+            f"{label} during the run -> outbound_call_blocked (got {got})",
+            got == "outbound_call_blocked",
+        )
+    check("FTF-R004-P3-AC8", "the disguised shell never ran", not marker.exists())
+    allowed: list[int] = []
+
+    def inspect_git(_r: Any) -> None:
+        for argv in bridge._ALLOWED_GIT_ARGS:
+            allowed.append(subprocess.run([git, *argv], capture_output=True).returncode)
+
+    res = _run(
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=inspect_git),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "exactly Inspect's three read-only git lookups are allowed",
+        len(allowed) == 3 and res.network_attempts == 0,
+    )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
             fn()
-    if "--faults" not in sys.argv:
-        _finish()
-        return
-    baseline = _run_probe()
-    check(
-        "FTF-R004-P3",
-        "the behavioural probe runs on the unmutated modules",
-        "ERROR" not in baseline,
-    )
-    if "ERROR" in baseline:
-        FAILURES.append(f"probe error: {baseline['ERROR']}")
-    else:
-        sources = {name: p.read_text(encoding="utf-8") for name, p in MODULES.items()}
-        for label, module, pattern, replacement, keys in _MUTATIONS:
-            mutated, count = re.subn(
-                pattern, lambda _m, r=replacement: r, sources[module], count=1, flags=re.S
-            )
-            check("FTF-R004-P3", f"mutation {label!r} applies exactly once", count == 1)
-            if count != 1:
-                continue
-            result = _run_probe(MODULES[module], mutated)
-            if "ERROR" in result:
-                continue  # a crash at import or in the run is also a RED
-            changed = [k for k in keys if result.get(k) != baseline.get(k)]
-            check(
-                "FTF-R004-P3-MUT",
-                f"mutation {label!r} turns {keys} RED (changed: {changed})",
-                bool(changed),
-            )
     _finish()
 
 

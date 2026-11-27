@@ -139,10 +139,9 @@ def is_loaded_suite_case_set(case_set: object) -> bool:
     if type(case_set) is not SuiteCaseSet or _LOADED_SETS.get(id(case_set)) is not case_set:
         return False
     try:
-        digest = suite_case_set_digest(case_set)
+        return _LOADED_DIGESTS.get(id(case_set)) == suite_case_set_digest(case_set)
     except Exception:  # noqa: BLE001 -- a member that cannot even be digested is not a member
         return False
-    return _LOADED_DIGESTS.get(id(case_set)) == digest
 
 
 @dataclass(frozen=True)

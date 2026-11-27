@@ -54,6 +54,8 @@ route pinning) are BLOCKED_EXTERNAL; a customer target beyond the reference back
 
 from __future__ import annotations
 
+import _socket
+import gc
 import hashlib
 import json
 import math
@@ -64,7 +66,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -290,6 +292,7 @@ class BridgeHook:
 # `_socket` type, a socket's `sendto`/`sendmsg` on a datagram path, `os.system`, `ctypes` -- is
 # still seen.
 _AUDIT_SOCKET_ADDRESS_EVENTS = frozenset({"socket.connect", "socket.sendto", "socket.sendmsg"})
+# `socket.__new__` is handled on its own (by the family it is created with).
 _AUDIT_NAME_LOOKUP_EVENTS = frozenset(
     {"socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyaddr", "socket.getnameinfo"}
 )
@@ -328,26 +331,41 @@ def _is_unix_socket(sock: object) -> bool:
 
 
 def _allowed_process(event: str, args: tuple[object, ...]) -> bool:
-    if event != "subprocess.Popen" or len(args) < 2:
+    # `subprocess.Popen` is raised with (executable, args, cwd, env); every other process
+    # event (os.system, os.posix_spawn, os.exec, ...) is refused whatever it runs.
+    if event != "subprocess.Popen":
         return False
-    executable, argv = args[0], args[1]
     git = shutil.which("git")
-    if (
-        git is None
-        or not isinstance(executable, str)
-        or os.path.realpath(executable) != (os.path.realpath(git))
-    ):
+    if git is None or os.path.realpath(args[0]) != os.path.realpath(git):  # type: ignore[call-overload]
         return False
-    if not isinstance(argv, list | tuple) or not argv:
-        return False
-    return tuple(argv[1:]) in _ALLOWED_GIT_ARGS
+    return tuple(args[1][1:]) in _ALLOWED_GIT_ARGS  # type: ignore[index]
+
+
+def _connected_non_local_sockets() -> int:
+    """Open, connected, non-AF_UNIX Python socket objects in this process (any subclass of the
+    raw `_socket` type, so TLS sockets too)."""
+    found = 0
+    for obj in gc.get_objects():
+        if not isinstance(obj, _socket.socket) or _is_unix_socket(obj):
+            continue
+        try:
+            obj.getpeername()
+        except OSError:
+            continue  # closed, a listener or unconnected: it cannot send without an audited call
+        found += 1
+    return found
 
 
 def _audit(event: str, args: tuple[object, ...]) -> None:
     if not _ACTIVE_GUARDS:
         return
-    if event in _AUDIT_SOCKET_ADDRESS_EVENTS:
-        if args and _is_unix_socket(args[0]):
+    if event == "socket.__new__":
+        # (sock, family, type, proto): a socket made during the run is local or refused; a
+        # socket wrapping an existing descriptor (`fileno=`, family -1) is refused too
+        if args[1] == getattr(socket, "AF_UNIX", None):
+            return
+    elif event in _AUDIT_SOCKET_ADDRESS_EVENTS:
+        if _is_unix_socket(args[0]):
             return
     elif event in _AUDIT_NAME_LOOKUP_EVENTS:
         pass
@@ -371,54 +389,38 @@ def _install_audit_hook() -> None:
 
 class _NetworkGuard:
     """Network and process denial for the whole bridged run, from the first adapter call
-    (`describe`) to the final identity re-check. Two layers:
+    (`describe`) to the final identity re-check. Two parts:
 
     * an interpreter audit hook refusing every non-AF_UNIX connect/sendto/sendmsg, every name
       lookup, and every process start or `ctypes` foreign call except the pinned Inspect
       release's own read-only git lookups -- raised from the C implementation, so it sees the
       raw `_socket` type, `os.system`, `os.posix_spawn` and `ctypes` too;
-    * the `socket.socket` send methods (`send`, `sendall`, `sendto`, `sendmsg`, `sendfile`) and
-      name lookups patched, so data cannot leave over a stream socket opened BEFORE the run.
+    * a run refuses to START while the process holds any connected non-AF_UNIX Python socket
+      (plain, raw `_socket` or TLS): a socket opened before the run, such as a keep-alive HTTPS
+      pool, could otherwise carry data out through `_socket`/`ssl` sends no Python patch sees.
+      Creating a non-AF_UNIX socket during the run (including wrapping an existing descriptor
+      with `fileno=`, or `accept()` on a pre-opened listener) is refused by the audit hook.
 
     Every attempt is counted, and a run with any attempt is refused even if the adapter caught
-    the error. Native code that calls libc directly, or `os.write` on a socket descriptor opened
-    before the run, is below the interpreter: the worker's OS network boundary covers it."""
+    the error. Native code that calls libc directly, `os.write` on a descriptor that is not a
+    Python socket (for example a C client library's connection), and a thread started during
+    the run that connects after it ends are below or outside the interpreter guard: the
+    worker's OS network boundary covers them."""
 
     def __init__(self) -> None:
         self.attempts = 0
         self.events: list[str] = []
         self._lock = threading.Lock()
-        self._saved: list[tuple[object, str, object]] = []
 
     def record(self, event: str) -> None:
         with self._lock:
             self.attempts += 1
             self.events.append(event)
 
-    def _blocked(self, *_args: object, **_kwargs: object) -> Any:
-        self.record("socket.lookup")
-        raise BridgeError(CODE_OUTBOUND)
-
-    def _guarded_send(self, name: str, original: Callable[..., Any]) -> Callable[..., Any]:
-        # Every non-local send is an outbound call: a stream socket opened before the run would
-        # otherwise carry data out without ever reaching the connect check.
-        def send(sock: socket.socket, *args: object, **kwargs: object) -> Any:
-            if not _is_unix_socket(sock):
-                self.record(f"socket.{name}")
-                raise BridgeError(CODE_OUTBOUND)
-            return original(sock, *args, **kwargs)
-
-        return send
-
     def __enter__(self) -> _NetworkGuard:
+        if _connected_non_local_sockets():
+            raise BridgeError(CODE_OUTBOUND, "socket open before the run")
         _install_audit_hook()
-        for name in ("sendto", "sendmsg", "send", "sendall", "sendfile"):
-            original = getattr(socket.socket, name)
-            self._saved.append((socket.socket, name, original))
-            setattr(socket.socket, name, self._guarded_send(name, original))
-        for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
-            self._saved.append((socket, name, getattr(socket, name)))
-            setattr(socket, name, self._blocked)
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.append(self)
         return self
@@ -426,9 +428,6 @@ class _NetworkGuard:
     def __exit__(self, *_exc: object) -> None:
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.remove(self)
-        for owner, name, original in reversed(self._saved):
-            setattr(owner, name, original)
-        self._saved.clear()
 
 
 # --------------------------------------------------------------------------- run state / result
@@ -878,8 +877,6 @@ def _guarded_run(
             fail_on_error=False,
             score=True,
         )
-    if guard.attempts:
-        raise BridgeError(CODE_OUTBOUND)
     if state.first_error is not None:
         raise state.first_error
     if len(logs) != 1 or not logs[0].location:
