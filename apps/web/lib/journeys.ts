@@ -119,6 +119,15 @@ export const JOURNEYS: Journey[] = [
     ],
   },
   {
+    slug: "dataset-mapping",
+    title: "Dataset preview, field mapping and approval",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "datasetId", label: "Dataset ID" },
+    ],
+  },
+  {
     slug: "dataset-source",
     title: "Dataset source and purpose authorization",
     params: [

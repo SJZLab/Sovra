@@ -85,6 +85,12 @@ const CASES: Case[] = [
     paths: [`${proj}/datasets/${V.datasetId}/quality-report`],
   },
   {
+    // FTF-H011-P4: the mapping wizard lists the dataset's saved versions on mount.
+    slug: "dataset-mapping",
+    marker: "dataset-mapping-wizard",
+    paths: [`${proj}/datasets/${V.datasetId}/mappings?limit=200`],
+  },
+  {
     slug: "evaluation-cases",
     marker: "load-cases-button",
     click: () => fireEvent.click(screen.getByTestId("load-cases-button")),
