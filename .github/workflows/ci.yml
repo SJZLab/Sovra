@@ -1,5 +1,14 @@
 name: CI
-on: [pull_request]
+on:
+  pull_request:
+    # ready_for_review starts the merge run when a draft is marked ready (drafts run the gate only).
+    types: [opened, synchronize, reopened, ready_for_review]
+  # A pull request runs the gate plus only the integration jobs its change touches
+  # (scripts/ci_policy.py select_jobs). The whole suite runs here, once a night on main, and on
+  # demand; a red nightly run is returned work and goes first.
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
 # One live verification per PR. A newer event on the same PR (new head, or the same head
 # re-delivered) supersedes the older run: its inputs (head, base/merge candidate, workflow)
 # are the current ones, so the older run is cancelled instead of finishing a stale answer.
@@ -31,7 +40,7 @@ jobs:
           fetch-depth: 0
       - name: Use the base branch's policy script
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
             echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
@@ -40,11 +49,12 @@ jobs:
       - name: Classify the change set
         id: classify
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
           EVENT: ${{ github.event_name }}
           # Untrusted PR text goes through env, never interpolated into the script. It can only
           # narrow a run to "focused", which ci-verdict always fails.
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         run: python3 "$RUNNER_TEMP/ci_policy.py" classify --base "origin/${BASE_REF}" --event "$EVENT" --workflow .github/workflows/ci.yml
 
   relay-policy:
@@ -62,7 +72,7 @@ jobs:
           fetch-depth: 0
       - name: Use the base branch's policy script
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
             echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
@@ -71,7 +81,7 @@ jobs:
       - name: Relay policy
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
           # Untrusted PR text goes through env, never interpolated into the script.
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -100,7 +110,7 @@ jobs:
       - name: Did an FTF-0904 input change?
         id: inputs
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           set -euo pipefail
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
@@ -682,7 +692,7 @@ jobs:
         run: uv sync --all-packages
       - name: Relay PRs may not edit the mutation allowlist (Control-plane file)
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           set -euo pipefail
           if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx 'docs/certifications/mutation-allowlist.yaml'; then
@@ -695,7 +705,7 @@ jobs:
           # Untrusted PR text goes through env, never interpolated into the script.
           PR_TITLE: ${{ github.event.pull_request.title }}
           HEAD_REF: ${{ github.head_ref }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -750,7 +760,7 @@ jobs:
       - name: Mutation gate (every surviving mutant fails the job)
         if: steps.select.outputs.skip == 'false'
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
           TEST_LIST: ${{ steps.select.outputs.list }}
         run: |
           set -euo pipefail
@@ -4549,7 +4559,7 @@ jobs:
           fetch-depth: 0
       - name: Use the base branch's policy script
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           if ! git show "origin/${BASE_REF}:scripts/ci_policy.py" > "$RUNNER_TEMP/ci_policy.py" 2>/dev/null; then
             echo "::warning::base has no scripts/ci_policy.py yet (bootstrap PR); using this PR's copy"
@@ -4563,8 +4573,8 @@ jobs:
           FILES_SHA256: ${{ needs.classify.outputs.files_sha256 }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
         run: |
           printf '%s' "$NEEDS_JSON" > "$RUNNER_TEMP/needs.json"
           python3 "$RUNNER_TEMP/ci_policy.py" verdict --needs-json "$RUNNER_TEMP/needs.json" \
@@ -4582,6 +4592,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ci-verdict-${{ github.event.pull_request.head.sha }}-attempt-${{ github.run_attempt }}
+          name: ci-verdict-${{ github.event.pull_request.head.sha || github.sha }}-attempt-${{ github.run_attempt }}
           path: reports/ci-verdict.json
           if-no-files-found: error
