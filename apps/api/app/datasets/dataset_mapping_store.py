@@ -617,7 +617,8 @@ def _counts(result: MappingPreviewResult) -> dict[str, int]:
 # FTF-H011-P5 added grouped rows and label maps to the import grammar (CSV importer). The review
 # and approval path still pairs one observed row with one event, and the 05 contract names
 # `grouped_multi_row` unsupported, so a stored or previewed mapping may not use either yet.
-_STORE_UNSUPPORTED_SHAPES: Final = frozenset({"grouped_rows", "grouped_multi_row"})
+# (`grouped_rows` is refused by the grammar itself as mapping_unsupported, below.)
+_STORE_UNSUPPORTED_SHAPES: Final = frozenset({"grouped_multi_row"})
 _STORE_UNSUPPORTED_KEYS: Final = frozenset({"label_enum_map"})
 
 

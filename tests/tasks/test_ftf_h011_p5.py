@@ -663,6 +663,147 @@ def test_store_keeps_the_new_grammar_unsupported() -> None:
         check("STORE-1", f"{label}: {expected} (got {got})", got == expected)
 
 
+# --- Mutation-gate pins (each a behaviour, not an implementation detail) ----------------------
+
+
+def test_edges_are_pinned() -> None:
+    # group keys are exact: case and padding make another group
+    rows = [
+        ["c1", "1", "u", "q"],
+        ["c1", "2", "a", "r"],
+        ["C1", "1", "u", "q"],
+        ["C1", "2", "a", "r"],
+        [" c1", "1", "u", "q"],
+        [" c1", "2", "a", "r"],
+    ]
+    report, accepted = run_csv(csv_bytes(rows), grouped())
+    check(
+        "EDGE-1",
+        f"c1 / C1 / ' c1' are three groups ({rejections(report)})",
+        len(accepted) == 3 and report.records_rejected == 0,
+    )
+    # order types are exact
+    for value in (" int", "INT", "Int", "rfc3339 ", "RFC3339"):
+        got = refusal(grouped(value))
+        check(
+            "EDGE-2",
+            f"order_type {value!r} is mapping_invalid:bad_value (got {got})",
+            got == "mapping_invalid:bad_value",
+        )
+    # a NUL in a grouped row is its own rejection and poisons the group
+    report, accepted = run_csv(
+        csv_bytes(
+            [
+                ["c1", "2026-01-01T00:00:00Z", "u", "q"],
+                ["c1", "2026-01-01T00:00:01Z", "a", "r\x00"],
+                ["c1", "2026-01-01T00:00:02Z", "a", "r"],
+            ]
+        ),
+        grouped("rfc3339"),
+    )
+    check(
+        "EDGE-3",
+        f"a NUL cell is nul_character and the group is incomplete ({rejections(report)})",
+        sorted(rejections(report)) == [("line:2", "incomplete_group"), ("line:3", "nul_character")]
+        and not accepted,
+    )
+    # poison matters even where no ordering rule would catch the missing turn (rfc3339 has no gaps)
+    report, accepted = run_csv(
+        csv_bytes(
+            [
+                ["c1", "2026-01-01T00:00:00Z", "u", "q"],
+                ["c1", "2026-01-01T00:00:01Z", "x", "?"],
+                ["c1", "2026-01-01T00:00:02Z", "a", "r"],
+            ]
+        ),
+        grouped("rfc3339"),
+    )
+    check(
+        "EDGE-4",
+        f"an unreadable row poisons an rfc3339 group ({rejections(report)})",
+        sorted(rejections(report)) == [("line:2", "incomplete_group"), ("line:3", "unmapped_role")]
+        and not accepted,
+    )
+    # the size bound is inclusive: exactly max_record_bytes is allowed
+    one = "z" * 500
+    rows = [["c1", "1", "u", one], ["c1", "2", "a", one]]
+    per_row = len("c1") + len("1") + len("u") + len(one)
+    report, accepted = run_csv(csv_bytes(rows), grouped(), max_record_bytes=2 * per_row)
+    check(
+        "EDGE-5",
+        f"a group of exactly max_record_bytes is accepted ({rejections(report)})",
+        len(accepted) == 1,
+    )
+    report, accepted = run_csv(csv_bytes(rows), grouped(), max_record_bytes=2 * per_row - 1)
+    check(
+        "EDGE-6",
+        "one byte over is record_too_large",
+        rejections(report) == [("line:2", "record_too_large")],
+    )
+    # a label table of exactly 64 entries is allowed, 65 is not
+    meta = {**grouped(), "metadata": {"language": {"header": "lang"}}}
+    table = {f"v{i}": "x" for i in range(64)}
+    check(
+        "EDGE-7",
+        "64 label entries parse",
+        refusal({**meta, "label_enum_map": {"language": table}}) is None,
+    )
+    check(
+        "EDGE-8",
+        "65 label entries are bad_value",
+        refusal({**meta, "label_enum_map": {"language": {**table, "v64": "x"}}})
+        == "mapping_invalid:bad_value",
+    )
+    # the assembler refuses to be misused
+    plain = ic.mapping_from_object(
+        {"shape": "prompt_completion", "prompt": {"index": 0}, "completion": {"index": 1}}
+    )
+    try:
+        ic.GroupAssembler(plain, max_record_bytes=10)
+        ok = False
+    except ValueError:
+        ok = True
+    check("EDGE-9", "a GroupAssembler needs a grouped mapping", ok)
+    assembler = ic.GroupAssembler(ic.mapping_from_object(grouped()), max_record_bytes=1000)
+    for label, mapped in (
+        ("no group key", ic.MappedRow({"messages": [], "metadata": {}}, None, 1)),
+        ("no order", ic.MappedRow({"messages": [], "metadata": {}}, "k", None)),
+    ):
+        try:
+            assembler.add("line:2", mapped, 1)
+            ok = False
+        except ValueError:
+            ok = True
+        check("EDGE-10", f"a grouped row with {label} is a programming error", ok)
+    # the observer still gets the exact headers (None for an object row, a tuple for a table)
+    seen: list[object] = []
+    import dataclasses
+
+    observed = dataclasses.replace(plain, row_observer=lambda row, headers: seen.append(headers))
+    ic.apply_mapping(observed, ["q", "a"], headers=["x", "y"])
+    ic.apply_mapping(observed, ["q", "a"])
+    check(
+        "EDGE-11", f"the observer receives ('x','y') then None ({seen})", seen == [("x", "y"), None]
+    )
+
+
+def test_csv_importer_requalifies() -> None:
+    """Law 15: the certified FTF-0504 CSV suite still passes on the edited importer."""
+    import subprocess
+
+    ran = subprocess.run(
+        [sys.executable, str(ROOT / "tests" / "tasks" / "test_ftf_0504.py")],
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    check(
+        "LAW15-0504",
+        f"tests/tasks/test_ftf_0504.py passes ({ran.stdout[-300:]})",
+        ran.returncode == 0,
+    )
+
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     for test in tests:

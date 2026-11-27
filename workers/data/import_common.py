@@ -51,7 +51,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from types import MappingProxyType
-from typing import Final
+from typing import Final, cast
 
 from workers.data.canonical_conversation_normalizer import (
     ALLOWED_ROLES,
@@ -204,7 +204,9 @@ UNSUPPORTED_SHAPES: Final = frozenset({"grouped_rows"})
 # group key, in an explicit order) is supported by the CSV importer through `GroupAssembler`;
 # every other importer refuses it as a visible `failed` / `mapping_unsupported` verdict.
 GROUPED_SHAPE: Final = "grouped_multi_row"
-GROUP_ORDER_TYPES: Final = ("int", "rfc3339")
+# order type -> whether consecutive values are required (`int`) or only strictly later ones.
+_CONSECUTIVE_ORDER: Final = MappingProxyType({"int": True, "rfc3339": False})
+GROUP_ORDER_TYPES: Final = tuple(_CONSECUTIVE_ORDER)
 # Section 67.2: an enum map is allowed for these labels only; `consent` and `quality_label` are
 # always copied verbatim (no invented "approved").
 LABEL_MAP_FIELDS: Final = ("language", "task_category")
@@ -476,6 +478,7 @@ class _ShapeKeys:
     optional: tuple[str, ...]
     message_based: bool
     pointer_based: bool
+    grouped: bool = False
 
 
 _COMMON_KEYS: Final = ("group_key", "metadata", "label_enum_map", "csv", "xlsx", "json")
@@ -503,6 +506,7 @@ _SHAPE_KEYS: Final = {
         tuple(key for key in _COMMON_KEYS if key != "group_key"),
         False,
         False,
+        True,
     ),
 }
 
@@ -696,7 +700,7 @@ def _group_rows(value: object) -> GroupRows:
     order_type = block["order_type"]
     if type(order_type) is not str:
         raise _bad("wrong_type")
-    if order_type not in GROUP_ORDER_TYPES:
+    if not _CONSECUTIVE_ORDER.keys() >= {order_type}:
         raise _bad("bad_value")
     return GroupRows(_slot(block["group_key"]), _slot(block["order_key"]), order_type)
 
@@ -712,7 +716,7 @@ def _label_maps(
     mapped = set(metadata_names)
     out: list[tuple[str, Mapping[str, str]]] = []
     for name, table in sorted(block.items()):
-        if name not in mapped:
+        if not mapped.issuperset((name,)):
             raise _bad("missing_key")
         if type(table) is not dict:
             raise _bad("wrong_type")
@@ -801,7 +805,7 @@ def mapping_from_object(obj: object) -> ImportMapping:
             pointer = parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
-    elif shape == GROUPED_SHAPE:
+    elif spec.grouped:
         group_rows = _group_rows(body["group_rows"])
         role_slot, content_slot = _slot(body["role"]), _slot(body["content"])
         role_map = _role_map(body["role_map"])
@@ -958,7 +962,7 @@ _RFC3339: Final = re.compile(
 
 def _order_value(text: str, order_type: str) -> int | datetime:
     slot = "group_rows.order_key"
-    if order_type == "int":
+    if _CONSECUTIVE_ORDER[order_type]:
         if not _INT_ORDER.fullmatch(text):
             raise RowMappingError("invalid_order_key", slot)
         return int(text)
@@ -973,15 +977,15 @@ def _order_value(text: str, order_type: str) -> int | datetime:
 def _grouped_row(mapping: ImportMapping, row: Row, headers: Sequence[str] | None) -> MappedRow:
     group_rows = mapping.group_rows
     assert group_rows is not None
-    group_key = _text_value(
-        group_rows.group_key, row, headers, "group_rows.group_key", required=True
+    # `required=True` never returns None (it raises), so each value is a str.
+    group_key = cast(
+        str, _text_value(group_rows.group_key, row, headers, "group_rows.group_key", required=True)
     )
-    order_text = _text_value(
-        group_rows.order_key, row, headers, "group_rows.order_key", required=True
+    order_text = cast(
+        str, _text_value(group_rows.order_key, row, headers, "group_rows.order_key", required=True)
     )
-    raw_role = _text_value(mapping.role_slot, row, headers, "role", required=True)
+    raw_role = cast(str, _text_value(mapping.role_slot, row, headers, "role", required=True))
     content = _text_value(mapping.content_slot, row, headers, "content", required=True)
-    assert group_key is not None and order_text is not None and raw_role is not None
     role = mapping.role_map.get(raw_role)
     if role is None:
         raise RowMappingError("unmapped_role", "role")
@@ -1222,7 +1226,7 @@ class GroupAssembler:
     def __init__(self, mapping: ImportMapping, *, max_record_bytes: int) -> None:
         if mapping.group_rows is None:
             raise ValueError("GroupAssembler needs a grouped_multi_row mapping")
-        self._order_type = mapping.group_rows.order_type
+        self._consecutive = _CONSECUTIVE_ORDER[mapping.group_rows.order_type]
         self._max = max_record_bytes
         self._closed: set[bytes] = set()
         self._open: _OpenGroup | None = None
@@ -1256,7 +1260,7 @@ class GroupAssembler:
         if last is not None:
             if order <= last:  # type: ignore[operator]
                 group.problem = group.problem or "incomplete_group"
-            elif self._order_type == "int" and order != last + 1:  # type: ignore[operator]
+            elif self._consecutive and order != last + 1:  # type: ignore[operator]
                 group.problem = group.problem or "incomplete_group"
         group.last_order = order
         group.size += size
