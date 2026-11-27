@@ -147,17 +147,22 @@ def test_workspace_wide_commands_are_clean():
     vitest_report = reports / "vitest-junit.xml"
     code, _ = run(["uv", "run", "pytest", "tests/unit", f"--junitxml={pytest_report}", "-ra"])
     check("FTF-0003", "repo-wide `pytest tests/unit` passes", code == 0)
-    code, _ = run(
+    code, vitest_out = run(
         [
             "pnpm",
             "exec",
             "vitest",
             "run",
+            "--reporter=default",
             "--reporter=junit",
-            f"--outputFile={vitest_report}",
+            f"--outputFile.junit={vitest_report}",
         ]
     )
     check("FTF-0003", "repo-wide `vitest run` passes", code == 0)
+    if code != 0:
+        # Name the failing tests: the junit reporter alone hides them from the job log.
+        print("repo-wide vitest run failed; last output:")
+        print(vitest_out[-6000:])
     code, _ = run(
         [
             "python3",
