@@ -129,7 +129,7 @@ def _page(request: Request) -> tuple[int, tuple[str, int] | None]:
     """`limit` (1..200, default 50) and the `after_name` + `after_version` cursor, given together
     or not at all. A repeated, unknown or malformed query parameter is 400 `invalid_body`."""
     params = request.query_params
-    keys = list(params.keys())
+    keys = [key for key, _ in params.multi_items()]
     if len(keys) != len(set(keys)) or not set(keys) <= _QUERY_KEYS:
         raise _invalid_body()
     limit = DEFAULT_PAGE_SIZE
