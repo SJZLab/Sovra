@@ -1791,6 +1791,10 @@ function Inner({
     if (preview.state === "error" && preview.code && VALIDATION_CODES.has(preview.code))
       return { state: "validation_required" };
     if (decisionError && step === 5) return { state: "validation_required" };
+    // A probe the server read but could not finish (wrong encoding, a missing sheet ...): the
+    // options must change before anything can be mapped.
+    if (probe.state === "ok" && probe.data.state !== "completed")
+      return { state: "validation_required" };
     if (preview.state === "ok") {
       const p = preview.data;
       if (p.state !== "completed" || !p.complete || (p.counts.rejected ?? 0) > 0)

@@ -606,7 +606,7 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p2.py
       - name: FTF-H010-P5 negative-test proof (import wizard UI contract parity -- every backend failure code has en+ar text, origins/states/ref cap/role sets equal the backend's, base_url and digest columns never read, fault-injected copies of the component source; no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p5.py
-      - name: FTF-H011-P4 negative-test proof (mapping wizard UI contract parity -- every P2/P3 refusal code and RBAC code has en+ar text, CSV/purpose/role/metadata/status vocabularies and the rationale/page caps equal the backend's, no eval/HTML injection/browser storage, and 10 fault-injected copies of the component each turn the jsdom spec RED; no DB required)
+      - name: FTF-H011-P4 negative-test proof (mapping wizard UI contract parity -- every P2/P3 refusal code and RBAC code has en+ar text, CSV/purpose/role/metadata/status vocabularies and the rationale/page caps equal the backend's, no eval/HTML injection/browser storage, and 13 fault-injected copies of the component each turn the jsdom spec RED; no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011_p4.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
         run: uv run python3 tests/tasks/test_ftf_r004_p1.py

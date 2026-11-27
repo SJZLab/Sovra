@@ -309,6 +309,24 @@ FAULTS: list[tuple[str, str, str, str]] = [
         "ignored message keys must each be acknowledged",
     ),
     (
+        "a decision reply is not bound to the mapping",
+        "if (!binds) {",
+        "if (false as boolean) {",
+        "never shown as approved|never shown as rejected",
+    ),
+    (
+        "a failed probe verdict has no alert",
+        '{p.state !== "completed" ? (\n          <AlertMessage',
+        '{(false as boolean) ? (\n          <AlertMessage',
+        "probe 200 with state failed",
+    ),
+    (
+        "a failed probe verdict reads as Draft",
+        'if (probe.state === "ok" && probe.data.state !== "completed")\n      return { state: "validation_required" };',
+        "",
+        "probe 200 with state failed",
+    ),
+    (
         "a stored preview that differs still enables approval",
         "preview.data.previewSha256 === mapping.previewSha256 &&",
         "",

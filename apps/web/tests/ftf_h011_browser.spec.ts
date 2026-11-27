@@ -256,6 +256,25 @@ const STATES: UiState[] = [
     ready: '[data-testid="probe-error"]',
   },
   {
+    id: "probe read but failed (Validation required)",
+    routes: [
+      EMPTY,
+      {
+        method: "POST",
+        path: "/mapping-probe",
+        body: {
+          ...PROBE,
+          state: "failed",
+          failure_code: "invalid_encoding",
+          complete: false,
+          rows: [],
+        },
+      },
+    ],
+    steps: [{ radio: /CSV/ }, { tid: "probe-button" }],
+    ready: '[data-testid="probe-failed"]',
+  },
+  {
     id: "probe network error",
     routes: [EMPTY, { method: "POST", path: "/mapping-probe", reject: true }],
     steps: JSONL,

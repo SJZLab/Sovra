@@ -989,3 +989,109 @@ describe("[H011-P4] pure helpers mirror the backend", () => {
     );
   });
 });
+
+describe("[H011-P4] returned round 1: decision binding and a failed probe verdict", () => {
+  const OTHER_ID = "99999999-9999-4999-8999-999999999999";
+  const approveCases: [string, Record<string, unknown>][] = [
+    ["another mapping id", { ...APPROVED, id: OTHER_ID }],
+    ["a row still proposed", {}],
+    [
+      "another purpose",
+      {
+        ...APPROVED,
+        dataset_purpose: "validation",
+        approved_purpose: "validation",
+        allowed_purposes_snapshot: ["validation"],
+      },
+    ],
+  ];
+  for (const [label, extra] of approveCases) {
+    test(`an approve 200 with ${label} is never shown as approved`, async () => {
+      await toApprove();
+      await screen.findByTestId("mapping-step-approve");
+      routes.push({
+        method: "POST",
+        path: "/approve",
+        body: { ...mappingBody(extra), replayed: false },
+      });
+      const listsBefore = sent.filter((x) => x.method === "GET").length;
+      fireEvent.change(screen.getByLabelText(/Reason for the decision/), {
+        target: { value: "ok" },
+      });
+      fireEvent.click(screen.getByTestId("approve-confirm"));
+      fireEvent.click(screen.getByTestId("approve-button"));
+      await screen.findByTestId("decision-error");
+      expect(screen.getByTestId("decision-error").textContent).toContain("does not match");
+      expect(screen.getByTestId("mapping-state").textContent).not.toContain("Approved");
+      expect(screen.getByTestId("mapping-notice").textContent).not.toContain("approved for");
+      expect(screen.getByTestId("mapping-status").textContent).toContain("Draft");
+      expect(sent.filter((x) => x.method === "GET").length).toBe(listsBefore);
+    });
+  }
+
+  test("a reject 200 whose row is approved is never shown as rejected", async () => {
+    await toApprove();
+    await screen.findByTestId("mapping-step-approve");
+    fireEvent.change(screen.getByLabelText(/Reason for the decision/), { target: { value: "no" } });
+    fireEvent.click(screen.getByTestId("reject-button"));
+    await screen.findByTestId("reject-dialog");
+    routes.push({
+      method: "POST",
+      path: "/reject",
+      body: { ...mappingBody(APPROVED), replayed: false },
+    });
+    fireEvent.click(screen.getByTestId("confirm-reject"));
+    await screen.findByTestId("decision-error");
+    expect(screen.getByTestId("decision-error").textContent).toContain("does not match");
+    expect(screen.getByTestId("mapping-state").textContent).not.toMatch(/Rejected|Approved/);
+  });
+
+  for (const locale of ["en", "ar"] as const) {
+    test(`a probe 200 with state failed is one announced alert with its code and a recovery step (${locale})`, async () => {
+      routes.push(LIST(), {
+        method: "POST",
+        path: "/mapping-probe",
+        body: {
+          ...PROBE,
+          state: "failed",
+          failure_code: "invalid_encoding",
+          complete: false,
+          rows: [],
+        },
+      });
+      mount(locale);
+      await screen.findByTestId("mapping-versions-empty");
+      fireEvent.click(screen.getByRole("radio", { name: /CSV/ }));
+      fireEvent.click(screen.getByTestId("probe-button"));
+      const alert = await screen.findByTestId("probe-failed");
+      expect(alert.getAttribute("role")).toBe("alert");
+      expect(alert.textContent).toContain("invalid_encoding");
+      expect(alert.textContent).toContain(
+        locale === "ar" ? "تعذرت قراءة الملف" : "could not be read",
+      );
+      expect(
+        (screen.getByTestId("probe-failed-recovery").textContent ?? "").length,
+      ).toBeGreaterThan(0);
+      expect(screen.queryByTestId("mapping-step-map")).toBeNull();
+      expect(screen.queryByTestId("to-map")).toBeNull();
+      expect(screen.getByTestId("mapping-state").textContent).toContain(
+        locale === "ar" ? "يتطلب التحقق" : "Validation required",
+      );
+    });
+  }
+
+  test("the rationale error is its own role=alert next to the field", async () => {
+    await toApprove();
+    await screen.findByTestId("mapping-step-approve");
+    fireEvent.click(screen.getByTestId("approve-button"));
+    const err = document.getElementById(
+      screen
+        .getByLabelText(/Reason for the decision/)
+        .getAttribute("aria-describedby")!
+        .split(" ")
+        .at(-1)!,
+    );
+    expect(err?.getAttribute("role")).toBe("alert");
+    expect(err?.textContent).toBe("Enter the reason for the decision.");
+  });
+});
