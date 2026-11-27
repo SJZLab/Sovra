@@ -204,7 +204,7 @@ jobs:
       - name: Python unit tests (FTF-0003)
         run: uv run pytest tests/unit --junitxml=reports/pytest-junit.xml -ra
       - name: TypeScript unit tests (FTF-0003)
-        run: pnpm exec vitest run --reporter=junit --outputFile=reports/vitest-junit.xml
+        run: pnpm exec vitest run --reporter=default --reporter=junit --outputFile.junit=reports/vitest-junit.xml
       - name: FTF-0003 negative-acceptance gate (zero-tests / skipped / focused)
         run: python3 scripts/check_test_harness.py --junit reports/pytest-junit.xml --junit reports/vitest-junit.xml
       - name: FTF-0003 negative-test proof (harness catches real defects)

@@ -75,7 +75,27 @@ directory (initdb as the postgres user) and a bounded SeaweedFS if needed; delet
    writes, the code must re-read and verify the tenant scope from the database (FTF-R006-P1b r1
    added an org1 user to org2's workspace before the database check refused the row).
 
-Report: each probe, each fault and its failing check (and every GREEN one), gate results, contract
-gaps, and a first line of exactly "<ID> CERTIFY" or "<ID> RETURN: (1) ... (2) ..." with numbered,
-fault-named fixes. Be strict: a reproduced clause violation or a clause-level fault that stays
-GREEN is a RETURN.
+## Blocking versus advisory (owner-approved 2026-11-27: the review must converge)
+
+An open-ended sweep always finds some surviving mutant or odd input, so "any GREEN fault is a
+RETURN" never converges. A finding BLOCKS (RETURN) only when it is one of:
+- a reproduced violation of an acceptance or negative_acceptance clause, or of a numbered Law;
+- a GREEN fault on behaviour the clause names: authorization, tenant or project scoping, data
+  exposure, fail-closed handling, a negative_acceptance rule, or a user-visible result (Laws 1, 5,
+  6, 7, 17, 18);
+- a failing proving test, a proving test CI never runs, a missing real-service proof the DoD names,
+  or a UI item failing UX_STANDARD.md §4 at severity 3-4.
+Everything else is ADVISORY and does NOT block CERTIFY: a mutant on a keyword the DoD does not name
+(for example a JSON-schema `type` or an unreachable bound), a hostile-input edge case on input the
+server builds itself, a cosmetic or wording issue, a stale note, a nit. Report advisories in a
+separate list; the Control plane records each as a follow-up in QUEUE.md Backlog and never drops it.
+
+Re-review rounds are bounded: round 2 and later re-check ONLY (a) every earlier blocking finding,
+(b) regressions the fix introduced, (c) the same fault classes on the lines the fix changed. They
+do not start a fresh open-ended sweep. A passing uncapped mutation gate on the changed modules plus
+every clause pinned is CERTIFY.
+
+Report: each probe, each fault and its failing check (blocking GREEN faults and advisory GREEN
+faults in two lists), gate results, contract gaps, and a first line of exactly "<ID> CERTIFY" or
+"<ID> RETURN: (1) ... (2) ..." listing ONLY blocking, numbered, fault-named fixes. Be strict on
+blocking findings; do not return an item for advisories alone.
