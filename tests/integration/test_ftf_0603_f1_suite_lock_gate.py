@@ -575,6 +575,7 @@ def main() -> None:  # noqa: C901 - one linear live-database scenario
             r.status == 409
             and findings(r)
             == [
+                *["missing_critical_category"] * 21,
                 "sample_plan_below_floor",
                 "sample_plan_below_floor",
                 "missing_critical_category",

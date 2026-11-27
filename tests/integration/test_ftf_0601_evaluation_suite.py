@@ -78,7 +78,10 @@ from app.db.tenant_context import TenantContext, tenant_scoped_session_for  # no
 from app.evaluation import evaluation_suite_crud as _evaluation_suite_crud_module  # noqa: E402
 from app.evaluation import evaluation_suite_routes as _evaluation_suite_routes_module  # noqa: E402
 from app.evaluation.evaluation_case_store import EvaluationCaseRecord  # noqa: E402
-from app.evaluation.evaluation_suite_lock_gate import compute_suite_sha256  # noqa: E402
+from app.evaluation.evaluation_suite_lock_gate import (  # noqa: E402
+    SECTION_26_CATEGORIES,
+    compute_suite_sha256,
+)
 from app.evaluation.evaluation_suite_routes import build_evaluation_suite_router  # noqa: E402
 from app.evaluation.evaluation_suite_schema import PURPOSE_FINAL, EvaluationSuite  # noqa: E402
 from app.projects.project_schema import Project  # noqa: E402
@@ -118,8 +121,8 @@ def _valid_lock_body(
     acceptance locks below are meant to lock a *valid* suite, so this seeds
     the cases a valid suite needs -- one critical case for a development
     suite, the Section 69.3 floors (1,000 independent tasks, 100 critical)
-    for a final one -- and returns the plan + hash body. Every FTF-0601
-    assertion is unchanged."""
+    spread over every Section 26 category for a final one -- and returns
+    the plan + hash body. Every FTF-0601 assertion is unchanged."""
     count = 1000 if final else 1
     sid = uuid.UUID(str(suite_id))
     context = TenantContext(organization_id=org_id)
@@ -134,7 +137,11 @@ def _valid_lock_body(
                 "project_id": suite.project_id,
                 "suite_id": sid,
                 "case_key": f"case-{i:04d}",
-                "category": "prompt injection",
+                "category": (
+                    SECTION_26_CATEGORIES[i % len(SECTION_26_CATEGORIES)]
+                    if final
+                    else "prompt injection"
+                ),
                 "severity": "high",
                 "critical": i < 100,
                 "language": "en",
@@ -161,7 +168,7 @@ def _valid_lock_body(
         sha = compute_suite_sha256(suite, cases)
     return {
         "sample_plan": {
-            "required_categories": ["prompt injection"],
+            "required_categories": list(SECTION_26_CATEGORIES) if final else ["prompt injection"],
             "min_independent_tasks": count,
             "min_critical_scenarios": 100 if final else 1,
             "min_cases_per_category": 1,

@@ -455,6 +455,7 @@ def test_n1_all_tbd_final_suite_is_refused_for_every_clause() -> None:
         response.status == 409
         and _findings(response)
         == [
+            *[_f("missing_critical_category", c) for c in S26 if c != "prompt injection"],
             _f("sample_plan_below_floor", "min_independent_tasks", 1000, 10),
             _f("sample_plan_below_floor", "min_critical_scenarios", 100, 1),
             _f("insufficient_independent_tasks", None, 10, 3),
@@ -534,17 +535,22 @@ def test_n2_plan_floors_development() -> None:
     )
 
 
+S26 = list(gate.SECTION_26_CATEGORIES)
+
+
 def _final_suite(groups: int = 1000, critical: int = 100) -> uuid.UUID:
     suite_id = _seed_suite(purpose="final")
     cases = []
     for i in range(groups):
+        category = gate.SECTION_26_CATEGORIES[i % len(gate.SECTION_26_CATEGORIES)]
         if i < critical:
-            cases.append(_case(f"k{i:04d}", group_key=f"g{i}"))
+            cases.append(_case(f"k{i:04d}", group_key=f"g{i}", category=category))
         else:
             cases.append(
                 _case(
                     f"k{i:04d}",
                     group_key=f"g{i}",
+                    category=category,
                     critical=False,
                     grader_type="exact_match",
                     expected_json={"answer": "ok"},
@@ -559,16 +565,16 @@ def test_n2_final_floors_and_a_valid_final_lock() -> None:
     _refused(
         "final plan with 999 independent tasks",
         suite_id,
-        _lock(suite_id, _body(suite_id, _plan(tasks=999, critical=100))),
+        _lock(suite_id, _body(suite_id, _plan(S26, tasks=999, critical=100))),
         [_f("sample_plan_below_floor", "min_independent_tasks", 1000, 999)],
     )
     _refused(
         "final plan with 99 critical scenarios",
         suite_id,
-        _lock(suite_id, _body(suite_id, _plan(tasks=1000, critical=99))),
+        _lock(suite_id, _body(suite_id, _plan(S26, tasks=1000, critical=99))),
         [_f("sample_plan_below_floor", "min_critical_scenarios", 100, 99)],
     )
-    response = _lock(suite_id, _body(suite_id, _plan(tasks=1000, critical=100)))
+    response = _lock(suite_id, _body(suite_id, _plan(S26, tasks=1000, critical=100)))
     check(
         "A1",
         f"a final suite exactly at the 1000/100 floors with a distinct reviewer locks (200), got {response.status} {response.body[:300]!r}",
@@ -577,12 +583,41 @@ def test_n2_final_floors_and_a_valid_final_lock() -> None:
     check("A1", "the final suite's plan row is recorded once", _state(suite_id) == ("locked", 1))
 
 
+def test_n2_final_plan_must_name_every_section_26_category() -> None:
+    suite_id = _final_suite()
+    for dropped in ("happy-path tasks", "cost efficiency", "prompt injection"):
+        _refused(
+            f"a final plan without the Section 26 category {dropped!r}",
+            suite_id,
+            _lock(
+                suite_id,
+                _body(suite_id, _plan([c for c in S26 if c != dropped], tasks=1000, critical=100)),
+            ),
+            [_f("missing_critical_category", dropped)],
+        )
+    check(
+        "N2",
+        "SECTION_26_CATEGORIES is the 22 Section 26 categories, verbatim",
+        len(S26) == 22
+        and len(set(S26)) == 22
+        and S26[0] == "happy-path tasks"
+        and S26[-1] == "cost efficiency"
+        and "retry/recovery" in S26,
+    )
+    check(
+        "N2",
+        "a final plan naming all 22 plus a project-specific category is not refused for coverage",
+        gate.plan_floor_findings(gate.SamplePlan((*S26, "refund policy"), 1000, 100, 1), "final")
+        == [],
+    )
+
+
 def test_n2_final_suite_below_floor_on_content() -> None:
     suite_id = _final_suite(groups=999, critical=99)
     _refused(
         "final suite with 999 groups / 99 critical against a 1000/100 plan",
         suite_id,
-        _lock(suite_id, _body(suite_id, _plan(tasks=1000, critical=100))),
+        _lock(suite_id, _body(suite_id, _plan(S26, tasks=1000, critical=100))),
         [
             _f("insufficient_independent_tasks", None, 1000, 999),
             _f("insufficient_critical_scenarios", None, 100, 99),
@@ -1124,7 +1159,7 @@ def test_floor_findings_pure() -> None:
         "a development plan at its floors has no finding",
         gate.plan_floor_findings(plan, "development") == [],
     )
-    final = gate.SamplePlan(("a",), 1000, 100, 1)
+    final = gate.SamplePlan(tuple(S26), 1000, 100, 1)
     check(
         "N2",
         "a final plan at 1000/100 has no finding",
@@ -1135,6 +1170,7 @@ def test_floor_findings_pure() -> None:
         "the development floors are not the final ones",
         gate.plan_floor_findings(gate.SamplePlan(("a",), 1, 0, 1), "final")
         == [
+            *[gate.Finding("missing_critical_category", c) for c in S26],
             gate.Finding("sample_plan_below_floor", "min_independent_tasks", 1000, 1),
             gate.Finding("sample_plan_below_floor", "min_critical_scenarios", 100, 0),
         ],
@@ -1587,6 +1623,12 @@ def test_k1_contracts() -> None:
         == gate.MAX_PLAN_CATEGORIES
         and plan.get("properties", {}).get("min_independent_tasks", {}).get("maximum")
         == gate.MAX_PLAN_COUNT,
+    )
+    section26 = schemas.get("EvaluationSuiteSection26Category", {})
+    check(
+        "K1",
+        "the contract lists the Section 26 categories a final plan must name, in order",
+        section26.get("enum") == list(gate.SECTION_26_CATEGORIES),
     )
     domain = json.loads(DOMAIN_PATH.read_text())
     check(

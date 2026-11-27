@@ -39,7 +39,9 @@ suite stays `draft`:
   suite_sha256_mismatch          the reviewed hash is not the suite's current
                                  hash (the suite changed after review)
 
-Floors (Section 69.3): every plan needs at least one required category, one
+Floors (Section 26, 69.3): a `final` plan must name every Section 26 category
+(`SECTION_26_CATEGORIES`, verbatim); each one it leaves out is a
+`missing_critical_category` finding. Every plan needs at least one required category, one
 independent task and one case per required category. A `final` suite's plan
 also needs `min_independent_tasks >= 1000` and `min_critical_scenarios >=
 100` ("Default reference final suite contains >= 1,000 independent tasks and
@@ -100,6 +102,7 @@ __all__ = [
     "LockRequest",
     "LockRequestError",
     "NonCanonicalValueError",
+    "SECTION_26_CATEGORIES",
     "SamplePlan",
     "SuiteLockValidationError",
     "canonical_json",
@@ -117,6 +120,34 @@ __all__ = [
 
 FINAL_MIN_INDEPENDENT_TASKS = 1000
 FINAL_MIN_CRITICAL_SCENARIOS = 100
+# Section 26, verbatim and in the spec's order: "Every production agent project
+# must contain cases for" these. A final suite (the one that gates promotion)
+# must name every one in its plan, so each gets a critical case and the
+# per-category sample; project-specific categories are added on top.
+SECTION_26_CATEGORIES: tuple[str, ...] = (
+    "happy-path tasks",
+    "ambiguous input",
+    "missing information",
+    "invalid input",
+    "incorrect user assumption",
+    "tool failure",
+    "tool timeout",
+    "permission denied",
+    "malformed tool result",
+    "partial tool result",
+    "conflicting tool results",
+    "multi-turn task",
+    "long context",
+    "retry/recovery",
+    "refusal",
+    "prompt injection",
+    "unauthorized tool use",
+    "critical side-effect prevention",
+    "schema compliance",
+    "loop prevention",
+    "termination correctness",
+    "cost efficiency",
+)
 MAX_PLAN_CATEGORIES = 200
 MAX_PLAN_COUNT = 1_000_000
 HASH_FORMAT = "sovra.evaluation_suite.sha256.v1"
@@ -257,10 +288,17 @@ def parse_lock_request(payload: Mapping[str, Any]) -> LockRequest:
 
 def plan_floor_findings(plan: SamplePlan, purpose: str) -> list[Finding]:
     floors = {"min_independent_tasks": 1, "min_critical_scenarios": 0, "min_cases_per_category": 1}
+    required: frozenset[str] = frozenset()
     if purpose in _FINAL_PURPOSES:
         floors["min_independent_tasks"] = FINAL_MIN_INDEPENDENT_TASKS
         floors["min_critical_scenarios"] = FINAL_MIN_CRITICAL_SCENARIOS
-    findings: list[Finding] = []
+        required = frozenset(SECTION_26_CATEGORIES)
+    findings: list[Finding] = [
+        Finding("missing_critical_category", category)
+        for category in sorted(
+            required - set(plan.required_categories), key=SECTION_26_CATEGORIES.index
+        )
+    ]
     if not plan.required_categories:
         findings.append(Finding("sample_plan_below_floor", "required_categories", 1, 0))
     for name in _COUNT_FIELDS:

@@ -548,7 +548,8 @@ components:
         category, min_independent_tasks >= 1, min_cases_per_category >= 1;
         a final suite also needs min_independent_tasks >= 1000 and
         min_critical_scenarios >= 100 (a below-floor plan is a 409
-        sample_plan_below_floor, not a 400).
+        sample_plan_below_floor, not a 400). A final plan must also list
+        every EvaluationSuiteSection26Category.
       properties:
         required_categories:
           type: array
@@ -576,6 +577,36 @@ components:
         - min_critical_scenarios
         - min_cases_per_category
       additionalProperties: false
+    EvaluationSuiteSection26Category:
+      type: string
+      description: >-
+        FTF-0603-F1: Section 26's categories, verbatim. A final suite's
+        sample plan must list every one in required_categories (each one
+        left out is a missing_critical_category finding); project-specific
+        categories are added on top.
+      enum:
+        - 'happy-path tasks'
+        - 'ambiguous input'
+        - 'missing information'
+        - 'invalid input'
+        - 'incorrect user assumption'
+        - 'tool failure'
+        - 'tool timeout'
+        - 'permission denied'
+        - 'malformed tool result'
+        - 'partial tool result'
+        - 'conflicting tool results'
+        - 'multi-turn task'
+        - 'long context'
+        - 'retry/recovery'
+        - 'refusal'
+        - 'prompt injection'
+        - 'unauthorized tool use'
+        - 'critical side-effect prevention'
+        - 'schema compliance'
+        - 'loop prevention'
+        - 'termination correctness'
+        - 'cost efficiency'
     EvaluationSuiteLockRequest:
       type: object
       description: >-
