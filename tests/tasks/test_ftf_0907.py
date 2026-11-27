@@ -536,11 +536,33 @@ def test_r4_send_mutation_cannot_rebind_admission() -> None:
         _code(lambda: check_judge_request(adm, route, p, auth)) == "allowed",
     )
     second: list[JudgeRoute] = []
-    guarded_judge_call(adm, route, p, lambda r: second.append(r) or "x", auth)
+    _code(lambda: guarded_judge_call(adm, route, p, lambda r: second.append(r) or "x", auth))
     check(
         "FTF-0907-R4-B1",
         "consecutive sends get distinct objects",
         bool(second) and second[0] is not seen[0],
+    )
+
+
+def test_r4_admit_stores_private_copy() -> None:
+    """Second reviewer finding (M4): mutating the caller's own route after admission must not
+    rebind what the admission authorizes."""
+    p = _profiles("standard")
+    auth = _std_auth()
+    route = _route(upstream=EXTERNAL)
+    adm = admit_judge_route(route, p, auth)
+    object.__setattr__(route, "judge_model_id", "other")
+    mutated = _route(upstream=EXTERNAL, judge_model_id="other")
+    check(
+        "FTF-0907-R4-B2",
+        "caller-mutated route is not admitted",
+        _code(lambda: check_judge_request(adm, mutated, p, auth)) == "external_judge_route_changed",
+    )
+    original = _route(upstream=EXTERNAL)
+    check(
+        "FTF-0907-R4-B2",
+        "original route is still allowed",
+        _code(lambda: check_judge_request(adm, original, p, auth)) == "allowed",
     )
 
 
