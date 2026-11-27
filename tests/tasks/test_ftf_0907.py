@@ -461,6 +461,50 @@ def test_boundary_length() -> None:
     )
 
 
+def test_r4_fallback_bound_and_no_assert() -> None:
+    """A1: more than 16 fallback aliases is refused with the module's own error on every path."""
+    p = _profiles("zero_egress")
+    ok = tuple(FallbackAlias(f"a{i}", INTERNAL) for i in range(16))
+    over = tuple(FallbackAlias(f"a{i}", INTERNAL) for i in range(17))
+    check(
+        "FTF-0907-R4-A1",
+        "16 fallbacks admitted",
+        _code(lambda: admit_judge_route(_route(fallbacks=ok), p)) == "allowed",
+    )
+    check(
+        "FTF-0907-R4-A1",
+        "17 fallbacks refused at construction",
+        _code(lambda: _route(fallbacks=over)) == "external_judge_invalid_request",
+    )
+    bypass = _bypass(
+        JudgeRoute, judge_model_id="j", upstream=INTERNAL, fallbacks=over, fallbacks_enumerated=True
+    )
+    adm = admit_judge_route(_route(), p)
+    for label, fn in (
+        ("admit", lambda: admit_judge_route(bypass, p)),
+        ("check", lambda: check_judge_request(adm, bypass, p)),
+        ("guarded", lambda: guarded_judge_call(adm, bypass, p, lambda r: r)),
+    ):
+        check(
+            "FTF-0907-R4-A1",
+            f"{label}: object.__new__ route with 17 fallbacks refused",
+            _code(fn) == "external_judge_invalid_request",
+        )
+    # A2: no assert statement left in the production module (stripped under python -O).
+    check(
+        "FTF-0907-R4-A2",
+        "module has no assert statement",
+        not re.search(r"^\s*assert\b", MODULE.read_text(encoding="utf-8"), re.M),
+    )
+    for bad in (None, object(), (), "zero_egress"):
+        check(
+            "FTF-0907-R4-A2",
+            f"non-ProfilesInForce {type(bad).__name__} gives the module's own error",
+            _code(lambda: admit_judge_route(_route(), cast(Any, bad)))
+            == "external_judge_invalid_request",
+        )
+
+
 def test_net0_no_socket() -> None:
     original = socket.socket
 
@@ -522,6 +566,8 @@ out = {{
     "guard_denied": code(lambda: guarded_judge_call(None, route(), P, lambda r: sent.append(1))),
     "weak_project": code(lambda: admit_judge_route(route(upstream=E), ProfilesInForce("zero_egress", "standard"), auth)),
     "weak_job": code(lambda: admit_judge_route(route(upstream=E), ProfilesInForce("standard", "standard", "air_gapped"), auth)),
+    "fb_16": code(lambda: admit_judge_route(route(fallbacks=tuple(FallbackAlias("a%d" % i, I) for i in range(16))), P)),
+    "fb_17": code(lambda: admit_judge_route(route(fallbacks=tuple(FallbackAlias("a%d" % i, I) for i in range(17))), P)),
     "sent": len(sent),
     "reason": None,
 }}
@@ -617,6 +663,18 @@ _MUTATIONS: list[tuple[str, str, str, tuple[str, ...]]] = [
         r"    return ExternalJudgeDeniedError\(code, AuditReason\(profile, JUDGE_SURFACE, code\)\)",
         "    return ExternalJudgeDeniedError(\n        code, AuditReason(profile + 'acme', JUDGE_SURFACE, code)\n    )",
         ("reason",),
+    ),
+    (
+        "fallback-bound-removed",
+        r"    if len\(route\.fallbacks\) > MAX_FALLBACKS:\n        raise InvalidJudgeRequestError\(f\"at most \{MAX_FALLBACKS\} fallbacks are allowed\"\)\n",
+        "",
+        ("fb_17",),
+    ),
+    (
+        "fallback-bound-off-by-one",
+        r"> MAX_FALLBACKS",
+        ">= MAX_FALLBACKS",
+        ("fb_16",),
     ),
     (
         "profile-lowered-to-project",
@@ -1002,6 +1060,8 @@ def test_fault_injection() -> None:
         "weak_project": "external_judge_upstream_external",
         "weak_job": "external_judge_upstream_external",
         "sent": 0,
+        "fb_16": "allowed",
+        "fb_17": "external_judge_invalid_request",
         "reason": ["zero_egress", "judge", "external_judge_upstream_external", False],
     }
     for key, want in expected.items():

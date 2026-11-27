@@ -154,6 +154,9 @@ def _exact_destination(value: object, what: str) -> None:
         _exact_text(value.provider, f"{what} provider")
 
 
+MAX_FALLBACKS = 16
+
+
 @_fields_guard
 def _validate_route(route: object) -> JudgeRoute:
     """Full validation of a route, independent of `__post_init__` (which an exact-type
@@ -164,6 +167,8 @@ def _validate_route(route: object) -> JudgeRoute:
     _exact_destination(route.upstream, "upstream")
     if type(route.fallbacks) is not tuple:
         raise InvalidJudgeRequestError("fallbacks must be a tuple")
+    if len(route.fallbacks) > MAX_FALLBACKS:
+        raise InvalidJudgeRequestError(f"at most {MAX_FALLBACKS} fallbacks are allowed")
     for fallback in route.fallbacks:
         if type(fallback) is not FallbackAlias:
             raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
@@ -313,7 +318,6 @@ def _evaluate(
     if authorization is not None:
         _exact_authorization(authorization)
     profile = _profile(profiles)
-    assert isinstance(profiles, ProfilesInForce)
     _check_destination(route.upstream, profile, authorization, "external_judge_upstream_external")
     if not route.fallbacks_enumerated:
         raise _deny("external_judge_fallback_denied", profile)
