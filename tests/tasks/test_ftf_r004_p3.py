@@ -157,7 +157,7 @@ def _case_set(records: list[Any] | None = None, *, purpose: str = "development")
     import workers.evaluation.adapters.inspect_adapter.case_adapter as ca_mod
 
     cs = _raw_case_set(records, purpose=purpose)
-    ca_mod._LOADED_SETS[id(cs)] = cs  # exactly what the loader does with the set it returns
+    ca_mod._register_loaded(cs)  # exactly what the loader does with the set it returns
     return cs
 
 
@@ -2988,6 +2988,485 @@ def test_case_fingerprint_comparison_is_exact() -> None:
         "a case fingerprint that is the pinned digest only after strip/lower is refused",
         _code(_run, _UpperCase(build_isolated_tool_backend_adapter()))
         == "runtime_identity_changed",
+    )
+
+
+# --------------------------------------------------------------------------- round 3 (r2 park items)
+
+
+def _dial_tcp() -> None:
+    """Opens a TCP connection to a local listener and swallows every error, so only the
+    guard's own attempt counter can refuse the run."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    try:
+        socket.create_connection(listener.getsockname(), timeout=1).close()
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        listener.close()
+
+
+class _PhaseDialer(_BindingSpy):
+    """Dials out from one adapter phase that runs outside the per-case solver: the first
+    `describe`/`attest`, `bind_bridge_hook`, the final identity re-check or the post-run
+    re-collection."""
+
+    def __init__(self, inner: Any, phase: str) -> None:
+        super().__init__(inner)
+        self.phase = phase
+        self.describes = 0
+        self.collects = 0
+
+    def describe(self):
+        self.describes += 1
+        if self.phase == "describe" and self.describes == 1:
+            _dial_tcp()
+        if self.phase == "final_describe" and self.describes == 4:
+            _dial_tcp()  # the re-check after the run (1 pin + 2 per-case + 1 final)
+        return super().describe()
+
+    def attest(self):
+        if self.phase == "attest" and self.attests == 0:
+            _dial_tcp()
+        return super().attest()
+
+    def bind_bridge_hook(self, hook: Any) -> None:
+        if self.phase == "bind":
+            _dial_tcp()
+        super().bind_bridge_hook(hook)
+
+    def collect_outcome(self, case_id):
+        self.collects += 1
+        if self.phase == "recollect" and self.collects > 2:
+            _dial_tcp()
+        return super().collect_outcome(case_id)
+
+
+def test_round3_guard_covers_every_adapter_call() -> None:
+    for phase in ("describe", "attest", "bind", "final_describe", "recollect"):
+        spy = _PhaseDialer(build_isolated_tool_backend_adapter(), phase)
+        got = _code(_run, spy)
+        check(
+            "FTF-R004-P3-AC8",
+            f"a connection opened (and its error swallowed) in {phase} -> outbound_call_blocked "
+            f"(got {got})",
+            got == "outbound_call_blocked",
+        )
+    control = _PhaseDialer(build_isolated_tool_backend_adapter(), "none")
+    res = _run(control)
+    check(
+        "FTF-R004-P3-AC8",
+        "the phase dialer with no phase runs clean (the refusals above come from the dials)",
+        res.network_attempts == 0 and control.describes == 4 and control.collects == 4,
+    )
+
+    import _socket
+
+    def raw_socket(_r: Any) -> None:
+        sock = _socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.connect_ex(("127.0.0.1", 9))
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            sock.close()
+
+    check(
+        "FTF-R004-P3-AC8",
+        "the raw _socket type (bypassing socket.socket's methods) is still refused",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=raw_socket))
+        == "outbound_call_blocked",
+    )
+
+    def raw_datagram(_r: Any) -> None:
+        sock = _socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(b"x", ("127.0.0.1", 9))
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            sock.close()
+
+    check(
+        "FTF-R004-P3-AC8",
+        "a raw _socket datagram send is refused",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=raw_datagram))
+        == "outbound_call_blocked",
+    )
+
+
+def test_round3_processes_and_foreign_calls_are_refused() -> None:
+    marker = Path(tempfile.mkdtemp(prefix="p3r3-")) / "ran"
+
+    def spawn(_r: Any) -> None:
+        try:
+            subprocess.run(["/bin/sh", "-c", f"touch {marker}"], check=False)
+        except Exception:  # noqa: BLE001
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "an adapter that starts a process (error swallowed) -> outbound_call_blocked",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=spawn))
+        == "outbound_call_blocked",
+    )
+    check("FTF-R004-P3-AC8", "the process never ran", not marker.exists())
+
+    def system(_r: Any) -> None:
+        try:
+            os.system(f"touch {marker}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "os.system during the run -> outbound_call_blocked, and it never ran",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=system))
+        == "outbound_call_blocked"
+        and not marker.exists(),
+    )
+
+    def other_git(_r: Any) -> None:
+        git = shutil.which("git") or "/usr/bin/git"
+        try:
+            subprocess.run([git, "--version"], capture_output=True, check=False)
+        except Exception:  # noqa: BLE001
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "git with any argv other than Inspect's own revision lookups is refused",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=other_git))
+        == "outbound_call_blocked",
+    )
+
+    def foreign(_r: Any) -> None:
+        import ctypes
+
+        try:
+            ctypes.CDLL(None).getpid()
+        except Exception:  # noqa: BLE001
+            pass
+
+    check(
+        "FTF-R004-P3-AC8",
+        "a ctypes foreign call during the run -> outbound_call_blocked",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=foreign))
+        == "outbound_call_blocked",
+    )
+    # outside a run the hook is inert: the same calls work
+    subprocess.run(["/bin/sh", "-c", f"touch {marker}"], check=True)
+    check("FTF-R004-P3-AC8", "outside a run, processes are not blocked", marker.exists())
+    marker.unlink()
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    client = socket.create_connection(listener.getsockname())  # opened before the run
+    server, _ = listener.accept()
+    payload = Path(tempfile.mkdtemp(prefix="p3r3-")) / "payload"
+    payload.write_bytes(b"EXFIL")
+
+    def sendfile_out(_r: Any) -> None:
+        try:
+            with payload.open("rb") as handle:
+                client.sendfile(handle)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        got = _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=sendfile_out))
+        server.settimeout(0.2)
+        try:
+            leaked = server.recv(5)
+        except OSError:
+            leaked = b""
+    finally:
+        for sock in (client, server, listener):
+            sock.close()
+    check(
+        "FTF-R004-P3-AC8",
+        f"sendfile on a stream opened before the run -> outbound_call_blocked, nothing leaked "
+        f"(got {got}, {leaked!r})",
+        got == "outbound_call_blocked" and leaked == b"",
+    )
+
+
+def _tampered(result: Any, **changes: Any) -> Any:
+    import copy
+
+    clone = copy.copy(result)
+    for name, value in changes.items():
+        object.__setattr__(clone, name, value)
+    return clone
+
+
+def test_round3_per_case_results_must_be_contract_valid() -> None:
+    import dataclasses
+
+    from app.target_connectors.production_faithful_target_agent_harness_contract import (
+        AdapterInvokeResult,
+    )
+
+    class _ResultSubclass(AdapterInvokeResult):
+        pass
+
+    def as_subclass(result: Any) -> Any:
+        return _ResultSubclass(
+            **{f.name: getattr(result, f.name) for f in dataclasses.fields(result)}
+        )
+
+    variants: dict[str, Any] = {
+        "a plain namespace": lambda r: SimpleNamespace(
+            **{f.name: getattr(r, f.name) for f in dataclasses.fields(r)}
+        ),
+        "a subclass": as_subclass,
+        "completed with no business outcome (object.__setattr__)": lambda r: _tampered(
+            r, business_outcome=None
+        ),
+        "an unknown status (object.__setattr__)": lambda r: _tampered(r, status="passed"),
+        "an empty route_fingerprint": lambda r: _tampered(r, route_fingerprint=""),
+        "a non-str route_fingerprint": lambda r: _tampered(r, route_fingerprint=7),
+        "a str error_classification": lambda r: _tampered(r, error_classification="none"),
+        "a list of side effects": lambda r: _tampered(r, side_effects=["tool_call:x"]),
+        "a non-str side effect": lambda r: _tampered(r, side_effects=(1,)),
+        "a dict business outcome": lambda r: _tampered(r, business_outcome={"a": 1}),
+        "a non-str trace_ref": lambda r: _tampered(r, trace_ref=1),
+        "a non-str status": lambda r: _tampered(r, status=None),
+        "a non-str case_id": lambda r: _tampered(r, case_id=1),
+        "a non-str runtime_fingerprint": lambda r: _tampered(r, runtime_fingerprint=None),
+    }
+    for label, change in variants.items():
+        for where in ("invoke", "collect"):
+            inner = build_isolated_tool_backend_adapter()
+
+            class _Bad(_Spy):
+                def invoke(self, request, _w=where, _c=change):
+                    result = super().invoke(request)
+                    return _c(result) if _w == "invoke" else result
+
+                def collect_outcome(self, case_id, _w=where, _c=change):
+                    result = super().collect_outcome(case_id)
+                    return _c(result) if _w == "collect" else result
+
+            got = _code(_run, _Bad(inner), _case_set(_records()[:1]))
+            check(
+                "FTF-R004-P3-AC3",
+                f"{where} returning {label} -> adapter_contract_violation (got {got})",
+                got == "adapter_contract_violation",
+            )
+
+    class _IntPreflight(_Spy):
+        def preflight(self, request):
+            return 1 if super().preflight(request) else 0
+
+    check(
+        "FTF-R004-P3-AC3",
+        "a preflight returning 1 instead of True -> adapter_contract_violation",
+        _code(_run, _IntPreflight(build_isolated_tool_backend_adapter()))
+        == "adapter_contract_violation",
+    )
+    for method in ("describe", "attest"):
+        for nth in (1, 2):
+
+            class _WrongType(_Spy):
+                calls = 0
+
+                def describe(self, _m=method, _n=nth):
+                    result = super().describe()
+                    if _m != "describe":
+                        return result
+                    type(self).calls += 1
+                    if type(self).calls == _n:
+                        return SimpleNamespace(
+                            **{f.name: getattr(result, f.name) for f in dataclasses.fields(result)}
+                        )
+                    return result
+
+                def attest(self, _m=method, _n=nth):
+                    result = super().attest()
+                    if _m != "attest":
+                        return result
+                    type(self).calls += 1
+                    if type(self).calls == _n:
+                        return SimpleNamespace(
+                            **{f.name: getattr(result, f.name) for f in dataclasses.fields(result)}
+                        )
+                    return result
+
+            got = _code(_run, _WrongType(build_isolated_tool_backend_adapter()))
+            check(
+                "FTF-R004-P3-AC3",
+                f"{method} call {nth} returning a look-alike -> adapter_contract_violation "
+                f"(got {got})",
+                got == "adapter_contract_violation",
+            )
+
+
+def test_round3_route_and_outcome_are_pinned_for_the_whole_run() -> None:
+    def drifting(case_id: str, inner: Any) -> Any:
+        result = inner.collect_outcome(case_id)
+        drifting.calls = getattr(drifting, "calls", 0) + 1  # type: ignore[attr-defined]
+        if drifting.calls > 2:  # type: ignore[attr-defined]
+            return _tampered(result, route_fingerprint="e" * 64)  # a re-routed case
+        return result
+
+    got = _code(_run, _Spy(build_isolated_tool_backend_adapter(), collect=drifting))
+    check(
+        "FTF-R004-P3-AC5",
+        f"a case whose route fingerprint changes after it ran -> runtime_identity_changed "
+        f"(got {got})",
+        got == "runtime_identity_changed",
+    )
+
+    def outcome_drift(case_id: str, inner: Any) -> Any:
+        result = inner.collect_outcome(case_id)
+        outcome_drift.calls = getattr(outcome_drift, "calls", 0) + 1  # type: ignore[attr-defined]
+        if outcome_drift.calls > 2:  # type: ignore[attr-defined]
+            return _tampered(result, business_outcome=(("changed", True),))
+        return result
+
+    check(
+        "FTF-R004-P3-AC5",
+        "a business outcome that changes after the case ran -> runtime_identity_changed",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), collect=outcome_drift))
+        == "runtime_identity_changed",
+    )
+
+    def bad_late(case_id: str, inner: Any) -> Any:
+        result = inner.collect_outcome(case_id)
+        bad_late.calls = getattr(bad_late, "calls", 0) + 1  # type: ignore[attr-defined]
+        if bad_late.calls > 2:  # type: ignore[attr-defined]
+            return _tampered(result, status="passed")
+        return result
+
+    check(
+        "FTF-R004-P3-AC3",
+        "a contract-invalid re-collection after the run -> adapter_contract_violation",
+        _code(_run, _Spy(build_isolated_tool_backend_adapter(), collect=bad_late))
+        == "adapter_contract_violation",
+    )
+    calls: list[str] = []
+
+    def counting(case_id: str, inner: Any) -> Any:
+        calls.append(case_id)
+        return inner.collect_outcome(case_id)
+
+    res = _run(_Spy(build_isolated_tool_backend_adapter(), collect=counting))
+    check(
+        "FTF-R004-P3-AC5",
+        "every case is collected once during the run and once again after it",
+        sorted(calls) == ["case-001", "case-001", "case-002", "case-002"]
+        and [c.route_fingerprint for c in res.cases] != ["", ""],
+    )
+
+
+def test_round3_provenance_is_bound_to_content() -> None:
+    import dataclasses
+
+    import workers.evaluation.adapters.inspect_adapter.case_adapter as ca_mod
+
+    loaded = _case_set()
+    check(
+        "FTF-R004-P3-AC1",
+        "a freshly loaded set is a member",
+        ca_mod.is_loaded_suite_case_set(loaded),
+    )
+    forged_case = dataclasses.replace(loaded.cases[0], declared_inputs=(("tool_name", "x"),))
+    object.__setattr__(loaded, "cases", (forged_case, *loaded.cases[1:]))
+    check(
+        "FTF-R004-P3-AC1",
+        "object.__setattr__ replacing the cases of a loaded set -> not a member, bridge refuses",
+        not ca_mod.is_loaded_suite_case_set(loaded)
+        and _code(_run, None, loaded) == "bridge_invalid_request",
+    )
+    for field_name, value in (
+        ("purpose", "development "),
+        ("suite_id", "other"),
+        ("project_id", "other"),
+        ("agent_manifest_id", "other"),
+        ("grading_logic_version", 2),
+    ):
+        other = _case_set()
+        object.__setattr__(other, field_name, value)
+        check(
+            "FTF-R004-P3-AC1",
+            f"a loaded set whose {field_name} was altered is not a member",
+            not ca_mod.is_loaded_suite_case_set(other),
+        )
+    for field in dataclasses.fields(loaded.cases[0]):
+        other = _case_set()
+        current = getattr(other.cases[0], field.name)
+        replacement: Any = (
+            (not current)
+            if isinstance(current, bool)
+            else ((("k", "v"),) if isinstance(current, tuple) else f"{current}-x")
+        )
+        object.__setattr__(other.cases[0], field.name, replacement)
+        check(
+            "FTF-R004-P3-AC1",
+            f"a loaded case whose {field.name} was altered in place -> not a member",
+            not ca_mod.is_loaded_suite_case_set(other),
+        )
+    for attr in ("input", "target", "id", "metadata"):
+        other = _case_set()
+        sample = other.samples[0]
+        if attr == "metadata":
+            sample.metadata["critical"] = True
+        else:
+            setattr(sample, attr, "edited")
+        check(
+            "FTF-R004-P3-AC1",
+            f"an Inspect Sample whose {attr} was edited in place -> not a member",
+            not ca_mod.is_loaded_suite_case_set(other),
+        )
+
+    class _SubSet(ca_mod.SuiteCaseSet):
+        pass
+
+    sub = _SubSet(**{f.name: getattr(loaded, f.name) for f in dataclasses.fields(loaded)})
+    ca_mod._register_loaded(sub)
+    check(
+        "FTF-R004-P3-AC1",
+        "a SuiteCaseSet subclass is never a member",
+        not ca_mod.is_loaded_suite_case_set(sub),
+    )
+
+    def edit_during_run(_r: Any) -> None:
+        object.__setattr__(during.cases[1], "category", "edited-mid-run")
+
+    during = _case_set()
+    got = _code(
+        _run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=edit_during_run), during
+    )
+    check(
+        "FTF-R004-P3-AC1",
+        f"a loaded case altered while the adapter runs -> bridge_invalid_request (got {got})",
+        got == "bridge_invalid_request",
+    )
+
+    def edit_sample(_r: Any) -> None:
+        mid.samples[1].input = "edited-mid-run"
+
+    mid = _case_set()
+    got = _code(_run, _Spy(build_isolated_tool_backend_adapter(), on_invoke=edit_sample), mid)
+    check(
+        "FTF-R004-P3-AC1",
+        f"an Inspect Sample edited while the adapter runs -> bridge_invalid_request (got {got})",
+        got == "bridge_invalid_request",
+    )
+    gone = _case_set()
+    key = id(gone)
+    del gone
+    import gc
+
+    gc.collect()
+    check(
+        "FTF-R004-P3-AC1",
+        "a collected set's digest is dropped from the registry",
+        key not in ca_mod._LOADED_DIGESTS,
     )
 
 

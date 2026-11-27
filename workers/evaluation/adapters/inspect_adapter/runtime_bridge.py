@@ -21,8 +21,20 @@ Refusals (`BridgeError.code`, stable, content-free):
 * `generic_agent_solver_forbidden` -- the Inspect log's plan is not exactly the one native
   solver, or a model was called;
 * `telemetry_configured` -- `INSPECT_TELEMETRY` / `INSPECT_REQUIRED_HOOKS` is set;
-* `outbound_call_blocked` -- the run opened (or tried to open) a network connection; the run
-  executes under a socket guard, so it passes only under network denial;
+* `outbound_call_blocked` -- the run opened (or tried to open) a network connection, sent to
+  a non-local address, resolved a name or started a process / foreign call; the whole run, from
+  the first adapter call (`describe`) to the final identity re-check, executes under an
+  interpreter audit hook plus socket send guard (`_NetworkGuard`), so it passes only under
+  network denial. The only process allowed is the pinned Inspect release's own read-only git
+  revision lookup;
+* `adapter_contract_violation` -- the adapter returned something other than the exact
+  FTF-04A25 type (`AdapterDescribeResult`, `RuntimeAttestation`, `bool` from preflight,
+  `AdapterInvokeResult` whose invariants still hold);
+* `runtime_identity_changed` also covers a case outcome that, collected again after the run,
+  is not exactly the one recorded (status, business outcome, trace, runtime and route
+  fingerprints are pinned for the whole run);
+* `bridge_invalid_request` with `provenance` -- the case set did not come from
+  `load_locked_development_suite`, or was altered after it was loaded (content digest);
 * `provider_boundary_denied` / `generation_config_parity_blocked` -- the `BridgeHook`, which
   applies FTF-R004-P2 screening and attempt capture and the FTF-R004-P1 parity comparison to the
   model traffic of a bridged route.
@@ -46,7 +58,9 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -69,6 +83,7 @@ from app.target_connectors.production_faithful_target_agent_harness_contract imp
     AdapterDescribeResult,
     AdapterInvokeRequest,
     AdapterInvokeResult,
+    ErrorClassification,
     HarnessContractError,
     ModelBinding,
     QualificationStatus,
@@ -128,6 +143,7 @@ CODE_RUN_FAILED = "inspect_run_failed"
 CODE_INVALID_REQUEST = "bridge_invalid_request"
 CODE_ADAPTER_MISMATCH = "adapter_case_mismatch"
 CODE_HOOK_UNBINDABLE = "bridge_hook_unbindable"
+CODE_ADAPTER_CONTRACT = "adapter_contract_violation"
 STATUS_DEADLINE_EXCEEDED = "deadline_exceeded"
 STATUS_OUTCOME_MISMATCH = "outcome_mismatch"
 
@@ -268,54 +284,148 @@ class BridgeHook:
 # --------------------------------------------------------------------------- network denial
 
 
+# Python audit events that open or use a network path, or start code outside this
+# interpreter. They are raised by the C implementation itself (`_socket`, `_posixsubprocess`,
+# `os`, `ctypes`), so a call that bypasses the `socket` module's Python methods -- the raw
+# `_socket` type, a socket's `sendto`/`sendmsg` on a datagram path, `os.system`, `ctypes` -- is
+# still seen.
+_AUDIT_SOCKET_ADDRESS_EVENTS = frozenset({"socket.connect", "socket.sendto", "socket.sendmsg"})
+_AUDIT_NAME_LOOKUP_EVENTS = frozenset(
+    {"socket.getaddrinfo", "socket.gethostbyname", "socket.gethostbyaddr", "socket.getnameinfo"}
+)
+_AUDIT_PROCESS_EVENTS = frozenset(
+    {
+        "subprocess.Popen",
+        "os.system",
+        "os.exec",
+        "os.posix_spawn",
+        "os.spawn",
+        "os.fork",
+        "os.forkpty",
+        "os.startfile",
+        "pty.spawn",
+        "ctypes.dlopen",
+        "ctypes.dlsym",
+        "ctypes.call_function",
+    }
+)
+# The only processes a run may start: the pinned Inspect release's own read-only git lookups
+# for the log's revision metadata (`inspect_ai._util.git.git_context`), run from the private
+# workspace, which is not a repository. Exact argv; any other command is an escape.
+_ALLOWED_GIT_ARGS = (
+    ("rev-parse", "--short", "HEAD"),
+    ("remote", "get-url", "origin"),
+    ("status", "--porcelain"),
+)
+
+_GUARD_LOCK = threading.Lock()
+_ACTIVE_GUARDS: list[_NetworkGuard] = []
+_AUDIT_HOOK_INSTALLED = [False]
+
+
+def _is_unix_socket(sock: object) -> bool:
+    return getattr(sock, "family", None) == getattr(socket, "AF_UNIX", None)
+
+
+def _allowed_process(event: str, args: tuple[object, ...]) -> bool:
+    if event != "subprocess.Popen" or len(args) < 2:
+        return False
+    executable, argv = args[0], args[1]
+    git = shutil.which("git")
+    if (
+        git is None
+        or not isinstance(executable, str)
+        or os.path.realpath(executable) != (os.path.realpath(git))
+    ):
+        return False
+    if not isinstance(argv, list | tuple) or not argv:
+        return False
+    return tuple(argv[1:]) in _ALLOWED_GIT_ARGS
+
+
+def _audit(event: str, args: tuple[object, ...]) -> None:
+    if not _ACTIVE_GUARDS:
+        return
+    if event in _AUDIT_SOCKET_ADDRESS_EVENTS:
+        if args and _is_unix_socket(args[0]):
+            return
+    elif event in _AUDIT_NAME_LOOKUP_EVENTS:
+        pass
+    elif event in _AUDIT_PROCESS_EVENTS:
+        if _allowed_process(event, args):
+            return
+    else:
+        return
+    for guard in tuple(_ACTIVE_GUARDS):
+        guard.record(event)
+    raise BridgeError(CODE_OUTBOUND, event)
+
+
+def _install_audit_hook() -> None:
+    # An audit hook cannot be removed; it is installed once and is a no-op while no run is active.
+    with _GUARD_LOCK:
+        if not _AUDIT_HOOK_INSTALLED[0]:
+            sys.addaudithook(_audit)
+            _AUDIT_HOOK_INSTALLED[0] = True
+
+
 class _NetworkGuard:
-    """Blocks every non-AF_UNIX connect and every name lookup while a run executes, and
-    counts each attempt. A run that needs the network cannot pass."""
+    """Network and process denial for the whole bridged run, from the first adapter call
+    (`describe`) to the final identity re-check. Two layers:
+
+    * an interpreter audit hook refusing every non-AF_UNIX connect/sendto/sendmsg, every name
+      lookup, and every process start or `ctypes` foreign call except the pinned Inspect
+      release's own read-only git lookups -- raised from the C implementation, so it sees the
+      raw `_socket` type, `os.system`, `os.posix_spawn` and `ctypes` too;
+    * the `socket.socket` send methods (`send`, `sendall`, `sendto`, `sendmsg`, `sendfile`) and
+      name lookups patched, so data cannot leave over a stream socket opened BEFORE the run.
+
+    Every attempt is counted, and a run with any attempt is refused even if the adapter caught
+    the error. Native code that calls libc directly, or `os.write` on a socket descriptor opened
+    before the run, is below the interpreter: the worker's OS network boundary covers it."""
 
     def __init__(self) -> None:
         self.attempts = 0
+        self.events: list[str] = []
         self._lock = threading.Lock()
         self._saved: list[tuple[object, str, object]] = []
 
-    def _blocked(self, *_args: object, **_kwargs: object) -> Any:
+    def record(self, event: str) -> None:
         with self._lock:
             self.attempts += 1
+            self.events.append(event)
+
+    def _blocked(self, *_args: object, **_kwargs: object) -> Any:
+        self.record("socket.lookup")
         raise BridgeError(CODE_OUTBOUND)
 
-    def _guarded_connect(self, original: Callable[..., Any]) -> Callable[..., Any]:
-        def connect(sock: socket.socket, address: object, *args: object, **kwargs: object) -> Any:
-            if sock.family == getattr(socket, "AF_UNIX", None):
-                return original(sock, address, *args, **kwargs)
-            return self._blocked()
-
-        return connect
-
-    def _guarded_send(self, original: Callable[..., Any]) -> Callable[..., Any]:
-        # Every non-local send is an outbound call: a datagram socket sends without ever
-        # connecting (statsd-style telemetry, a raw DNS query by IP), and a stream socket
-        # opened before the run would otherwise carry data out past the connect guard.
+    def _guarded_send(self, name: str, original: Callable[..., Any]) -> Callable[..., Any]:
+        # Every non-local send is an outbound call: a stream socket opened before the run would
+        # otherwise carry data out without ever reaching the connect check.
         def send(sock: socket.socket, *args: object, **kwargs: object) -> Any:
-            if sock.family != getattr(socket, "AF_UNIX", None):
-                return self._blocked()
+            if not _is_unix_socket(sock):
+                self.record(f"socket.{name}")
+                raise BridgeError(CODE_OUTBOUND)
             return original(sock, *args, **kwargs)
 
         return send
 
     def __enter__(self) -> _NetworkGuard:
-        for name in ("connect", "connect_ex"):
+        _install_audit_hook()
+        for name in ("sendto", "sendmsg", "send", "sendall", "sendfile"):
             original = getattr(socket.socket, name)
             self._saved.append((socket.socket, name, original))
-            setattr(socket.socket, name, self._guarded_connect(original))
-        for name in ("sendto", "sendmsg", "send", "sendall"):
-            original = getattr(socket.socket, name)
-            self._saved.append((socket.socket, name, original))
-            setattr(socket.socket, name, self._guarded_send(original))
+            setattr(socket.socket, name, self._guarded_send(name, original))
         for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex"):
             self._saved.append((socket, name, getattr(socket, name)))
             setattr(socket, name, self._blocked)
+        with _GUARD_LOCK:
+            _ACTIVE_GUARDS.append(self)
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        with _GUARD_LOCK:
+            _ACTIVE_GUARDS.remove(self)
         for owner, name, original in reversed(self._saved):
             setattr(owner, name, original)
         self._saved.clear()
@@ -397,18 +507,35 @@ class _RunState:
         self.pinned_attestation = pinned_attestation
         self.pinned_describe = pinned_describe
         self.records: dict[str, CaseRunRecord] = {}
+        self.collected: dict[str, AdapterInvokeResult] = {}
         self.first_error: BridgeError | None = None
 
     def fail(self, error: BridgeError) -> None:
         if self.first_error is None:
             self.first_error = error
 
+    def recheck_collected(self) -> None:
+        """After the run, every case's outcome is collected again and must be exactly the one
+        recorded: its status, business outcome, trace and runtime/route fingerprints are pinned
+        for the whole run, not only at the moment the case ran."""
+        for case_key, recorded in self.collected.items():
+            again = self.adapter.collect_outcome(case_key)
+            _require_invoke_result(again)
+            if again != recorded:
+                raise BridgeError(CODE_IDENTITY_CHANGED, "collected outcome")
+
     def check_identity(self) -> None:
-        if _describe_view(self.adapter.describe()) != _describe_view(self.pinned_describe):
+        described = self.adapter.describe()
+        if type(described) is not AdapterDescribeResult:
+            raise BridgeError(CODE_ADAPTER_CONTRACT, "describe")
+        if _describe_view(described) != _describe_view(self.pinned_describe):
             raise BridgeError(CODE_IDENTITY_CHANGED, "describe")
+        attested = self.adapter.attest()
+        if type(attested) is not RuntimeAttestation:
+            raise BridgeError(CODE_ADAPTER_CONTRACT, "attest")
         changed = [
             name
-            for name, value in _attestation_view(self.adapter.attest()).items()
+            for name, value in _attestation_view(attested).items()
             if value != _attestation_view(self.pinned_attestation)[name]
         ]
         if changed:
@@ -421,6 +548,33 @@ def _outcome_digest(result: AdapterInvokeResult) -> str | None:
     return _sha256(json.dumps(result.business_outcome, sort_keys=True, default=repr).encode())
 
 
+def _require_invoke_result(result: object) -> None:
+    """A per-case result is exactly an FTF-04A25 `AdapterInvokeResult` whose invariants still
+    hold: its own `__post_init__` is re-run on a rebuilt copy, so a frozen result edited with
+    `object.__setattr__` after construction (a "completed" row with no business outcome, an
+    unknown status) is refused, never recorded."""
+    if type(result) is not AdapterInvokeResult:
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "invoke result type")
+    values = {f.name: getattr(result, f.name) for f in fields(AdapterInvokeResult)}
+    if (
+        type(values["case_id"]) is not str
+        or type(values["status"]) is not str
+        or type(values["trace_ref"]) is not str
+        or type(values["runtime_fingerprint"]) is not str
+        or type(values["route_fingerprint"]) is not str
+        or not values["route_fingerprint"]
+        or type(values["error_classification"]) is not ErrorClassification
+        or type(values["side_effects"]) is not tuple
+        or not all(type(effect) is str for effect in values["side_effects"])
+        or not (values["business_outcome"] is None or type(values["business_outcome"]) is tuple)
+    ):
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "invoke result field")
+    try:
+        AdapterInvokeResult(**values)
+    except HarnessContractError as exc:
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "invoke result invariant") from exc
+
+
 def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
     request = AdapterInvokeRequest(
         case_id=case.case_key,
@@ -431,7 +585,10 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
         deadline_seconds=state.deadline_seconds,
         idempotency_key=_sha256(f"{state.run_id}\0{case.case_key}".encode()),
     )
-    if not state.adapter.preflight(request):
+    admitted = state.adapter.preflight(request)
+    if type(admitted) is not bool:
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "preflight")
+    if not admitted:
         return CaseRunRecord(
             case_key=case.case_key,
             case_id=case.case_id,
@@ -466,12 +623,15 @@ def _run_case(state: _RunState, case: BridgeCase) -> CaseRunRecord:
             adapter_exception_type=type(exc).__name__,
         )
     elapsed = time.monotonic() - started
+    _require_invoke_result(invoked)
+    _require_invoke_result(collected)
     if invoked.case_id != case.case_key or collected.case_id != case.case_key:
         raise BridgeError(CODE_ADAPTER_MISMATCH)
     overran = elapsed > state.deadline_seconds
     if invoked.runtime_fingerprint != state.pinned_attestation.source_fingerprint:
         # the FTF-04A26 adapter reports its pinned source fingerprint on every case
         raise BridgeError(CODE_IDENTITY_CHANGED, "case runtime_fingerprint")
+    state.collected[case.case_key] = collected
     matches = invoked == collected
     status = invoked.status
     if not matches:
@@ -633,7 +793,42 @@ def run_suite_through_runtime(
     if status is not QualificationStatus.QUALIFIED:
         raise BridgeError(CODE_INTEGRATION_REQUIRED)
 
+    with _NetworkGuard() as guard:
+        try:
+            return _guarded_run(
+                adapter,
+                case_set,
+                hook=hook,
+                model_binding=model_binding,
+                tenant_namespace=tenant_namespace,
+                deadline_seconds=deadline_seconds,
+                run_id=run_id,
+                workspace_parent=workspace_parent,
+                guard=guard,
+            )
+        finally:
+            if guard.attempts:
+                # an adapter that caught the refusal still cannot pass, whatever else happened
+                raise BridgeError(CODE_OUTBOUND, ",".join(sorted(set(guard.events))))
+
+
+def _guarded_run(
+    adapter: RuntimeAdapterProtocol,
+    case_set: SuiteCaseSet,
+    *,
+    hook: BridgeHook,
+    model_binding: ModelBinding,
+    tenant_namespace: str,
+    deadline_seconds: float,
+    run_id: str,
+    workspace_parent: Path | None,
+    guard: _NetworkGuard,
+) -> BridgeRunResult:
+    """Everything that calls the adapter, under the network and process guard."""
+    cases = {case.case_key: case for case in case_set.cases}
     describe = adapter.describe()
+    if type(describe) is not AdapterDescribeResult:
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "describe")
     try:
         validate_model_binding_override(describe, model_binding)
     except HarnessContractError as exc:
@@ -641,6 +836,8 @@ def run_suite_through_runtime(
     _refuse_remote_and_telemetry()
 
     pinned = adapter.attest()
+    if type(pinned) is not RuntimeAttestation:
+        raise BridgeError(CODE_ADAPTER_CONTRACT, "attest")
     bind = getattr(adapter, "bind_bridge_hook", None)
     if callable(bind):
         bind(hook)
@@ -652,7 +849,6 @@ def run_suite_through_runtime(
         # without `bind_bridge_hook` its model traffic would run unscreened
         raise BridgeError(CODE_HOOK_UNBINDABLE)
 
-    cases = {case.case_key: case for case in case_set.cases}
     state = _RunState(
         adapter=adapter,
         cases=cases,
@@ -670,7 +866,7 @@ def run_suite_through_runtime(
         scorer=_adapter_status_scorer(),
         name=f"sovra-{case_set.suite_id}",
     )
-    with _private_workspace(workspace_parent) as log_dir, _NetworkGuard() as guard, _chdir(log_dir):
+    with _private_workspace(workspace_parent) as log_dir, _chdir(log_dir):
         logs = inspect_eval(
             task,
             model=_MODEL_LESS,
@@ -696,6 +892,10 @@ def run_suite_through_runtime(
     state.check_identity()
     if set(state.records) != set(cases):
         raise BridgeError(CODE_RUN_FAILED, "case records")
+    state.recheck_collected()
+    if not is_loaded_suite_case_set(case_set):
+        # the loaded set (or one of its cases) was altered while the adapter ran
+        raise BridgeError(CODE_INVALID_REQUEST, "provenance")
     return BridgeRunResult(
         run_id=run_id,
         suite_id=case_set.suite_id,

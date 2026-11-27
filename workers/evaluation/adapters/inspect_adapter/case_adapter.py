@@ -24,11 +24,12 @@ content.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 import weakref
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any
 
 from inspect_ai.dataset import Sample
@@ -52,6 +53,7 @@ __all__ = [
     "freeze_declared_inputs",
     "load_locked_development_suite",
     "samples_from_cases",
+    "suite_case_set_digest",
 ]
 
 CODE_SUITE_NOT_LOCKED = "suite_not_locked"
@@ -96,11 +98,51 @@ class BridgeCase:
 # draft, final and unknown-purpose suite. Membership is by object identity, held weakly: a
 # set built by hand, a `dataclasses.replace` copy with substituted cases, or one relabelled
 # "development" is a different object and is never a member, so the runtime bridge refuses it.
+# Each member is held with the content digest it had when the loader returned it, and
+# membership re-computes that digest: a member altered afterwards -- `object.__setattr__` on the
+# frozen set or on one of its cases, or an in-place edit of a (mutable) Inspect `Sample` -- is no
+# longer a member either.
 _LOADED_SETS: weakref.WeakValueDictionary[int, SuiteCaseSet] = weakref.WeakValueDictionary()
+_LOADED_DIGESTS: dict[int, str] = {}
+
+
+def suite_case_set_digest(case_set: SuiteCaseSet) -> str:
+    """sha256 over every field of the set, its cases and its samples (ids, input, target,
+    metadata). Content-free: only the digest leaves this function."""
+    payload = {
+        "suite_id": case_set.suite_id,
+        "project_id": case_set.project_id,
+        "agent_manifest_id": case_set.agent_manifest_id,
+        "purpose": case_set.purpose,
+        "grading_logic_version": case_set.grading_logic_version,
+        "cases": [
+            [type(case).__name__] + [repr(getattr(case, f.name)) for f in fields(BridgeCase)]
+            for case in case_set.cases
+        ],
+        "samples": [
+            [type(sample).__name__, sample.model_dump_json()] for sample in case_set.samples
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=True, default=repr).encode()
+    ).hexdigest()
+
+
+def _register_loaded(case_set: SuiteCaseSet) -> None:
+    key = id(case_set)
+    _LOADED_SETS[key] = case_set
+    _LOADED_DIGESTS[key] = suite_case_set_digest(case_set)
+    weakref.finalize(case_set, _LOADED_DIGESTS.pop, key, None)
 
 
 def is_loaded_suite_case_set(case_set: object) -> bool:
-    return isinstance(case_set, SuiteCaseSet) and _LOADED_SETS.get(id(case_set)) is case_set
+    if type(case_set) is not SuiteCaseSet or _LOADED_SETS.get(id(case_set)) is not case_set:
+        return False
+    try:
+        digest = suite_case_set_digest(case_set)
+    except Exception:  # noqa: BLE001 -- a member that cannot even be digested is not a member
+        return False
+    return _LOADED_DIGESTS.get(id(case_set)) == digest
 
 
 @dataclass(frozen=True)
@@ -264,5 +306,5 @@ def load_locked_development_suite(
         grading_logic_version=suite.grading_logic_version,
         records=records,
     )
-    _LOADED_SETS[id(loaded)] = loaded
+    _register_loaded(loaded)
     return loaded

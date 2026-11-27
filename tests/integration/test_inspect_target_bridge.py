@@ -59,6 +59,7 @@ from workers.evaluation.adapters.inspect_adapter.provider_boundary import (  # n
     ScreeningPolicy,
 )
 from workers.evaluation.adapters.inspect_adapter.runtime_bridge import (  # noqa: E402
+    BridgeError,
     BridgeHook,
     run_suite_through_runtime,
 )
@@ -481,6 +482,30 @@ def main() -> None:
         CID,
         "the result is content-free (no stored input text)",
         "bridge note" not in repr(result) and "quarterly" not in repr(result),
+    )
+
+    # -- round 3: provenance bound to content, on a set the real loader returned ------------------
+    tampered = load(org1_id, p1_id, dev_suite)
+    object.__setattr__(tampered.cases[0], "declared_inputs", (("tool_name", "create_note"),))
+    try:
+        run_suite_through_runtime(
+            adapter,
+            tampered,
+            hook=hook,
+            entry_kind="signed_container",
+            is_reconstructed_adapter=False,
+            model_binding=ModelBinding("n/a", "n/a"),
+            tenant_namespace="tenant-a",
+            deadline_seconds=30.0,
+            run_id=f"run-tampered-{suffix}",
+        )
+        tampered_code = "NO_RAISE"
+    except BridgeError as exc:
+        tampered_code = exc.code
+    check(
+        CID,
+        f"a really-loaded set edited with object.__setattr__ is refused (got {tampered_code})",
+        tampered_code == "bridge_invalid_request",
     )
 
     if FAILURES:
