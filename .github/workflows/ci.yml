@@ -382,6 +382,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-H011-P2 negative-test proof (dataset mapping persistence, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011_p2.py
+      - name: FTF-H011-P5 negative-test proof (grouped_multi_row rows assembled into one record per group with incomplete_group quarantine for gaps / duplicate or earlier orders / non-contiguous groups / no closing assistant turn / unreadable rows, record_too_large bounding one group, invalid_order_key, mapping_unsupported outside the CSV importer and at the store, exact label_enum_map for language / task_category only; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p5.py
       - name: FTF-H011-P3 negative-test proof (dataset mapping routes and contract, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
