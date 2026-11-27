@@ -9323,11 +9323,12 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    1. FTF-0701 (100): FTF-0701-P1 round 4 on PR #1056, then its remaining slices back to back until the parent certifies. Nothing else outranks this.
    2. FTF-R004 (57): unpark FTF-R004-P3 (park merged in #1031); Control plane rules its open question in the next sweep; then P4.
    3. FTF-0603 (47): FTF-0603-F1 (server enforcement), then the UI round on PR #1066.
-   4. FTF-H011 (30): FTF-H011-P6 on PR #1035, then any remaining slice.
-   5. FTF-H010 (22): FTF-H010-P6 (P4 certified, P5 merged and awaiting L2).
+   4. FTF-H011 (30): P1-P3 certified (P3 on 2026-11-27). Left: FTF-H011-P4 (wizard UI), then FTF-H011-P6 on PR #1035, then FTF-H011-P5.
+   5. FTF-H010 (22): FTF-H010-P6 is the LAST slice (P1-P5 certified 2026-11-27); merging and certifying it closes the parent (+1).
    6. FTF-R006 (15): FTF-R006-P2 on PR #961 as soon as P1b is certified.
    7. FTF-H027 (9), FTF-0907 (8, PR #1046), FTF-04A31 (2).
    8. FTF-1504-F1 then FTF-1504 on PR #1026 (1). 9. FTF-1301-F1 round 3. 10. FTF-UX02 on PR #1007 and other UX work.
+   **Advisory follow-ups from the 2026-11-27 certifications (not blocking; take one when a worker touches the same file):** FTF-H010-P4: add a `factory_trained` archived row to integration block A1. FTF-H010-P5: gate the jobs error writes on the request sequence and pin it; walk every `ENUM_KEYS` entry under ar. FTF-H011-P3: carry ruling (a) onto FTF-0502-P2 / FTF-0801; document the 409 on a reused Idempotency-Key; align the rationale pattern with the U+001C-U+001F refusal.
 00. **STALE-CLAIM RULING AND CLAIM ORDER (Control plane, 2026-11-19).** The relay merged nothing after 2026-11-12. Every Active item looked claimed by a draft whose session had ended, the lane asked for rulings that were not given, and one lane session sat PENDING from 2026-11-12T18:29Z (archived 2026-11-19), which also stopped the dispatcher. "Frontier saturated" is NOT a valid outcome while this block lists a claimable item.
    **Rule applied (2026-10-23 ruling, restated):** a draft `[relay]` PR with no push for 5 days is not a claim, and a draft whose session ended without finishing is dead at once. Evidence below is the last commit on each claim branch, read 2026-11-19. To reclaim: merge main into the dead branch, keep its commits, push the next round name, open the new draft. Do not close or edit the old PR.
    - #961 FTF-R006-P2 (last push 10-22): DEAD. Still blocked on FTF-R006-P1b (item 0c); take it right after 0c is certified, as `relay/FTF-R006-P2-r2`.
