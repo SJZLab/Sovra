@@ -101,7 +101,7 @@ _MAX_KEY_LENGTH: Final = 200
 _KEY_PATTERN: Final = re.compile(r"[A-Za-z0-9._:-]{8,200}")
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _WRITE_ROLES: Final[frozenset[Role]] = frozenset({Role.WORKSPACE_ADMIN, Role.ORGANIZATION_ADMIN})
-_PROBE_FIELDS: Final = frozenset({"csv", "json"})
+_PROBE_FIELDS: Final = frozenset({"csv", "json", "xlsx"})
 _MAPPING_FIELDS: Final = frozenset({"mapping"})
 _APPROVE_FIELDS: Final = frozenset(
     {"expected_preview_sha256", "purpose", "acknowledged_ignored_keys", "rationale"}
