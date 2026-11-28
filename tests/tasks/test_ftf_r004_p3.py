@@ -3115,6 +3115,35 @@ def test_l2_round2_bare_layout_discovery_cannot_reach_a_command() -> None:
     )
 
 
+def test_l2_round2_any_other_git_variable_is_refused() -> None:
+    """The exact-set check, not only GIT_DIR: any GIT_* variable added during the run (here
+    GIT_EXEC_PATH, which chooses the git sub-commands that run) refuses the allowed lookup."""
+    for name, value in (
+        ("GIT_EXEC_PATH", tempfile.mkdtemp(prefix="p3-exec-")),
+        ("GIT_CONFIG_COUNT", "0"),
+        ("GIT_WORK_TREE", tempfile.mkdtemp(prefix="p3-wt-")),
+    ):
+
+        def add(_r: Any, n: str = name, v: str = value) -> None:
+            os.environ[n] = v
+            try:
+                _git_status()(_r)
+            finally:
+                os.environ.pop(n, None)
+
+        got = _code(
+            _run,
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=add),
+            _case_set(_records()[:1]),
+        )
+        check(
+            "FTF-R004-P3-AC8",
+            f"{name} added to the pinned git environment during a run -> outbound_call_blocked "
+            f"(got {got})",
+            got == "outbound_call_blocked",
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
