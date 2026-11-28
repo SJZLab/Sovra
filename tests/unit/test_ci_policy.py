@@ -694,6 +694,22 @@ def test_model_roles_ui_real_api_job_is_wired_into_the_verdict():
     assert "tests/tasks/test_ftf_h010_p6.py" in text
 
 
+def test_nvidia_environment_object_store_job_is_wired_into_the_verdict():
+    """FTF-0705: the real-SeaweedFS job exists, is scope/focus-gated like its siblings, runs its
+    proof and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""
+    text = CI.read_text()
+    block = _jobs_block(text, "nvidia-environment-object-store-integration")
+    assert "needs: classify" in block
+    assert (
+        "contains(needs.classify.outputs.focus, ' nvidia-environment-object-store-integration ')"
+        in block
+    )
+    assert "tests/integration/test_ftf_0705_object_store_s3.py" in block
+    needs = _jobs_block(text, "ci-verdict")
+    assert "      - nvidia-environment-object-store-integration\n" in needs
+    assert "tests/tasks/test_ftf_0705.py" in text
+
+
 def test_training_experiment_store_job_is_wired_into_the_verdict():
     """FTF-0701-P2: the real-Postgres job exists, is scope/focus-gated like its siblings, runs its
     proof and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""

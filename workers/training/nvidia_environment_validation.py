@@ -163,7 +163,7 @@ _CAPABILITY_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})$")
 _CUDA_VERSION_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})(?:\.\d{1,4})?$")
 _UUID_RE = re.compile(r"^(GPU|MIG)-[0-9A-Za-z-]{1,80}$")
 _INT_RE = re.compile(r"^\d{1,12}$")
-_CONTAINER_CGROUP_MARKERS = ("docker", "kubepods", "containerd", "libpod", "lxc")
+_CONTAINER_CGROUP_RE = re.compile(r"docker|kubepods|containerd|libpod|lxc")
 
 
 # --------------------------------------------------------------------------------------------
@@ -222,7 +222,21 @@ class SupportedNvidiaProfile:
     probes: tuple[ProbeOutcome, ...]
 
     def to_dict(self) -> dict[str, object]:
-        return _result_dict(self)
+        return {
+            "status": self.status,
+            "host_profile": self.host_profile,
+            "in_container": self.in_container,
+            "driver_version": self.driver_version,
+            "cuda_version": self.cuda_version,
+            "torch_version": self.torch_version,
+            "gpus": [_gpu_dict(g) for g in self.gpus],
+            "qualified_device_indices": list(self.qualified_device_indices),
+            "bf16_supported": self.bf16_supported,
+            "storage_path": self.storage_path,
+            "storage_free_bytes": self.storage_free_bytes,
+            "object_store_bucket": self.object_store_bucket,
+            "probes": _probes_list(self.probes),
+        }
 
 
 @dataclass(frozen=True)
@@ -235,35 +249,32 @@ class BlockedEnvironment:
     probes: tuple[ProbeOutcome, ...]
 
     def to_dict(self) -> dict[str, object]:
-        return _result_dict(self)
+        return {
+            "status": self.status,
+            "failed_probe": self.failed_probe,
+            "code": self.code,
+            "detail": self.detail,
+            "failed_probes": list(self.failed_probes),
+            "probes": _probes_list(self.probes),
+        }
 
 
-def _result_dict(result: SupportedNvidiaProfile | BlockedEnvironment) -> dict[str, object]:
-    out: dict[str, object] = {}
-    for name in result.__dataclass_fields__:
-        value = getattr(result, name)
-        if name == "probes":
-            value = [
-                {"probe": p.probe, "status": p.status, "code": p.code, "detail": p.detail}
-                for p in value
-            ]
-        elif name == "gpus":
-            value = [
-                {
-                    "index": g.index,
-                    "name": g.name,
-                    "uuid": g.uuid,
-                    "driver_version": g.driver_version,
-                    "memory_total_bytes": g.memory_total_bytes,
-                    "memory_free_bytes": g.memory_free_bytes,
-                    "compute_capability": list(g.compute_capability),
-                }
-                for g in value
-            ]
-        elif isinstance(value, tuple):
-            value = list(value)
-        out[name] = value
-    return out
+def _probes_list(probes: tuple[ProbeOutcome, ...]) -> list[dict[str, str]]:
+    return [
+        {"probe": p.probe, "status": p.status, "code": p.code, "detail": p.detail} for p in probes
+    ]
+
+
+def _gpu_dict(g: GpuDevice) -> dict[str, object]:
+    return {
+        "index": g.index,
+        "name": g.name,
+        "uuid": g.uuid,
+        "driver_version": g.driver_version,
+        "memory_total_bytes": g.memory_total_bytes,
+        "memory_free_bytes": g.memory_free_bytes,
+        "compute_capability": list(g.compute_capability),
+    }
 
 
 # --------------------------------------------------------------------------------------------
@@ -281,11 +292,13 @@ class ObjectStoreFailure(Exception):
 
 
 class ObjectStoreProbe(Protocol):
-    bucket: str
+    """`round_trip` writes `body` at `key`, reads it back byte-identically and deletes it, or
+    raises `ObjectStoreFailure`."""
 
-    def round_trip(self, key: str, body: bytes) -> None:
-        """Write `body` at `key`, read it back byte-identically and delete it, or raise
-        `ObjectStoreFailure`."""
+    @property
+    def bucket(self) -> str: ...
+
+    def round_trip(self, key: str, body: bytes) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -307,8 +320,8 @@ class EnvironmentRequirements:
             raise ValueError("require_bf16 and allow_development_host must be bool")
         if type(self.min_free_storage_bytes) is not int or self.min_free_storage_bytes < 1:
             raise ValueError("min_free_storage_bytes must be a positive int")
-        if not isinstance(self.storage_path, str) or not self.storage_path.strip():
-            raise ValueError("storage_path must be a non-empty path")
+        if not isinstance(self.storage_path, str) or not os.path.isabs(self.storage_path):
+            raise ValueError("storage_path must be an absolute path")
 
 
 @dataclass(frozen=True)
@@ -431,7 +444,7 @@ def parse_nvidia_smi(stdout: str) -> tuple[GpuDevice, ...]:
     """Strictly parse `nvidia-smi --query-gpu=... --format=csv,noheader,nounits` output."""
     devices: list[GpuDevice] = []
     for line in stdout.splitlines():
-        if not line.strip():
+        if not line or line.isspace():
             continue
         fields = [part.strip() for part in line.split(",")]
         if len(fields) != 7:
@@ -490,7 +503,7 @@ def _strict_int(value: object) -> int:
 
 
 def parse_torch_report(stdout: str) -> _TorchReport:
-    lines = [line for line in stdout.splitlines() if line.strip()]
+    lines = [line for line in stdout.splitlines() if line and not line.isspace()]
     if len(lines) != 1:
         raise _ParseError("expected exactly one JSON line")
     try:
@@ -641,7 +654,7 @@ def _detect_container(host: HostAccess) -> bool:
     if host.exists("/.dockerenv") or host.exists("/run/.containerenv"):
         return True
     cgroup = (host.read_text("/proc/1/cgroup") or "").lower()
-    return any(marker in cgroup for marker in _CONTAINER_CGROUP_MARKERS)
+    return _CONTAINER_CGROUP_RE.search(cgroup) is not None
 
 
 def _probe_container(host: HostAccess, st: _State) -> ProbeOutcome:
@@ -669,7 +682,7 @@ def _probe_container(host: HostAccess, st: _State) -> ProbeOutcome:
             _short(f"{result.stdout} {result.stderr}") or "docker info timed out",
         )
     try:
-        runtimes = json.loads(result.stdout.strip() or "null")
+        runtimes = json.loads(result.stdout)
     except ValueError:
         runtimes = None
     if isinstance(runtimes, dict) and "nvidia" in runtimes:
@@ -836,9 +849,8 @@ def validate_nvidia_environment(
     record(_probe_object_store(requirements))
 
     probes = tuple(out[name] for name in PROBE_ORDER)
-    failed = tuple(p.probe for p in probes if p.status == "failed")
-    not_run = tuple(p.probe for p in probes if p.status == "not_run")
-    if failed or not_run:
+    if not all(p.passed for p in probes):
+        failed = tuple(p.probe for p in probes if not p.passed and p.status != "not_run")
         first = next(p for p in probes if not p.passed)
         return BlockedEnvironment(
             status="BLOCKED",
@@ -872,7 +884,7 @@ def validate_nvidia_environment(
 def blocked_by_gpu_absence(result: SupportedNvidiaProfile | BlockedEnvironment) -> bool:
     """True when the machine simply has no usable NVIDIA GPU stack (the BLOCKED_EXTERNAL case
     for real-GPU qualification), as opposed to a GPU machine that failed a probe."""
-    return isinstance(result, BlockedEnvironment) and result.code in _NO_GPU_CODES
+    return isinstance(result, BlockedEnvironment) and _NO_GPU_CODES.issuperset((result.code,))
 
 
 _NO_GPU_CODES = frozenset({"nvidia_smi_not_found", "gpu_absent", "driver_not_loaded"})

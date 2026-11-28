@@ -646,6 +646,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0701_p2.py
       - name: FTF-0701 negative-test proof (training experiment routes -- 07 contract paths equal the router, 6-role truth table, strict 64 KiB body, every refusal code with its status on every operation, identical 404s, main.py wiring on the real app, fault-injected route and contract copies; no DB or network required)
         run: uv run python3 tests/tasks/test_ftf_0701.py
+      - name: FTF-0705 negative-test proof (NVIDIA environment validation -- every probe fault BLOCKED with its exact probe and code, driver/CUDA/bf16/memory/storage boundaries, S3 probe code mapping, the PyTorch probe script, and the validator, worker entry and real-GPU script on this real GPU-less runner: BLOCKED, BLOCKED_EXTERNAL exit 2, never SUPPORTED)
+        run: uv run python3 tests/tasks/test_ftf_0705.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -1410,6 +1412,23 @@ jobs:
             echo "== consecutive run $run of 10"
             python3 tests/integration/test_ftf_0501_direct_upload_s3.py
           done
+
+  nvidia-environment-object-store-integration:
+    # FTF-0705: the NVIDIA environment validator's object-store probe against the live SeaweedFS
+    # S3-API container (right identity round-trips and leaves nothing behind; wrong secret,
+    # unknown key, missing bucket and a closed port each stay BLOCKED with their own code), and
+    # the validator and worker entry on this GPU-less runner are BLOCKED, never SUPPORTED.
+    # Same real container pattern as s3-minio-versioned-source-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' nvidia-environment-object-store-integration ')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Prove the NVIDIA environment object-store probe against the live S3 fixture
+        run: python3 tests/integration/test_ftf_0705_object_store_s3.py
 
   object-storage-backup-integration:
     # FTF-1602: real object-storage backup evidence against the live SeaweedFS
@@ -4674,6 +4693,7 @@ jobs:
       - dataset-split-manifest-routes-integration
       - live-auth-path-integration
       - network-policy-enforcement-integration
+      - nvidia-environment-object-store-integration
       - object-storage-backup-integration
       - mlflow-projection-integration
       - mlflow-durable-outbox-integration

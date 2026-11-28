@@ -34,6 +34,7 @@ EXIT_SUPPORTED = 0
 EXIT_USAGE = 2
 EXIT_BLOCKED = 3
 GIB = 1024**3
+_REQUIRES_BF16 = {"bf16": True, "fp16": False}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -64,7 +65,7 @@ def main(
     try:
         requirements = EnvironmentRequirements(
             min_gpu_vram_gb=args.min_gpu_vram_gb,
-            require_bf16=args.precision == "bf16",
+            require_bf16=_REQUIRES_BF16[args.precision],
             storage_path=work_dir,
             min_free_storage_bytes=args.min_free_storage_gb * GIB,
             object_store=probe_from_environment(environ),
