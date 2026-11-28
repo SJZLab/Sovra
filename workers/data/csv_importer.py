@@ -88,6 +88,8 @@ from workers.data.import_common import (
     AcceptedRecord,
     BlankLine,
     ChunkReader,
+    GroupAssembler,
+    GroupedRecord,
     ImportAborted,
     ImportAccumulator,
     ImportEvent,
@@ -185,7 +187,13 @@ def _mapped_slots(mapping: ImportMapping) -> tuple[tuple[str, Slot], ...]:
         ("system", mapping.system),
         ("messages", mapping.messages_slot),
         ("group_key", mapping.group_key),
+        # FTF-H011-P5: a grouped_multi_row mapping reads one message per row
+        ("role", mapping.role_slot),
+        ("content", mapping.content_slot),
     ]
+    if mapping.group_rows is not None:
+        named.append(("group_rows.group_key", mapping.group_rows.group_key))
+        named.append(("group_rows.order_key", mapping.group_rows.order_key))
     named.extend((f"metadata.{name}", slot) for name, slot in mapping.metadata_slots)
     return tuple((name, slot) for name, slot in named if slot is not None)
 
@@ -511,6 +519,11 @@ class CsvEventStream(Iterator[ImportEvent]):
         non_blank = 0
         record_index = 0
         last_line = 1
+        assembler = (
+            GroupAssembler(self._mapping, max_record_bytes=self._limits.max_record_bytes)
+            if self._mapping.group_rows is not None
+            else None
+        )
         for start_line, row in self._rows():
             last_line = start_line
             if not row:
@@ -530,6 +543,17 @@ class CsvEventStream(Iterator[ImportEvent]):
                 width = len(row)
                 positions = self._positions(None, width, start_line)
             locator = f"line:{start_line}"
+            if assembler is not None:
+                # One record per group: rows are buffered by the assembler, numbered when the
+                # group closes (FTF-H011-P5).
+                for event in self._group_row(row, headers, positions, locator, width, assembler):
+                    if isinstance(event, GroupedRecord):
+                        index, record_index = record_index, record_index + 1
+                        yield self._grouped_event(event, index)
+                    else:
+                        record_index += 1
+                        yield event
+                continue
             index, record_index = record_index, record_index + 1
             if len(row) != width:
                 yield RowRejection(locator, "column_count_mismatch")
@@ -537,6 +561,60 @@ class CsvEventStream(Iterator[ImportEvent]):
             yield self._map_row(row, headers, positions, locator, index)
         if options.has_header and headers is None:
             raise CsvAborted("mapping_column_missing", last_line)
+        if assembler is not None:
+            for event in assembler.finish():
+                if isinstance(event, GroupedRecord):
+                    index, record_index = record_index, record_index + 1
+                    yield self._grouped_event(event, index)
+                else:
+                    record_index += 1
+                    yield event
+
+    def _group_row(
+        self,
+        row: list[str],
+        headers: list[str] | None,
+        positions: list[tuple[str, int]],
+        locator: str,
+        width: int | None,
+        assembler: GroupAssembler,
+    ) -> list[GroupedRecord | RowRejection]:
+        """A row of a grouped source: a row that cannot be read is its own rejection and
+        poisons the open group (it may have been one of its turns)."""
+        if len(row) != width:
+            assembler.poison()
+            return [RowRejection(locator, "column_count_mismatch")]
+        total = 0
+        for name, position in positions:
+            if "\x00" in row[position]:
+                assembler.poison()
+                return [RowRejection(locator, "nul_character", name)]
+            total += len(row[position].encode("utf-8"))
+        try:
+            mapped = apply_mapping(self._mapping, row, headers=headers, grouped=True)
+        except RowMappingError as exc:
+            assembler.poison()
+            return [RowRejection(locator, exc.code, exc.slot)]
+        return list(assembler.add(locator, mapped, total))
+
+    def _grouped_event(self, group: GroupedRecord, index: int) -> ImportEvent:
+        try:
+            record = normalize_mapped_record(
+                self._mapping,
+                group.mapped,
+                source_record_index=index,
+                dataset_sha256=self._dataset_sha256,
+                source_type=SOURCE_TYPE,
+                tool_schemas=self._tool_schemas,
+                tool_argument_validator=self._tool_argument_validator,
+            )
+        except RowMappingError as exc:
+            return RowRejection(group.locator, exc.code, exc.slot)
+        return AcceptedRecord(
+            to_dataset_record_candidate(
+                record, record_index=index, tool_schema_status="not_applicable"
+            )
+        )
 
     def _map_row(
         self,

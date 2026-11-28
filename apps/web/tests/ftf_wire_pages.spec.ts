@@ -22,6 +22,7 @@ const V: Record<string, string> = {
   datasetId: "dddddddd-0000-4000-8000-000000000004",
   suiteId: "eeeeeeee-0000-4000-8000-000000000005",
   connectionId: "ffffffff-0000-4000-8000-000000000006",
+  modelVersionId: "abababab-0000-4000-8000-000000000007",
   modelName: "model-x",
   securityProfile: "strict",
 };
@@ -95,6 +96,16 @@ const CASES: Case[] = [
     marker: "suite-lock-load-button",
     click: () => fireEvent.click(screen.getByTestId("suite-lock-load-button")),
     paths: [`${proj}/evaluation-suites/${V.suiteId}`],
+  },
+  {
+    // FTF-H010-P6: the panel loads the FTF-1001 item and the FTF-H010-P4 roles and actions on mount.
+    slug: "model-version",
+    marker: "model-version-panel",
+    paths: [
+      `${proj}/model-versions/${V.modelVersionId}`,
+      `${proj}/model-versions/${V.modelVersionId}/roles`,
+      `${proj}/model-versions/${V.modelVersionId}/actions`,
+    ],
   },
 ];
 
