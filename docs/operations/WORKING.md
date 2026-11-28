@@ -15,6 +15,10 @@ rules where they differ. The Laws and hard stops in CLAUDE.md are unchanged.
    (by task id for gate steps, by job name for needs entries and job blocks), never at the end of
    the list. Appending at one shared line made any two PRs conflict: on 2026-11-28 the PR for
    FTF-0701 went green and lost the merge to a ci.yml append twice.
+   A gate proof step is written `run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3
+   tests/tasks/test_x.py`: on a pull request the proof then runs only when the change touches its
+   inputs (its test file, a file or module the test names, a suite-wide input, or `ci-full` in the PR
+   body); the nightly run on main runs every proof (scripts/ci_gate_step.py).
 3. **Before every push.** Run lint, format and type checks, the proving tests the way CI runs
    them, and the mutation gate on the changed modules, locally. CI confirms; it is not the first
    run.
