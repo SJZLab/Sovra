@@ -571,6 +571,29 @@ test("H010P5-F6: 403/404/400 are shown as alerts and take focus", async () => {
   }
 });
 
+test("H010P5-F6b: the alert takes focus even when a zero-delay timer fires before React renders it", async () => {
+  // Worst-case ordering made deterministic: every zero-delay timer runs at once, before React has
+  // committed the alert. Focus that depends on such a timer finds no element and never moves.
+  const realSetTimeout = globalThis.setTimeout;
+  vi.stubGlobal("setTimeout", ((fn: (...a: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+    if (!ms) {
+      fn(...args);
+      return 0;
+    }
+    return realSetTimeout(fn, ms, ...args);
+  }) as unknown as typeof setTimeout);
+  try {
+    routes[`POST ${IMPORTS}`] = { status: 403, body: { detail: "forbidden" } };
+    mount();
+    await toReviewEndpoint();
+    await confirmAndStart();
+    const alert = await waitFor(() => screen.getByTestId("import-submit-error"));
+    await waitFor(() => expect(document.activeElement).toBe(alert));
+  } finally {
+    vi.stubGlobal("setTimeout", realSetTimeout);
+  }
+});
+
 // ---- H010P5-G: job states --------------------------------------------------------------------
 test("H010P5-G1: blocked_external is never shown as failed or succeeded", async () => {
   routes[`GET ${IMPORTS}`] = {
