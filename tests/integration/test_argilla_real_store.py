@@ -53,6 +53,7 @@ sys.path.insert(0, str(ROOT / "tests" / "integration"))
 import test_argilla_identity_scope as base  # noqa: E402
 from packages.integrations.argilla.client import (  # noqa: E402
     ArgillaClient,
+    ArgillaNotFoundError,
     ArgillaRejectedError,
     ArgillaUnavailableError,
 )
@@ -72,6 +73,7 @@ from app.reviews.argilla_identity_store import (  # noqa: E402
     ReviewScopeRecord,
     ensure_review_scope,
     ensure_reviewer_identity,
+    revocation_pending,
     revoke_reviewer_identity,
     sync_workspace_membership,
 )
@@ -138,15 +140,30 @@ class Real:
         )
         return str(created["id"])
 
-    def can_read(self, annotator: ArgillaClient, dataset_id: str) -> bool:
-        """True on HTTP 200; False ONLY on a real 403/404 refusal. An outage or any other
-        error propagates -- 'unavailable' is never read as 'denied' (Law 17)."""
+    def can_read(self, annotator: ArgillaClient, dataset_id: str, *, revoked: bool = False) -> bool:
+        """True on HTTP 200; False ONLY on a real 403/404 refusal -- or, for an identity the test
+        has REVOKED, a real 401 (FTF-R006-P2: revoke deletes the Argilla user, so its key no
+        longer authenticates at all). An outage or any other error propagates -- 'unavailable'
+        is never read as 'denied' (Law 17)."""
         try:
             annotator._call("GET", f"/datasets/{dataset_id}")
         except ArgillaRejectedError as exc:
             if "HTTP 403" in str(exc) or "HTTP 404" in str(exc):
                 return False
+            if revoked and "HTTP 401" in str(exc):
+                return False
             raise  # 401/400/422/... is NOT a scope refusal: never read it as 'denied'
+        return True
+
+    def key_authenticates(self, annotator: ArgillaClient) -> bool:
+        """True when the real server accepts the key on `/me` (HTTP 200); False ONLY on a real
+        401. An outage or any other error propagates (Law 17)."""
+        try:
+            annotator._call("GET", "/me")
+        except ArgillaRejectedError as exc:
+            if "HTTP 401" in str(exc):
+                return False
+            raise
         return True
 
     def workspaces_of(self, annotator: ArgillaClient) -> set[str]:
@@ -346,7 +363,7 @@ def section_scope_and_isolation(world: Any, real: Real) -> dict[str, Any]:
     _revoke(world, real, identity)
     check(
         "revoke removes every real access (annotator REFUSED on its own dataset)",
-        not real.can_read(annotator, ds1),
+        not real.can_read(annotator, ds1, revoked=True),
     )
     check(
         "a sync after revoke is refused by the store",
@@ -356,7 +373,7 @@ def section_scope_and_isolation(world: Any, real: Real) -> dict[str, Any]:
     )
     check(
         "after the refused sync the revoked annotator still reads nothing",
-        not real.can_read(annotator, ds1),
+        not real.can_read(annotator, ds1, revoked=True),
     )
     _revoke(world, real, identity)  # idempotent: no error
     return {"scope1": scope1, "ds1": ds1, "ds2": ds2}
@@ -403,7 +420,7 @@ def section_races(world: Any, real: Real, ctx: dict[str, Any]) -> None:
     )
     check(
         "the revoked identity reads NOTHING on the real server after the slowed-add race (R11b/R11c class)",
-        not real.can_read(annotator, ds1),
+        not real.can_read(annotator, ds1, revoked=True),
     )
     check(
         "the revoked identity holds no real workspace membership after the race",
@@ -451,12 +468,192 @@ def section_races(world: Any, real: Real, ctx: dict[str, Any]) -> None:
             a, b = pool.submit(go_sync), pool.submit(go_revoke)
             a.result(timeout=60)
             b.result(timeout=60)
-        if real.can_read(ann, ds1):
+        if real.can_read(ann, ds1, revoked=True):
             leaks += 1
     check(
         f"free-running sync-vs-revoke: revoked identity read the dataset in {leaks} of 5 trials (must be 0)",
         leaks == 0,
     )
+
+
+def _member_status(world: Any, scope: ReviewScopeRecord, identity: ReviewerIdentityRecord) -> Any:
+    with Session(world.owner) as session:
+        return session.execute(
+            text(
+                "SELECT status FROM argilla_workspace_members "
+                "WHERE scope_id = :s AND identity_id = :i"
+            ),
+            {"s": str(scope.id), "i": str(identity.id)},
+        ).scalar_one_or_none()
+
+
+def _pending(world: Any, identity: ReviewerIdentityRecord) -> bool:
+    return revocation_pending(world.factory, organization_id=world.org1, identity_id=identity.id)
+
+
+def _dead_port_client(real: Real) -> ArgillaClient:
+    """A client whose calls hit a real closed loopback port: a REAL connection failure, i.e. the
+    store sees the same `ArgillaUnavailableError` an Argilla outage produces, at exactly the call
+    the test routes through it."""
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        dead_port = probe.getsockname()[1]
+    return ArgillaClient(
+        f"http://127.0.0.1:{dead_port}", _policy(dead_port), api_key=real.owner_key, timeout=3.0
+    )
+
+
+def section_revoke_kills_key(world: Any, real: Real, ctx: dict[str, Any]) -> None:
+    """FTF-R006-P1b certifier advisory 2 (fixed in FTF-R006-P2): revoke left the real Argilla
+    user and its API key valid. Revoke now deletes the user; the key stops authenticating."""
+    scope1: ReviewScopeRecord = ctx["scope1"]
+    ds1: str = ctx["ds1"]
+    identity, annotator = _annotator(real, world, f"key-{uuid.uuid4().hex[:8]}")
+    _sync(world, real, identity, scope1, Role.ML_ENGINEER)
+    check("[P2-K] before revoke the reviewer key authenticates", real.key_authenticates(annotator))
+    check("[P2-K] before revoke the reviewer reads its dataset", real.can_read(annotator, ds1))
+    _revoke(world, real, identity)
+    check(
+        "[P2-K] after revoke the reviewer's own API key is REJECTED by the real server (HTTP 401)",
+        not real.key_authenticates(annotator),
+    )
+    check(
+        "[P2-K] after revoke the real Argilla user no longer exists (owner GET /users/{id} -> 404)",
+        raises(ArgillaNotFoundError, real.owner.get_user, identity.argilla_user_id),
+    )
+    with Session(world.owner) as session:
+        deleted_at = session.execute(
+            text("SELECT argilla_user_deleted_at FROM argilla_reviewer_identities WHERE id = :i"),
+            {"i": str(identity.id)},
+        ).scalar_one()
+    check("[P2-K] the deletion is recorded (argilla_user_deleted_at set)", deleted_at is not None)
+    check("[P2-K] a completed revoke is not pending", not _pending(world, identity))
+    _revoke(world, real, identity)  # idempotent: the user is gone, no error
+    check(
+        "[P2-K] a second revoke is a no-op and the key stays dead",
+        not real.key_authenticates(annotator),
+    )
+
+    # Outage during the user deletion: the revoke propagates the outage, the identity reads back
+    # as revocation PENDING while the key still works, and a retry deletes the user.
+    identity2, annotator2 = _annotator(real, world, f"keyout-{uuid.uuid4().hex[:8]}")
+    _sync(world, real, identity2, scope1, Role.ML_ENGINEER)
+    dead = _dead_port_client(real)
+    split = real.client(real.owner_key)
+    split.delete_user = dead.delete_user  # type: ignore[method-assign]
+    check(
+        "[P2-K] an outage during the user deletion propagates as ArgillaUnavailableError (Law 17)",
+        raises(ArgillaUnavailableError, _revoke_with, world, identity2, split),
+    )
+    still_valid = real.key_authenticates(annotator2)
+    check(
+        "[P2-K] while the real key still authenticates, the Factory reports the revocation as PENDING",
+        (not still_valid) or _pending(world, identity2),
+    )
+    check("[P2-K] (the outage really left the key valid on the real server)", still_valid)
+    _revoke(world, real, identity2)
+    check(
+        "[P2-K] the retried revoke deletes the user: key rejected (401)",
+        not real.key_authenticates(annotator2),
+    )
+    check(
+        "[P2-K] after the retry the revocation is no longer pending", not _pending(world, identity2)
+    )
+
+
+def section_undo_outage(world: Any, real: Real, ctx: dict[str, Any]) -> None:
+    """FTF-R006-P1b certifier advisory 1 (fixed in FTF-R006-P2): sync's revoke-race undo marked
+    the membership `revoked` before `remove_workspace_user` ran, so an outage during that removal
+    left a real, live Argilla membership behind a `revoked` row that no revoke retry re-drives.
+
+    Deterministic on the real server: sync passes its up-front check; inside its real add, a
+    revoke lands whose user deletion hits an outage (so the user still exists); the real add then
+    lands; sync's guarded write sees the revocation and undoes, and the undo's removal hits a real
+    outage too. The real membership now exists; the Factory row must say `removal_pending`, never
+    `revoked` (and never be missing), and a revoke retry must remove the membership for real."""
+    scope1: ReviewScopeRecord = ctx["scope1"]
+    ds1: str = ctx["ds1"]
+    identity, annotator = _annotator(real, world, f"undo-{uuid.uuid4().hex[:8]}")
+    dead = _dead_port_client(real)
+    revoke_client = real.client(real.owner_key)
+    revoke_client.delete_user = dead.delete_user  # type: ignore[method-assign]
+    sync_client = real.client(real.owner_key)
+    real_add = sync_client.add_workspace_user
+    revoke_outcome: list[str] = []
+
+    def add_after_racing_revoke(workspace_id: str, user_id: str) -> None:
+        try:
+            _revoke_with(world, identity, revoke_client)
+            revoke_outcome.append("completed")
+        except ArgillaUnavailableError:
+            revoke_outcome.append("unavailable")
+        real_add(workspace_id, user_id)
+
+    sync_client.add_workspace_user = add_after_racing_revoke  # type: ignore[method-assign]
+    sync_client.remove_workspace_user = dead.remove_workspace_user  # type: ignore[method-assign]
+    check(
+        "[P2-U] the undo's removal outage propagates as ArgillaUnavailableError (Law 17)",
+        raises(
+            ArgillaUnavailableError,
+            _sync,
+            world,
+            real,
+            identity,
+            scope1,
+            Role.ML_ENGINEER,
+            client=sync_client,
+        ),
+    )
+    check(
+        f"[P2-U] the racing revoke hit its own outage first (got {revoke_outcome})",
+        revoke_outcome == ["unavailable"],
+    )
+    really_member = identity.argilla_user_id in {
+        u.id for u in real.owner.list_workspace_users(scope1.argilla_workspace_id)
+    }
+    check("[P2-U] (the outage really left a live membership on the real server)", really_member)
+    status = _member_status(world, scope1, identity)
+    check(
+        f"[P2-U] the Factory row for that live membership is 'removal_pending', never 'revoked' or "
+        f"missing (got {status!r})",
+        status == "removal_pending",
+    )
+    check("[P2-U] the identity reads back as revocation pending", _pending(world, identity))
+    _revoke(world, real, identity)  # the retry, with the server reachable
+    check(
+        "[P2-U] the revoke retry removed the real membership",
+        identity.argilla_user_id
+        not in {u.id for u in real.owner.list_workspace_users(scope1.argilla_workspace_id)},
+    )
+    check(
+        "[P2-U] after the retry the revoked reviewer reads nothing and its key is dead",
+        not real.can_read(annotator, ds1, revoked=True) and not real.key_authenticates(annotator),
+    )
+    check(
+        f"[P2-U] after the retry the row is 'revoked' (got {_member_status(world, scope1, identity)!r})",
+        _member_status(world, scope1, identity) == "revoked",
+    )
+    check("[P2-U] nothing is pending after the retry", not _pending(world, identity))
+
+
+def _start_real_server() -> None:
+    named = os.environ.get("ARGILLA_SERVER_CONTAINER", "argilla-server")
+    subprocess.run(["docker", "start", named], check=True, capture_output=True)
+    probe = ArgillaClient(
+        os.environ.get("ARGILLA_BASE_URL", "http://127.0.0.1:6900"),
+        _policy(urlsplit(os.environ.get("ARGILLA_BASE_URL", "http://127.0.0.1:6900")).port or 6900),
+        api_key=None,
+        timeout=3.0,
+    )
+    for _ in range(120):
+        try:
+            probe.get_version()
+            return
+        except ArgillaUnavailableError:
+            time.sleep(1.0)
+    check("the real Argilla server came back after docker start", False)
 
 
 def _stop_real_server(port: int) -> None:
@@ -520,6 +717,21 @@ def section_outage(world: Any, real: Real, ctx: dict[str, Any]) -> None:
         "the identity is already 'revoked' in the database when the outage interrupts the removal",
         status == "revoked",
     )
+    check(
+        "[P2-K] while the server is down the interrupted revoke reads back as PENDING (Law 17)",
+        _pending(world, identity),
+    )
+    _start_real_server()
+    check(
+        "[P2-K] (after restart the not-yet-revoked key still authenticates on the real server)",
+        real.key_authenticates(annotator),
+    )
+    _revoke(world, real, identity)
+    check(
+        "[P2-K] the revoke retried after the outage deletes the user: its key is rejected (401)",
+        not real.key_authenticates(annotator),
+    )
+    check("[P2-K] and nothing is pending any more", not _pending(world, identity))
 
 
 def _revoke_with(world: Any, identity: ReviewerIdentityRecord, client: ArgillaClient) -> None:
@@ -569,7 +781,9 @@ def main() -> None:
         real = Real(base_url, owner_key)
         ctx = section_scope_and_isolation(world, real)
         section_races(world, real, ctx)
-        section_outage(world, real, ctx)  # last: it stops the real server
+        section_revoke_kills_key(world, real, ctx)
+        section_undo_outage(world, real, ctx)
+        section_outage(world, real, ctx)  # last: it stops (and restarts) the real server
     finally:
         bao_process.terminate()
         try:

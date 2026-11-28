@@ -30,11 +30,16 @@ Three operations, each independently idempotent and safe to retry:
   removed Argilla workspace membership, even if this function is only
   re-run later (eventual, not instantaneous, consistency -- there is no
   live webhook from `memberships` yet).
-- `revoke_reviewer_identity` -- an explicit, final revoke: removes every
-  workspace membership the identity still holds, then marks the identity
-  itself `revoked`. The Argilla user account is left provisioned (not
-  deleted) so prior annotations keep a real author -- only the Factory's
-  own ability to add it to any further workspace is cut off.
+- `revoke_reviewer_identity` -- an explicit, final revoke: marks the
+  identity `revoked`, removes every workspace membership the identity still
+  holds (`active` or `removal_pending`), then DELETES the real Argilla user,
+  which is the only way Argilla v2.8.0 offers to make the user's API key stop
+  working (there is no key-rotation endpoint). The Factory keeps the
+  reviewer's provenance (`argilla_reviewer_identities`, P2's
+  `review_responses`); Argilla's cascade removes the user's own responses
+  there. Until the deletion is confirmed the identity reads back as
+  "revocation pending" (`argilla_user_deleted_at IS NULL`), and a retry
+  finishes it (FTF-R006-P2, certifier advisory 2 of FTF-R006-P1b).
 
 Every real network outcome from `ArgillaClient` is surfaced through this
 module's own `ArgillaIdentityError` subclasses or re-raised from
@@ -63,6 +68,7 @@ from packages.integrations.argilla.client import (
     ArgillaClient,
     ArgillaConflictError,
     ArgillaNotFoundError,
+    ArgillaRejectedError,
 )
 from packages.litellm_client.secret_manager_integration import OpenBaoConfig, store_secret_ref
 from sqlalchemy import text
@@ -75,6 +81,7 @@ from app.auth.tenant_isolation_query_guards import execute_tenant_scoped, tenant
 
 __all__ = [
     "ARGILLA_COMPONENT_KEY",
+    "MEMBERSHIP_STATUSES",
     "DATASET_SOURCE_ROLES",
     "ArgillaIdentityError",
     "ReviewScopeRecord",
@@ -82,6 +89,7 @@ __all__ = [
     "ReviewerIdentityRevokedError",
     "ensure_review_scope",
     "ensure_reviewer_identity",
+    "revocation_pending",
     "revoke_reviewer_identity",
     "sync_workspace_membership",
     "workspace_name_for",
@@ -96,6 +104,9 @@ DATASET_SOURCE_ROLES: frozenset[Role] = frozenset(
 )
 
 ARGILLA_COMPONENT_KEY = "argilla"
+# `removal_pending` (migration 0041): the real Argilla-side removal was started and has not been
+# confirmed. Never read as "removed"; `revoke_reviewer_identity` re-drives it.
+MEMBERSHIP_STATUSES = ("active", "removal_pending", "revoked")
 # Matches tests/integration/test_ftf_0202_secret_manager.py / test_ftf_0500's own convention:
 # the single default `secret` KV v2 mount, namespaced by a path prefix -- never a new mount
 # (which would need its own infra-side `bao secrets enable` step this module cannot perform).
@@ -140,6 +151,13 @@ class ReviewerIdentityRecord:
     argilla_user_id: str
     credential_secret_ref: str
     status: str
+    # Set once the real Argilla user (and so its API key) is deleted; NULL on a revoked identity
+    # means the revocation is still pending on the Argilla side (migration 0041).
+    argilla_user_deleted_at: datetime | None = None
+
+    @property
+    def revocation_pending(self) -> bool:
+        return self.status == "revoked" and self.argilla_user_deleted_at is None
 
 
 def workspace_name_for(organization_id: uuid.UUID, project_id: uuid.UUID) -> str:
@@ -265,7 +283,7 @@ def _identity_row(
         session,
         organization_id,
         text(
-            "SELECT id, argilla_user_id, credential_secret_ref, status "
+            "SELECT id, argilla_user_id, credential_secret_ref, status, argilla_user_deleted_at "
             "FROM argilla_reviewer_identities "
             "WHERE organization_id = :org AND issuer = :issuer AND subject = :subject"
         ),
@@ -281,6 +299,7 @@ def _identity_row(
         argilla_user_id=row[1],
         credential_secret_ref=row[2],
         status=row[3],
+        argilla_user_deleted_at=row[4],
     )
 
 
@@ -493,6 +512,16 @@ def sync_workspace_membership(
             client.add_workspace_user(scope.argilla_workspace_id, identity.argilla_user_id)
         except ArgillaConflictError:
             pass  # already a member on the real server -- idempotent outcome, not a failure.
+        except ArgillaRejectedError:
+            # A concurrent revoke already deleted the real user (argilla-server 2.8.0 answers the
+            # add with HTTP 422 "User with id ... not found"): no access was gained. Report it as
+            # the revocation it is; for a still-active identity the rejection propagates as-is.
+            if not _identity_is_active(session_factory, organization_id, identity.id):
+                raise ReviewerIdentityRevokedError(
+                    f"reviewer identity {identity.id} was revoked while its workspace "
+                    "membership was being synced"
+                ) from None
+            raise
         # A single atomic, conditional UPSERT, not a read-then-write: a concurrent
         # `revoke_reviewer_identity` call may have revoked this identity in the window since the
         # check above (the real Argilla call just made takes real wall-clock time). The INSERT and
@@ -528,22 +557,24 @@ def sync_workspace_membership(
         if written is not None and not _identity_is_active(
             session_factory, organization_id, identity.id
         ):
-            with tenant_scoped_session(session_factory, organization_id) as session:
-                execute_tenant_scoped(
-                    session,
-                    organization_id,
-                    text(
-                        "UPDATE argilla_workspace_members SET status = 'revoked', "
-                        "updated_at = now() WHERE id = :id"
-                    ),
-                    {"id": written[0]},
-                )
             written = None
         if written is None:
+            # UNDO (FTF-R006-P2, certifier advisory 1 of FTF-R006-P1b): the row is written
+            # `removal_pending` BEFORE the real removal and becomes `revoked` only AFTER it
+            # returned. The old order (mark `revoked`, then remove) left a `revoked` row next to a
+            # real, live Argilla membership whenever an outage hit the removal, and a revoke retry
+            # (which re-drives `active` rows) then had nothing to re-drive. Now an outage
+            # propagates (Law 17) with the row `removal_pending`, which revoke re-drives.
+            _set_membership_status(
+                session_factory, organization_id, scope.id, identity.id, "removal_pending"
+            )
             try:
                 client.remove_workspace_user(scope.argilla_workspace_id, identity.argilla_user_id)
             except ArgillaNotFoundError:
                 pass  # the real add above never landed (already raced away) -- fine either way.
+            _set_membership_status(
+                session_factory, organization_id, scope.id, identity.id, "revoked"
+            )
             raise ReviewerIdentityRevokedError(
                 f"reviewer identity {identity.id} was revoked while its workspace membership "
                 "was being synced -- the real Argilla-side add has been undone"
@@ -551,6 +582,8 @@ def sync_workspace_membership(
     else:
         if membership is None or membership[1] == "revoked":
             return
+        # `active` or `removal_pending`: the real membership may exist, so remove it for real
+        # and only then record `revoked`; an outage leaves the row as it was (Law 17).
         try:
             client.remove_workspace_user(scope.argilla_workspace_id, identity.argilla_user_id)
         except ArgillaNotFoundError:
@@ -567,6 +600,58 @@ def sync_workspace_membership(
             )
 
 
+def _set_membership_status(
+    session_factory: Callable[[], Session],
+    organization_id: uuid.UUID,
+    scope_id: uuid.UUID,
+    identity_id: uuid.UUID,
+    status: str,
+) -> None:
+    """Upserts the (scope, identity) membership row to `status` in its own committed
+    transaction (so the state is durable before the next real Argilla call)."""
+    if status not in MEMBERSHIP_STATUSES:
+        raise ValueError("unknown membership status")
+    with tenant_scoped_session(session_factory, organization_id) as session:
+        execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "INSERT INTO argilla_workspace_members "
+                "(organization_id, scope_id, identity_id, status) "
+                "VALUES (:org, :scope, :identity, :status) "
+                "ON CONFLICT (scope_id, identity_id) DO UPDATE "
+                "SET status = EXCLUDED.status, updated_at = now()"
+            ),
+            {"org": organization_id, "scope": scope_id, "identity": identity_id, "status": status},
+        )
+
+
+def revocation_pending(
+    session_factory: Callable[[], Session],
+    *,
+    organization_id: uuid.UUID,
+    identity_id: uuid.UUID,
+) -> bool:
+    """True while a revoked identity's Argilla-side revocation is unfinished: the real user (and
+    so its API key) is not yet deleted, or a membership is still `active` / `removal_pending`.
+    Law 17: an interrupted revoke stays visible as pending here until a retry completes it."""
+    with tenant_scoped_session(session_factory, organization_id) as session:
+        row = execute_tenant_scoped(
+            session,
+            organization_id,
+            text(
+                "SELECT i.status, i.argilla_user_deleted_at, EXISTS (SELECT 1 FROM "
+                "argilla_workspace_members m WHERE m.organization_id = i.organization_id "
+                "AND m.identity_id = i.id AND m.status IN ('active', 'removal_pending')) "
+                "FROM argilla_reviewer_identities i WHERE i.organization_id = :org AND i.id = :id"
+            ),
+            {"org": organization_id, "id": identity_id},
+        ).first()
+    if row is None:
+        raise ArgillaIdentityError(f"no reviewer identity {identity_id} in this organization")
+    return row[0] == "revoked" and (row[1] is None or bool(row[2]))
+
+
 def revoke_reviewer_identity(
     session_factory: Callable[[], Session],
     *,
@@ -576,14 +661,12 @@ def revoke_reviewer_identity(
     client: ArgillaClient,
 ) -> None:
     """Final, explicit revoke: marks the identity `revoked` FIRST, then removes
-    every active workspace membership it still holds on the real Argilla
-    server. Idempotent -- revoking an already-revoked identity is a no-op,
-    never an error: the status UPDATE's `AND status <> 'revoked'` guard
-    affects zero rows, and the membership query selects only 'active' rows,
-    so a completed revoke makes zero Argilla calls. Because the identity is
-    already revoked when an Argilla outage interrupts the removal loop, the
-    outage propagates (Law 17) and a retry still finds the unremoved
-    'active' rows and finishes the job."""
+    every `active` or `removal_pending` workspace membership it still holds on
+    the real Argilla server, then deletes the real Argilla user so its API key
+    stops working. Idempotent -- a completed revoke (no such membership left,
+    `argilla_user_deleted_at` set) makes zero Argilla calls. An Argilla outage
+    at any step propagates (Law 17) with the unfinished part still visible
+    (`revocation_pending`), and a retry finishes the job."""
     with tenant_scoped_session(session_factory, organization_id) as session:
         identity = _identity_row(session, organization_id, issuer, subject)
         if identity is None:
@@ -614,7 +697,7 @@ def revoke_reviewer_identity(
                 "JOIN argilla_review_scopes s ON s.id = m.scope_id "
                 "AND s.organization_id = m.organization_id "
                 "WHERE m.organization_id = :org AND m.identity_id = :identity "
-                "AND m.status = 'active'"
+                "AND m.status IN ('active', 'removal_pending')"
             ),
             {"org": organization_id, "identity": identity.id},
         ).all()
@@ -633,4 +716,24 @@ def revoke_reviewer_identity(
                     "updated_at = now() WHERE id = :id"
                 ),
                 {"id": membership_id},
+            )
+
+    if identity.argilla_user_deleted_at is None:
+        # Argilla v2.8.0 has no API-key rotation endpoint; deleting the user is what makes the key
+        # stop working (FTF-R006-P2, certifier advisory 2 of FTF-R006-P1b). 404 = already deleted
+        # by an earlier attempt whose stamp below never committed.
+        try:
+            client.delete_user(identity.argilla_user_id)
+        except ArgillaNotFoundError:
+            pass
+        with tenant_scoped_session(session_factory, organization_id) as session:
+            execute_tenant_scoped(
+                session,
+                organization_id,
+                text(
+                    "UPDATE argilla_reviewer_identities SET argilla_user_deleted_at = now() "
+                    "WHERE id = :id AND organization_id = :org "
+                    "AND argilla_user_deleted_at IS NULL"
+                ),
+                {"id": identity.id, "org": organization_id},
             )

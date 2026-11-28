@@ -664,6 +664,25 @@ def test_real_argilla_stack_is_the_owner_ruled_licence_stack():
     ), "no committed credential"
 
 
+def test_review_queue_job_runs_on_the_real_argilla_stack():
+    """FTF-R006-P2: the review-queue suite runs against the REAL argilla-server compose stack
+    (never the fake), with its own Postgres and a real OpenBao, the container name for the real
+    outage, and is aggregated by ci-verdict; its no-network task script is a gate step."""
+    text = CI.read_text()
+    block = _jobs_block(text, "argilla-review-queue-integration")
+    assert "needs: classify" in block
+    assert "contains(needs.classify.outputs.focus, ' argilla-review-queue-integration ')" in block
+    assert "tests/integration/test_argilla_review_queue.py" in block
+    assert "infra/docker/argilla/docker-compose.yml up" in block
+    assert "image: postgres@sha256:" in block and "go build" in block
+    assert "ARGILLA_SERVER_CONTAINER: argilla-server" in block
+    assert "openssl rand" in block and "add-mask" in block
+    assert "      - argilla-review-queue-integration\n" in _jobs_block(text, "ci-verdict")
+    assert "tests/tasks/test_ftf_r006_p2.py" in _jobs_block(text, "gate")
+    suite = (ROOT / "tests" / "integration" / "test_argilla_review_queue.py").read_text()
+    assert "FakeArgillaServer" not in suite, "the integration suite must use the real server"
+
+
 def test_model_import_ui_real_api_job_is_wired_into_the_verdict():
     """FTF-H010-P5: the real-API job exists, is scope/focus-gated like its siblings, runs its
     harness and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""

@@ -188,6 +188,7 @@ CREATE TABLE argilla_reviewer_identities (
   organization_id UUID NOT NULL, issuer VARCHAR(512) NOT NULL, subject VARCHAR(255) NOT NULL,
   argilla_user_id VARCHAR(36) NOT NULL, credential_secret_ref VARCHAR(512) NOT NULL,
   status VARCHAR(16) NOT NULL DEFAULT 'active', revoked_at TEXT, updated_at TEXT,
+  argilla_user_deleted_at TEXT,
   UNIQUE (organization_id, issuer, subject), UNIQUE (argilla_user_id));
 CREATE TABLE argilla_workspace_members (
   id UUID PRIMARY KEY DEFAULT (gen_uuid()),
@@ -272,6 +273,10 @@ class Env:
 
     def requests(self, method: str) -> int:
         return sum(1 for m, _ in self.server.requests if m == method)
+
+    def workspace_removals(self) -> int:
+        """Real workspace-membership removals only (revoke also DELETEs the Argilla user)."""
+        return sum(1 for m, p in self.server.requests if m == "DELETE" and "/workspaces/" in p)
 
     def close(self) -> None:
         (
@@ -718,7 +723,7 @@ def test_sync_membership_refuses_stale_or_revoked_identity(env: Env) -> None:
         "upfront _require_active check is the only thing protecting this one",
         raises(ReviewerIdentityRevokedError, env.sync, None, scope, ident)
         and raises(ReviewerIdentityRevokedError, env.sync, Role.VIEWER, scope, ident)
-        and env.requests("DELETE") == 0,
+        and env.workspace_removals() == 0,
     )
 
 
@@ -984,9 +989,9 @@ def test_revoke_skips_revoked_memberships(env: Env) -> None:
     scope, ident = env.scope(), env.identity()
     env.sync(Role.ML_ENGINEER, scope, ident)
     env.sync(None, scope, ident)
-    n = env.requests("DELETE")
+    n = env.workspace_removals()
     env.revoke()
-    check("an already-revoked membership is not removed again", env.requests("DELETE") == n)
+    check("an already-revoked membership is not removed again", env.workspace_removals() == n)
 
 
 @with_env
@@ -1421,6 +1426,222 @@ def test_migration_0036_shapes() -> None:
         'GRANT UPDATE ON argilla_review_scopes TO "sovra_app"' in down_sqls
         and 'GRANT UPDATE ON argilla_reviewer_identities TO "sovra_app"' in down_sqls
         and 'GRANT UPDATE ON argilla_workspace_members TO "sovra_app"' in down_sqls,
+    )
+
+
+# --- FTF-R006-P2: the two FTF-R006-P1b certifier advisories (2026-11-28T04:00Z) --------------
+
+
+def _down(*_a: Any, **_k: Any) -> None:
+    raise ArgillaUnavailableError("injected outage")
+
+
+def _identity_row(env: Env) -> Any:
+    return env.sql("SELECT status, argilla_user_deleted_at FROM argilla_reviewer_identities")[0]
+
+
+def _pending(env: Env, ident: Any) -> bool:
+    return store.revocation_pending(env.factory, organization_id=env.org, identity_id=ident.id)
+
+
+@with_env
+def test_p2_revoke_deletes_the_argilla_user_and_stamps_it(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    check("[P2-K] before revoke nothing is pending", not _pending(env, ident))
+    env.revoke()
+    check(
+        "[P2-K] revoke deletes the real Argilla user (its API key dies with it)",
+        ident.argilla_user_id not in env.server.users,
+    )
+    status, deleted_at = _identity_row(env)
+    check("[P2-K] the deletion is stamped", status == "revoked" and deleted_at is not None)
+    check("[P2-K] a completed revoke is not pending", not _pending(env, ident))
+    n = len(env.server.requests)
+    env.revoke()
+    check("[P2-K] a completed revoke makes zero Argilla calls", len(env.server.requests) == n)
+    check(
+        "[P2-K] the revoked identity is not re-provisioned",
+        raises(ReviewerIdentityRevokedError, env.identity),
+    )
+
+
+@with_env
+def test_p2_revoke_outage_during_user_deletion_stays_pending(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    real_delete = env.client.delete_user
+    env.client.delete_user = _down  # type: ignore[method-assign]
+    check(
+        "[P2-K] the deletion outage propagates (Law 17)",
+        raises(ArgillaUnavailableError, env.revoke),
+    )
+    check("[P2-K] the user still exists, so the revocation is pending", _pending(env, ident))
+    check("[P2-K] nothing is stamped", _identity_row(env)[1] is None)
+    env.client.delete_user = real_delete  # type: ignore[method-assign]
+    env.revoke()
+    check(
+        "[P2-K] the retry deletes the user and clears pending",
+        ident.argilla_user_id not in env.server.users and not _pending(env, ident),
+    )
+
+
+@with_env
+def test_p2_revoke_tolerates_an_already_deleted_user(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    env.client.delete_user(ident.argilla_user_id)  # deleted by an earlier, unstamped attempt
+    env.revoke()
+    check(
+        "[P2-K] a 404 on the deletion is the idempotent outcome: stamped, not pending",
+        _identity_row(env)[1] is not None and not _pending(env, ident),
+    )
+
+
+@with_env
+def test_p2_undo_outage_leaves_membership_removal_pending(env: Env) -> None:
+    """Advisory 1: sync's undo must record `removal_pending` BEFORE the real removal, so an
+    outage there never leaves a `revoked` row next to a real membership."""
+    scope, ident = env.scope(), env.identity()
+    real_add = env.client.add_workspace_user
+    real_delete = env.client.delete_user
+
+    def racing_add(workspace_id: str, user_id: str) -> None:
+        env.client.delete_user = _down  # type: ignore[method-assign]
+        check(
+            "[P2-U] the racing revoke itself hits an outage",
+            raises(ArgillaUnavailableError, env.revoke),
+        )
+        env.client.delete_user = real_delete  # type: ignore[method-assign]
+        real_add(workspace_id, user_id)
+
+    env.client.add_workspace_user = racing_add  # type: ignore[method-assign]
+    env.client.remove_workspace_user = _down  # type: ignore[method-assign]
+    check(
+        "[P2-U] the undo's removal outage propagates (Law 17)",
+        raises(ArgillaUnavailableError, env.sync, Role.ML_ENGINEER, scope, ident),
+    )
+    live = (scope.argilla_workspace_id, ident.argilla_user_id) in env.server.memberships
+    check("[P2-U] (the real membership is live after the outage)", live)
+    check(
+        f"[P2-U] its row is removal_pending, never revoked or missing: {env.member_rows()}",
+        [r[1] for r in env.member_rows()] == ["removal_pending"],
+    )
+    check("[P2-U] the identity is revocation-pending", _pending(env, ident))
+    del env.client.remove_workspace_user  # back to the real method
+    env.client.add_workspace_user = real_add  # type: ignore[method-assign]
+    env.revoke()
+    check(
+        "[P2-U] the revoke retry re-drives the removal_pending row",
+        (scope.argilla_workspace_id, ident.argilla_user_id) not in env.server.memberships
+        and [r[1] for r in env.member_rows()] == ["revoked"]
+        and not _pending(env, ident),
+    )
+
+
+@with_env
+def test_p2_revoke_redrives_removal_pending_rows_even_without_user_deletion(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    env.sql("UPDATE argilla_workspace_members SET status = 'removal_pending'")
+    env.client.delete_user = lambda _u: None  # type: ignore[method-assign,assignment]
+    env.revoke()
+    check(
+        "[P2-U] a removal_pending row is removed for real by revoke",
+        (scope.argilla_workspace_id, ident.argilla_user_id) not in env.server.memberships
+        and [r[1] for r in env.member_rows()] == ["revoked"],
+    )
+
+
+@with_env
+def test_p2_narrowing_removes_a_removal_pending_membership(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    env.sql("UPDATE argilla_workspace_members SET status = 'removal_pending'")
+    env.sync(None, scope, ident)
+    check(
+        "[P2-U] narrowing treats removal_pending as possibly live: removed for real, then revoked",
+        (scope.argilla_workspace_id, ident.argilla_user_id) not in env.server.memberships
+        and [r[1] for r in env.member_rows()] == ["revoked"],
+    )
+
+
+@with_env
+def test_p2_pending_reads_membership_state(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    env.sync(Role.ML_ENGINEER, scope, ident)
+    env.revoke()
+    for status, expected in (("active", True), ("removal_pending", True), ("revoked", False)):
+        env.sql("UPDATE argilla_workspace_members SET status = :s", s=status)
+        check(
+            f"[P2-K] a revoked, deleted identity with a {status} membership is pending={expected}",
+            _pending(env, ident) is expected,
+        )
+    check(
+        "[P2-K] an active identity is never pending",
+        not store.revocation_pending(
+            env.factory, organization_id=env.org, identity_id=env.identity("other").id
+        ),
+    )
+    check(
+        "[P2-K] an unknown identity is an error, not 'not pending'",
+        raises(
+            ArgillaIdentityError,
+            store.revocation_pending,
+            env.factory,
+            organization_id=env.org,
+            identity_id=uuid.uuid4(),
+        ),
+    )
+
+
+@with_env
+def test_p2_add_rejected_for_deleted_user_reads_as_revoked(env: Env) -> None:
+    scope, ident = env.scope(), env.identity()
+    real_add = env.client.add_workspace_user
+
+    def add_after_completed_revoke(workspace_id: str, user_id: str) -> None:
+        env.revoke()  # deletes the real user first
+        real_add(workspace_id, user_id)  # the real server refuses: user not found
+
+    env.client.add_workspace_user = add_after_completed_revoke  # type: ignore[method-assign]
+    check(
+        "[P2-K] an add refused because revoke deleted the user is ReviewerIdentityRevokedError",
+        raises(ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, ident),
+    )
+    check("[P2-K] and no membership exists anywhere", not env.server.memberships)
+
+    other = env.identity("still-active")
+
+    def rejected(*_a: Any) -> None:
+        raise ArgillaRejectedError("Argilla returned HTTP 422")
+
+    env.client.add_workspace_user = rejected  # type: ignore[method-assign,assignment]
+    check(
+        "[P2-K] for a still-active identity a rejected add propagates unchanged",
+        raises(ArgillaRejectedError, env.sync, Role.ML_ENGINEER, scope, other, "still-active")
+        and not raises(
+            ReviewerIdentityRevokedError, env.sync, Role.ML_ENGINEER, scope, other, "still-active"
+        ),
+    )
+
+
+def test_p2_membership_status_vocabulary() -> None:
+    check(
+        "[P2-U] the membership statuses are exactly active / removal_pending / revoked",
+        store.MEMBERSHIP_STATUSES == ("active", "removal_pending", "revoked"),
+    )
+    check(
+        "[P2-U] an unknown status is refused before any write",
+        raises(
+            ValueError,
+            store._set_membership_status,
+            None,
+            uuid.uuid4(),
+            uuid.uuid4(),
+            uuid.uuid4(),
+            "gone",
+        ),
     )
 
 
