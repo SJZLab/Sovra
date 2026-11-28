@@ -140,6 +140,12 @@ jobs:
 
   gate:
     runs-on: ubuntu-24.04
+    env:
+      # Read by scripts/ci_gate_step.py: on a pull request a per-task proof step runs only when the
+      # change touches its inputs (its test file, a file or module the test names, a suite-wide
+      # input, or `ci-full` in the PR body). The nightly run on main runs every step.
+      BASE_REF: ${{ github.base_ref || 'main' }}
+      PR_BODY: ${{ github.event.pull_request.body }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -150,6 +156,13 @@ jobs:
           # stale_commit. Full history is required for that check to mean
           # anything.
           fetch-depth: 0
+      - name: Use the base branch's gate-step script
+        run: |
+          # The base copy decides which proofs run, so a PR cannot rewrite its own skip rule.
+          if ! git show "origin/${BASE_REF}:scripts/ci_gate_step.py" > "$RUNNER_TEMP/ci_gate_step.py" 2>/dev/null; then
+            echo "::warning::base has no scripts/ci_gate_step.py yet (bootstrap PR); using this PR's copy"
+            cp scripts/ci_gate_step.py "$RUNNER_TEMP/ci_gate_step.py"
+          fi
       - name: Verify CLAUDE.md.sha256
         run: |
           if [ ! -f CLAUDE.md ]; then
@@ -210,7 +223,7 @@ jobs:
           pnpm run format:check
           pnpm run typecheck
       - name: FTF-0002 negative-test proof (checks catch real defects)
-        run: python3 tests/tasks/test_ftf_0002.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_0002.py
       - name: Python unit tests (FTF-0003)
         run: uv run pytest tests/unit --junitxml=reports/pytest-junit.xml -ra
       - name: TypeScript unit tests (FTF-0003)
@@ -218,146 +231,146 @@ jobs:
       - name: FTF-0003 negative-acceptance gate (zero-tests / skipped / focused)
         run: python3 scripts/check_test_harness.py --junit reports/pytest-junit.xml --junit reports/vitest-junit.xml
       - name: FTF-0003 negative-test proof (harness catches real defects)
-        run: python3 tests/tasks/test_ftf_0003.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_0003.py
       - name: FTF-0005 negative-test proof (configuration system catches real defects)
-        run: python3 tests/tasks/test_ftf_0005.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_0005.py
       - name: FTF-0004 negative-test proof (readiness checks catch real defects)
-        run: python3 tests/tasks/test_ftf_0004.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_0004.py
       - name: FTF-0006 negative-test proof (observability foundation catches real defects)
-        run: python3 tests/tasks/test_ftf_0006.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_0006.py
       - name: FTF-H001 executable specification validator
         run: python3 scripts/validate_spec.py --strict
       - name: FTF-H001 negative-test proof (gate bootstrap catches real defects)
-        run: python3 tests/tasks/test_ftf_h001.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_h001.py
       - name: FTF-R001 negative-test proof (reuse architecture/version-lock schemas catch real defects)
-        run: python3 tests/tasks/test_ftf_r001.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_r001.py
       - name: FTF-H002 release-scope lock validation
         run: python3 scripts/release_scope_lock.py
       - name: FTF-H002 negative-test proof (release scope/compatibility/preflight catch real defects)
-        run: python3 tests/tasks/test_ftf_h002.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_h002.py
       - name: FTF-H028 negative-test proof (release evidence gate catches real defects)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 tests/tasks/test_ftf_h028.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_h028.py
       - name: FTF-H034 negative-test proof (safe parallel scheduler catches real defects)
-        run: python3 tests/tasks/test_ftf_h034.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_h034.py
       - name: FTF-1810 negative-test proof (release qualification workflow catches real defects)
-        run: python3 tests/tasks/test_ftf_1810.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_1810.py
       - name: FTF-R014 negative-test proof (executor binding catches real defects)
-        run: python3 tests/implementation/test_r1_execution_binding.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/implementation/test_r1_execution_binding.py
       - name: FTF-R015 negative-test proof (isolated concurrent execution catches real defects)
-        run: python3 tests/implementation/test_safe_parallel_executor.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/implementation/test_safe_parallel_executor.py
       - name: FTF-R011 deployment-profile assertion-level release matrix validation
         run: python3 scripts/validate_profile_scope.py
       - name: FTF-R011 negative-test proof (connected/air-gap release matrix catches real defects)
-        run: python3 tests/security/test_profile_scope.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/security/test_profile_scope.py
       - name: FTF-R017 component-maintenance/OSS-lifecycle validation
         run: python3 scripts/validate_component_maintenance.py
       - name: FTF-R017 storage-profile validation
         run: python3 scripts/validate_storage_profile.py
       - name: FTF-R017 negative-test proof (storage/OSS-lifecycle qualification catches real defects)
-        run: python3 tests/tasks/test_ftf_r017.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_r017.py
       - name: FTF-R016 negative-test proof (executor pilot cost/budget-tree catches real defects)
-        run: python3 tests/implementation/test_executor_budget_limits.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/implementation/test_executor_budget_limits.py
       - name: FTF-0102 negative-test proof (organization/workspace schema catches real defects, no DB required)
         # uv run, not bare python3: this is the first task with a real,
         # owner-approved third-party runtime dependency (sqlalchemy) --
         # every prior tests/tasks/test_ftf_*.py needed only the stdlib.
-        run: uv run python3 tests/tasks/test_ftf_0102.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0102.py
       - name: FTF-0104 negative-test proof (audit event writer catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0104.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0104.py
       - name: FTF-1601 negative-test proof (postgres backup catches real defects, no DB required)
-        run: python3 tests/tasks/test_ftf_1601.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_1601.py
       - name: FTF-1602 negative-test proof (object storage backup catches real defects, no network required)
-        run: python3 tests/tasks/test_ftf_1602.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" python3 tests/tasks/test_ftf_1602.py
       - name: FTF-0101 negative-test proof (OIDC login catches real defects, real local sockets, no DB required)
         # uv run: this is the first task requiring FastAPI/authlib/itsdangerous/uvicorn
         # (owner-approved 2026-09-19), the same reason FTF-0102 first needed `uv run`.
-        run: uv run python3 tests/tasks/test_ftf_0101.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0101.py
       - name: FTF-0103 negative-test proof (RBAC middleware catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0103.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0103.py
       - name: FTF-0103-F1 negative-test proof (RBAC middleware body cap catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0103_f1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0103_f1.py
       - name: FTF-0105 negative-test proof (tenant-isolation query guards catch real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0105.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0105.py
       - name: FTF-H003 negative-test proof (cross-layer tenant isolation catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h003.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h003.py
       - name: FTF-0106 negative-test proof (RBAC/IDOR full role-matrix security tests catch real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0106.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0106.py
       - name: FTF-0201 negative-test proof (LiteLLM connection CRUD catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0201.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0201.py
       - name: FTF-0301 negative-test proof (TrainableArtifact schema/API catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0301.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0301.py
       - name: FTF-0401 negative-test proof (Project schema/API/UI catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0401.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0401.py
       - name: FTF-0402 negative-test proof (Project security profile catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0402.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0402.py
       - name: FTF-0305 negative-test proof (License acceptance workflow catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0305.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0305.py
       - name: FTF-0305-F1 negative-test proof (license-gated trainability, row-lock shape, 0029 shape, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0305_f1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0305_f1.py
       - name: FTF-0302 negative-test proof (Hugging Face artifact resolver catches real defects, real local HTTPS sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0302.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0302.py
       - name: FTF-0303 negative-test proof (Private S3 artifact resolver catches real defects, real local signed sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0303.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0303.py
       - name: FTF-0404 negative-test proof (Tool schema CRUD catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0404.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0404.py
       - name: FTF-0405 negative-test proof (JSON Schema tool validation catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0405.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0405.py
       - name: FTF-0406 negative-test proof (Side-effect classification catches real defects, no DB required)
         # Gate-wiring gap closed opportunistically: FTF-0406 was CERTIFIED
         # (PR #153) without this step ever being added here, so CI never
         # actually re-ran its own suite on later PRs -- noticed while this
         # task (FTF-0403) was already touching this same file for its own
         # new integration job, fixed alongside it rather than left silently.
-        run: uv run python3 tests/tasks/test_ftf_0406.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0406.py
       - name: FTF-0407 negative-test proof (Critical behavior requirements catches real defects, no DB required)
         # Same disclosed gate-wiring gap as FTF-0406 immediately above (PR #156).
-        run: uv run python3 tests/tasks/test_ftf_0407.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0407.py
       - name: FTF-0403 negative-test proof (Budget policy catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0403.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0403.py
       - name: FTF-1701 negative-test proof (Reference agent specification catches real defects, no DB required)
-        run: uv run python3 tests/reference/test_ftf_1701.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/reference/test_ftf_1701.py
       - name: FTF-1301 negative-test proof (CostProfile catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1301.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1301.py
       - name: FTF-0202 negative-test proof (Secret-manager integration catches real defects, no network required)
-        run: uv run python3 tests/tasks/test_ftf_0202.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0202.py
       - name: FTF-1501 negative-test proof (Tenant isolation suite's own evidence/guard logic catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1501.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1501.py
       - name: FTF-1505 negative-test proof (Secret scanning -- shape-only rule set, real git-history/allowlist fixtures, real FTF-0904 log-sample pipeline, no network required)
-        run: uv run python3 tests/tasks/test_ftf_1505.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1505.py
       - name: FTF-1001 negative-test proof (ModelVersion schema/API catches real defects, real local sockets, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1001.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1001.py
       - name: FTF-1401 negative-test proof (API load-test measurement/aggregation catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1401.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1401.py
       - name: FTF-1702 negative-test proof (Tool environment catches real defects, no DB required)
-        run: uv run python3 tests/reference/test_ftf_1702.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/reference/test_ftf_1702.py
       - name: FTF-1706 negative-test proof (Candidate discovery catches real defects, no DB required)
-        run: uv run python3 tests/reference/test_ftf_1706.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/reference/test_ftf_1706.py
       - name: FTF-1703 negative-test proof (Training dataset catches real defects, no DB required)
-        run: uv run python3 tests/reference/test_ftf_1703.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/reference/test_ftf_1703.py
       - name: FTF-1704 negative-test proof (Validation/development datasets catch real defects, no DB required)
-        run: uv run python3 tests/reference/test_ftf_1704.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/reference/test_ftf_1704.py
       - name: FTF-1302 negative-test proof (Local compute costing catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1302.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1302.py
       - name: FTF-1303 negative-test proof (Provider token costing catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1303.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1303.py
       - name: FTF-1304 negative-test proof (Cost-per-success calculator catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1304.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1304.py
       - name: FTF-1304-S1 negative-test proof (Compound binding cost attribution catches real defects, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1304_s1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1304_s1.py
       - name: FTF-0500 negative-test proof (DatasetSourceConnection schema/API/RBAC, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0500.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0500.py
       - name: FTF-H006 negative-test proof (Shared outbound URL and credential guard, no DB required)
         # Gate-wiring gap found and closed while implementing FTF-0211: this
         # already-CERTIFIED task's own suite (tests/tasks/test_ftf_h006.py)
         # was never wired into this job at all -- the same class of gap the
         # FTF-0205/FTF-0206 comments above already document for this file.
-        run: uv run python3 tests/tasks/test_ftf_h006.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h006.py
       - name: FTF-0203 negative-test proof (Connection validation, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0203.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0203.py
       - name: FTF-0204 negative-test proof (`/v1/models` discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0204.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0204.py
       - name: FTF-0205 negative-test proof (`/v1/model/info` enrichment, no DB required)
         # Gate-wiring gap closed: FTF-0205 was CERTIFIED (PR #205) without
         # this step ever being added here, so `gate` going green never
@@ -365,289 +378,289 @@ jobs:
         # docs/certifications/watchdog-findings.md's 2026-09-23 finding
         # ("CI `gate` job never actually runs FTF-0205's/FTF-0206's own
         # tests").
-        run: uv run python3 tests/tasks/test_ftf_0205.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0205.py
       - name: FTF-04A01 negative-test proof (TargetApplicationConnection schema/API/RBAC, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a01.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a01.py
       - name: FTF-0207 negative-test proof (Alias reconciliation, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0207.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0207.py
       - name: FTF-0506 negative-test proof (Canonical conversation normalizer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0506.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0506.py
       - name: FTF-0507 negative-test proof (Tool-trace normalizer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0507.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0507.py
       - name: FTF-0508 negative-test proof (Record schema validator, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0508.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0508.py
       - name: FTF-0502-P1 negative-test proof (Dataset import common contract, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0502_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0502_p1.py
       - name: FTF-0502 negative-test proof (JSONL importer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0502.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0502.py
       - name: FTF-0503 negative-test proof (JSON importer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0503.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0503.py
       - name: FTF-0504 negative-test proof (CSV importer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0504.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0504.py
       - name: FTF-0505 negative-test proof (XLSX importer, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0505.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0505.py
       - name: FTF-H011-P1 negative-test proof (dataset mapping probe/preview, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011_p1.py
       - name: FTF-H011-P1 negative-test proof (dataset mapping service wiring, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-H011-P2 negative-test proof (dataset mapping persistence, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011_p2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011_p2.py
       - name: FTF-H011-P6 negative-test proof (XLSX mapping probe/preview, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011_p6.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011_p6.py
       - name: FTF-H011-P5 negative-test proof (grouped_multi_row rows assembled into one record per group with incomplete_group quarantine for gaps / duplicate or earlier orders / non-contiguous groups / no closing assistant turn / unreadable rows, record_too_large bounding one group, invalid_order_key, mapping_unsupported outside the CSV importer and at the store, exact label_enum_map for language / task_category only; no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011_p5.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011_p5.py
       - name: FTF-H011-P3 negative-test proof (dataset mapping routes and contract, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h011.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h011.py
       - name: FTF-0206 negative-test proof (`/model_group/info` enrichment, no DB required)
         # Same watchdog finding as FTF-0205 above -- this is the FTF-0206
         # half of that gap, now closeable since this task's test file
         # exists on this branch.
-        run: uv run python3 tests/tasks/test_ftf_0206.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0206.py
       - name: FTF-0208 negative-test proof (Last-known-good catalog, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0208.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0208.py
       - name: FTF-0209 negative-test proof (Catalog anomaly detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0209.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0209.py
       - name: FTF-0215 negative-test proof (Periodic sync workflow, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0215.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0215.py
       - name: FTF-H004 negative-test proof (authorized catalog snapshot + real-gateway left-join/revocation, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h004.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h004.py
       - name: FTF-0210 negative-test proof (Real chat probe, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0210.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0210.py
       - name: FTF-0211 negative-test proof (Real streaming probe, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0211.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0211.py
       - name: FTF-0212 negative-test proof (Real tool-call probe, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0212.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0212.py
       - name: FTF-0213 negative-test proof (Real structured-output probe, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0213.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0213.py
       - name: FTF-0213-S1 negative-test proof (Real constrained-choice probe, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0213_s1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0213_s1.py
       - name: FTF-0214 negative-test proof (Model catalog UI serializers, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0214.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0214.py
       - name: FTF-04A07 negative-test proof (TargetSourceSnapshot schema + immutable provenance, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a07.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a07.py
       - name: FTF-04A06 negative-test proof (Local repository connector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a06.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a06.py
       - name: FTF-04A32 integration proof (Local repository qualification on real git checkouts, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a32.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a32.py
       - name: FTF-R002 negative-test proof (Authenticated internal component bindings, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_r002.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r002.py
       - name: FTF-R005 negative-test proof (MLflow projection adapter, no network required)
-        run: uv run python3 tests/tasks/test_ftf_r005.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r005.py
       - name: FTF-R005 round-2 negative-test proof (run drift, Law 17 status, bounded retries, token redaction, no network required)
-        run: uv run python3 tests/tasks/test_ftf_r005_r2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r005_r2.py
       - name: FTF-R005 round-5 negative-test proof (DurableOutbox decisions with the DB seams faked, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_r005_r3.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r005_r3.py
       - name: FTF-R005 round-7 negative-test proof (strictness from Factory's record, read-back before SYNCED, locked outbox row, no network or DB required)
-        run: uv run python3 tests/tasks/test_ftf_r005_r4.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r005_r4.py
       - name: FTF-R006-P1 negative-test proof (Argilla REST adapter, no network required)
-        run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r006_p1_client.py
       - name: "FTF-R006-P1b negative-test proof (Argilla review scope/identity store - revoke-first, post-write recheck, outage pins, no DB required)"
-        run: uv run python3 tests/tasks/test_ftf_r006_p1b.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r006_p1b.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
-        run: uv run python3 tests/tasks/test_ftf_1506.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a17.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a17.py
       - name: FTF-04A18 negative-test proof (Candidate-selection role boundary + pure module, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a18.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a18.py
       - name: FTF-1503 negative-test proof (CSRF suite, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1503.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1503.py
       - name: FTF-0511 negative-test proof (Exact duplicate detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0511.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0511.py
       - name: FTF-0512 negative-test proof (Normalized duplicate detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0512.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0512.py
       - name: FTF-0512-F1 look-alike gaps (NFKC + Cf folding, symmetric generated-value removal, generated table + per-class faults, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0512_f1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0512_f1.py
       - name: FTF-0512-F1 look-alike gaps on the declared CPython 3.11 floor (NFKD stream-safe bound is version-sensitive, no DB required)
         run: uv run --no-project --python 3.11 python3 tests/tasks/test_ftf_0512_f1.py
       - name: FTF-0513 negative-test proof (Near-duplicate detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0513.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0513.py
       - name: FTF-0514 negative-test proof (PII/secrets detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0514.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0514.py
       - name: FTF-0515 negative-test proof (Quality issue engine, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0515.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0515.py
       - name: FTF-0509 negative-test proof (Tool argument validator, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0509.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0509.py
       - name: FTF-0510 negative-test proof (Tokenization analysis, no DB/network required)
-        run: uv run python3 tests/tasks/test_ftf_0510.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0510.py
       - name: FTF-04A08 negative-test proof (Source-analysis worker foundation, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a08.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a08.py
       - name: FTF-04A09 negative-test proof (Python deterministic agent/config/tool discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a09.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a09.py
       - name: FTF-04A10 negative-test proof (TypeScript/JavaScript deterministic agent/config/tool discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a10.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a10.py
       - name: FTF-04A11 negative-test proof (JSON/YAML/TOML configuration discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a11.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a11.py
       - name: FTF-04A12 negative-test proof (LiteLLM/current-model binding discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a12.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a12.py
       - name: FTF-04A13 negative-test proof (Prompt-source discovery + evidence capture, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a13.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a13.py
       - name: FTF-04A14 negative-test proof (Tool/schema/permission discovery + evidence capture, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a14.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a14.py
       - name: FTF-04A15 negative-test proof (Agent test/evaluation fixture discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a15.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a15.py
       - name: FTF-04A34 integration proof (Monorepo multi-agent discovery on a real git repo, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a34.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a34.py
       - name: FTF-04A16 negative-test proof (Runtime trace/deployment contract discovery, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a16.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a16.py
       - name: FTF-04A19 negative-test proof (AgentManifest schema/versioning/hash, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a19.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a19.py
       - name: FTF-04A20 negative-test proof (ManifestEvidence schema/API, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a20.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a20.py
       - name: FTF-0500D negative-test proof (Dataset source security-boundary preview + audit evidence, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0500d.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0500d.py
       - name: FTF-0601 negative-test proof (EvaluationSuite schema/API, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0601.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0601.py
       - name: FTF-0604 negative-test proof (Exact-match grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0604.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0604.py
       - name: FTF-0606 negative-test proof (Tool-name grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0606.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0606.py
       - name: FTF-04A25 negative-test proof (Production-faithful target-agent harness contract, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a25.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a25.py
       - name: FTF-04A26 negative-test proof (Isolated real tool-backend adapter contract tests, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a26.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a26.py
       - name: FTF-0608 negative-test proof (Tool-sequence grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0608.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0608.py
       - name: FTF-0605 negative-test proof (JSON-schema grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0605.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0605.py
       - name: FTF-0607 negative-test proof (Tool-argument grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0607.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0607.py
       - name: FTF-0609 negative-test proof (Forbidden-action grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0609.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0609.py
       - name: FTF-0610 negative-test proof (Refusal grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0610.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0610.py
       - name: FTF-0611 negative-test proof (Numeric grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0611.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0611.py
       - name: FTF-0612 negative-test proof (Latency grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0612.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0612.py
       - name: FTF-0613 negative-test proof (Cost grader, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0613.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0613.py
       - name: FTF-0517 negative-test proof (Group-aware split engine, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0517.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0517.py
       - name: FTF-0518 negative-test proof (Split leakage detector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0518.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0518.py
       - name: FTF-0519-P1 negative-test proof (Immutable split manifest - pure domain, migration shape, SQLite store, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0519_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0519_p1.py
       - name: FTF-0519-P2 negative-test proof (Split manifest routes - real uvicorn over a state-machine store, stored Idempotency-Key, held-out source hidden from ml_engineer, contract, wiring, 40+ route faults; no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0519.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0519.py
       - name: FTF-1305 negative-test proof (Candidate ranking, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1305.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1305.py
       - name: FTF-0616 negative-test proof (LLM judge adapter, no DB required; real local gateway over HTTPS)
-        run: uv run python3 tests/tasks/test_ftf_0616.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0616.py
       - name: FTF-0616-F1 negative-test proof (judge deployment fingerprint + cache bypass, no DB required; real local gateway over HTTPS)
-        run: uv run python3 tests/tasks/test_ftf_0616_f1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0616_f1.py
       - name: FTF-0617 negative-test proof (zero-egress judge policy, no DB required; real local gateway over HTTPS)
-        run: uv run python3 tests/tasks/test_ftf_0617.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0617.py
       - name: FTF-04A02 negative-test proof (GitHub App/token read-only secret integration, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a02.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a02.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing connector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a03_connector.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a03_connector.py
       - name: FTF-04A03 negative-test proof (GitHub accessible-repository listing route-boundary, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a03_routes.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a03_routes.py
       - name: FTF-04A04 negative-test proof (GitHub branch/ref resolver connector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a04_connector.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a04_connector.py
       - name: FTF-04A04 negative-test proof (GitHub branch/ref resolver route-boundary, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a04_routes.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a04_routes.py
       - name: FTF-04A05 negative-test proof (GitHub source snapshot capture connector, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a05.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a05.py
       - name: FTF-04A05 negative-test proof (GitHub source snapshot capture route-boundary, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_04a05_routes.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_04a05_routes.py
       - name: FTF-0500B negative-test proof (S3/MinIO source validation + metadata preview, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0500b.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0500b.py
       - name: FTF-H005 negative-test proof (route attestation -- real cache-bypass + deployment fingerprint, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h005_route_attestation.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h005_route_attestation.py
       - name: FTF-H005 negative-test proof (route pin/drift -- fallback and alias-upstream denial, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h005_route_snapshot.py
       - name: FTF-0500C negative-test proof (database/API/trace source contract + fail-closed validation, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0500c.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0500c.py
       - name: FTF-1201 negative-test proof (LiteLLM registration capability detection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1201.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1201.py
       - name: FTF-0304 negative-test proof (Local artifact resolver -- symlink/executable/TOCTOU rejection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0304.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0304.py
       - name: FTF-0306 negative-test proof (Base model revision/digest resolver -- dispatch, load/resume drift detection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0306.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0306.py
       - name: FTF-0307 negative-test proof (Training capability classifier -- fail-closed unknown, real ready-artifact/probe-state evidence, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0307.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0307.py
       - name: FTF-1002 negative-test proof (Artifact lineage manifest -- no fabricated parent, adapter-base mismatch denial, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1002.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1002.py
       - name: FTF-1206 negative-test proof (Organization gateway policy control -- no widening, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1206.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1206.py
       - name: FTF-1206A negative-test proof (Organization gateway policy persistence -- RLS/GRANT migration shape + fault injection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_1206a.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_1206a.py
       - name: FTF-0308-P1 negative-test proof (model catalog mapping -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0308_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0308_p1.py
       - name: FTF-0309-P1 negative-test proof (training-capability read API -- route seams over real HTTP, contract, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0309_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0309_p1.py
       - name: FTF-0310 negative-test proof (capability contract checker -- stdlib schema checker, generated negative table, source matrix, fault injection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0310.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0310.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0602_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0602_p1.py
       - name: FTF-0603-F1 negative-test proof (server-side suite lock gate -- plan floors, typed 409 per clause, suite_sha256 shared vector, migration 0039 shape, real routes over the real CRUD on SQLite, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0603_f1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0603_f1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0501_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0501_p1.py
       - name: FTF-0501-P2 negative-test proof (upload-session hardening migration 0025 -- trigger shape, offline upgrade/downgrade SQL, shape-fault table, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0501_p2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0501_p2.py
       - name: FTF-0501 negative-test proof (direct object-storage upload -- SigV4 presign vector + tamper, part plan, content sniffing, finalize verification against an in-process S3, real routes over the real store on SQLite, contract, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0501.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0501.py
       - name: FTF-0501-F2 negative-test proof (declared text encoding -- sniff table, whole-object decode at finalize wherever the bad byte falls, create route and store, migration 0032 SQL + CHECK shape, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0501_f2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0501_f2.py
       - name: FTF-0516-P1 negative-test proof (dataset quality issues -- migration SQL + RLS/GRANT/CHECK shape + fault injection, store on SQLite with the real detectors and engine, five routes, contract, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0516_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0516_p1.py
       - name: FTF-0103A negative-test proof (live session principal + Membership -- every /api/v1 route wired to the real resolver/role lookup, fail-closed resolver, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0103a.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0103a.py
       - name: FTF-1807 negative-test proof (LiteLLM outage runbook -- doc/code fidelity, no DB required)
-        run: uv run python3 tests/documentation/test_ftf_1807.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/documentation/test_ftf_1807.py
       - name: FTF-H007 negative-test proof (source boundary -- executable hook/dangerous call/escaping symlink detection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h007.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h007.py
       - name: FTF-0902 negative-test proof (network-policy templates -- render-time endpoint revalidation, metadata/RFC1918/IPv6 rejection, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0902.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0902.py
       - name: FTF-0901 negative-test proof (security profile enforcement -- profile x surface x destination matrix, no private-to-managed switch, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0901.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0901.py
       - name: FTF-0908 negative-test proof (external provider denial -- profile/purpose/approval matrix, label never approves, content-free audit, zero network, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0908.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0908.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0903.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
         # Behavioural checks here; the fault matrix (every fault-injected copy of the module) runs
         # in the sharded ftf0904-fault-matrix job whenever its inputs change (owner-approved
         # 2026-10-21 scope rule; sharded 2026-10-23 so a ~2.5 h serial run takes minutes).
         run: FTF0904_BEHAVIOUR_ONLY=1 uv run python3 tests/tasks/test_ftf_0904.py
       - name: FTF-0904-W1 live log redaction (real uvicorn factory + default log config over a socket -- secret query params never printed, access lines kept redacted, sinks installed, fault-injected copies of apps/api/app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0904_w1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0904_w1.py
       - name: FTF-0905 negative-test proof (canary-secret generator -- unique prefixed markers, no real-secret collision, full-coverage leak ledger, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0905.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-0906 negative-test proof (egress capture/verification -- unattributed/unplanned-egress fail-closed, mandatory log-store coverage, enforcement/client/destination-consistent positive control, unobserved-destination handling, report binding, fault-injected module copies, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_0906.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0906.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-H010-P2 negative-test proof (import-validation activity -- outcome tables, resolved-model echo match, terminal-transaction connection re-check, claim/fencing, route seams, 97 fault-injected module copies; no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p2.py
       - name: FTF-H010-P5 negative-test proof (import wizard UI contract parity -- every backend failure code has en+ar text, origins/states/ref cap/role sets equal the backend's, base_url and digest columns never read, fault-injected copies of the component source; no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p5.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p5.py
       - name: FTF-H010-P6 negative-test proof (model version panel contract parity -- every continuation reason code and P4 route error code has en+ar text, roles/actions equal the backend's, the FTF-1001 item carries the lineage fields, no effect route or placeholder digest, self-faulted copies; no DB required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p6.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p6.py
       - name: FTF-R004-P1 negative-test proof (Inspect bridge generation-config parity comparator, no DB required)
-        run: uv run python3 tests/tasks/test_ftf_r004_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r004_p1.py
       - name: FTF-R004-P2 negative-test proof (Inspect bridge provider-side execution boundary + pre-filter attempt evidence, no DB/network required)
-        run: uv run python3 tests/tasks/test_ftf_r004_p2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r004_p2.py
       - name: FTF-H010-P3a negative-test proof (pure import-artifact validators -- file allow-list, strict JSON, safetensors header, adapter/base shapes, fault-injected module copies, no DB/network required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p3a.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p3a.py
       - name: FTF-H010-P3 negative-test proof (full-weight and adapter import validation -- step-by-step failure codes, exact parent base, TOCTOU re-reads, terminal-transaction artifact re-check, claim fencing, META-LEAK, fault-injected module copies; no DB or network required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p3.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p3.py
       - name: FTF-H010-P4 negative-test proof (model action eligibility and continuation plans -- complete decision table, endpoint never trainable whatever its ref or roles say, new run vs exact resume property, strict facts, META-LEAK, fault-injected module copies; no DB or network required)
-        run: uv run python3 tests/tasks/test_ftf_h010_p4.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_h010_p4.py
       - name: FTF-R004-P3 negative-test proof (pinned Inspect worker + case adapter + native runtime bridge over the real isolated tool backend, no DB/network required)
-        run: uv run python3 tests/tasks/test_ftf_r004_p3.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r004_p3.py
       - name: FTF-R004-P4 negative-test proof (Inspect log normalization, complete accounting and sealed-data guard over real P3 runs, no DB/network required)
-        run: uv run python3 tests/tasks/test_ftf_r004_p4.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_r004_p4.py
       - name: FTF-0701-P1 negative-test proof (typed training config schema -- exact allow-lists, bounds, enum variants, enablement, held-out roles, facts table, check order, hash properties, contract parity, META-LEAK, fault-injected module copies; no DB or network required)
-        run: uv run python3 tests/tasks/test_ftf_0701_p1.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0701_p1.py
       - name: FTF-0701-P2 negative-test proof (training_experiments persistence -- migration 0040 rules with fault-injected copies and offline SQL, store authorization, idempotency, fact mapping, versions, constraint mapping, reads and integrity over SQLite; no DB or network required)
-        run: uv run python3 tests/tasks/test_ftf_0701_p2.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0701_p2.py
       - name: FTF-0701 negative-test proof (training experiment routes -- 07 contract paths equal the router, 6-role truth table, strict 64 KiB body, every refusal code with its status on every operation, identical 404s, main.py wiring on the real app, fault-injected route and contract copies; no DB or network required)
-        run: uv run python3 tests/tasks/test_ftf_0701.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_ftf_0701.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
-        run: uv run python3 tests/tasks/test_mutation_gate.py
+        run: python3 "$RUNNER_TEMP/ci_gate_step.py" uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
         run: python3 scripts/product_truth_check.py --fail-on-unwired
       - name: Status tool
