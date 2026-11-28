@@ -774,9 +774,9 @@ def section_propose_refusals(env: Env) -> None:
         "x",
         "training",
         b"PK-not-really-xlsx",
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        content_type="application/vnd.ms-excel",
     )
-    refuses(env, "an XLSX dataset", "importer_unavailable", p(msg_mapping(), None, xlsx))
+    refuses(env, "a legacy .xls dataset", "importer_unavailable", p(msg_mapping(), None, xlsx))
 
 
 # ----------------------------------------------------------------------------------------
