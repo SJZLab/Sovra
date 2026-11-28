@@ -618,6 +618,10 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0905.py
       - name: FTF-0906 negative-test proof (egress capture/verification -- unattributed/unplanned-egress fail-closed, mandatory log-store coverage, enforcement/client/destination-consistent positive control, unobserved-destination handling, report binding, fault-injected module copies, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0906.py
+      - name: FTF-H027-P1 negative-test proof (declared private boundary -- closed manifest, destination kind derived from the boundary never the caller, profile floor, rebinding containment, raw telemetry refused, metadata-only workflow payloads and sanitized failures, real loopback sockets incl. IPv6, fault-injected module copies, no DB required)
+        run: |
+          test -z "${FTFH027_ALLOW_NO_IPV6:-}" || { echo "FTFH027_ALLOW_NO_IPV6 must never be set in CI"; exit 1; }
+          uv run python3 tests/tasks/test_ftf_h027.py
       - name: FTF-H010-P1 negative-test proof (model import fields + import-validation jobs -- migration SQL + RLS/GRANT shape + fault injection, store on SQLite, route seams, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h010_p1.py
       - name: FTF-H010-P2 negative-test proof (import-validation activity -- outcome tables, resolved-model echo match, terminal-transaction connection re-check, claim/fencing, route seams, 97 fault-injected module copies; no DB required)
@@ -4400,6 +4404,29 @@ jobs:
       - name: Prove egress capture/verification over real loopback sockets
         run: uv run python3 tests/integration/test_ftf_0906_egress_verification.py
 
+  private-data-path-integration:
+    # FTF-H027-P1: measured process-scope egress evidence for the declared private boundary
+    # (packages/security/privacy_boundary.py) over real sockets -- allowed IPv4/IPv6/DNS-named
+    # internal endpoints and a verified-TLS judge whose decrypted bytes are inspected behind a
+    # ciphertext-recording relay; denied undeclared, external-judge, IPv4-mapped, rebinding and
+    # cloud-metadata destinations that each have a real listener (metadata addresses are added
+    # to lo; 169.254.169.254 itself is never bound, it is the runner VM's own IMDS); content
+    # telemetry refused; log/error-path/artifact stores scanned; verdicts from FTF-0906
+    # verify_egress. Uses sudo for /etc/hosts, a test CA and two lo addresses, all restored at
+    # exit. A missing prerequisite FAILS the job, never skips it.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' private-data-path-integration ')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Prove the declared private data path over real sockets
+        run: uv run python3 tests/integration/test_ftf_h027_private_data_path.py
+
   development-suite-import-integration:
     # FTF-1704: real Postgres evidence that the 300 generated development
     # cases import through the real evaluation-case routes under the restricted
@@ -4616,6 +4643,7 @@ jobs:
       - json-import-integration
       - xlsx-import-integration
       - egress-verification-integration
+      - private-data-path-integration
       - development-suite-import-integration
       - evaluation-suite-lock-gate-integration
       - inspect-target-bridge-integration
