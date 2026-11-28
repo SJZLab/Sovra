@@ -57,6 +57,12 @@ from app.auth.rbac_middleware import (
 )
 from app.auth.tenant_isolation_query_guards import TenantContextError
 from app.db.tenant_context import TenantContext, tenant_scoped_session_for
+from app.target_connectors.target_application_connection_crud import (
+    TargetApplicationConnectionNotFoundError as ConnectionNotInProjectError,
+)
+from app.target_connectors.target_application_connection_crud import (
+    get_target_application_connection,
+)
 from app.target_connectors.target_source_snapshot_crud import (
     ActorInfo,
     TargetApplicationConnectionNotFoundError,
@@ -177,11 +183,16 @@ def build_target_source_snapshot_router(
         connection_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         payload = await _read_json_body(request)
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 snapshot = create_target_source_snapshot(
                     session,
                     tenant_context,
@@ -197,6 +208,7 @@ def build_target_source_snapshot_router(
                 )
                 body = _serialize(snapshot)
         except (
+            ConnectionNotInProjectError,
             TargetApplicationConnectionNotFoundError,
             TargetSourceSnapshotNotFoundError,
             TenantContextError,
@@ -213,15 +225,24 @@ def build_target_source_snapshot_router(
         connection_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 snapshots = list_target_source_snapshots(session, tenant_context, connection_id)
                 body = [_serialize(s) for s in snapshots]
-        except (TargetApplicationConnectionNotFoundError, TenantContextError) as exc:
+        except (
+            ConnectionNotInProjectError,
+            TargetApplicationConnectionNotFoundError,
+            TenantContextError,
+        ) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)  # 200, the default
 
     @router.get(_ITEM_PATH)
     async def get_one(
@@ -231,16 +252,25 @@ def build_target_source_snapshot_router(
         snapshot_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 snapshot = get_target_source_snapshot(
                     session, tenant_context, connection_id, snapshot_id
                 )
                 body = _serialize(snapshot)
-        except (TargetSourceSnapshotNotFoundError, TenantContextError) as exc:
+        except (
+            ConnectionNotInProjectError,
+            TargetSourceSnapshotNotFoundError,
+            TenantContextError,
+        ) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)  # 200, the default
 
     return router

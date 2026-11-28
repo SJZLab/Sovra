@@ -324,6 +324,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0202.py
       - name: FTF-1501 negative-test proof (Tenant isolation suite's own evidence/guard logic catches real defects, no DB required)
         run: uv run python3 tests/tasks/test_ftf_1501.py
+      - name: FTF-1504-F1 negative-test proof (7 target-connection child handlers 404 a foreign or random project id before any store call, existing error mappings unchanged; no DB required)
+        run: uv run python3 tests/tasks/test_ftf_1504_f1.py
       - name: FTF-1505 negative-test proof (Secret scanning -- shape-only rule set, real git-history/allowlist fixtures, real FTF-0904 log-sample pipeline, no network required)
         run: uv run python3 tests/tasks/test_ftf_1505.py
       - name: FTF-1001 negative-test proof (ModelVersion schema/API catches real defects, real local sockets, no DB required)
@@ -2266,6 +2268,42 @@ jobs:
         run: uv sync --all-packages
       - name: Prove the real TargetSourceSnapshot evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a07_target_source_snapshot.py
+
+  target-connection-project-scoping-integration:
+    # FTF-1504-F1: the 7 snapshot / candidate / selection handlers under
+    # target-connections check that the connection belongs to the project in the path. On real
+    # Postgres 16 with two projects in one organization and a second organization, through a
+    # real uvicorn server as sovra_app: own project -> existing 200/201, another project of the
+    # same organization or a random project id -> 404 not_found with nothing written, another
+    # organization's admin -> 403 -- tests/integration/test_ftf_1504_f1_project_scoping.py.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' target-connection-project-scoping-integration ')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf1504f1
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf1504f1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf1504f1
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove project scoping of the target-connection child handlers against the live database
+        run: uv run python3 tests/integration/test_ftf_1504_f1_project_scoping.py
 
   github-repository-listing-integration:
     # FTF-04A03: real Postgres GitHub accessible-repository listing
@@ -4568,6 +4606,7 @@ jobs:
       - argilla-identity-scope-integration
       - argilla-real-server-integration
       - target-application-connection-integration
+      - target-connection-project-scoping-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration
       - github-branch-ref-integration
