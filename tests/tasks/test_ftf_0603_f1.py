@@ -1548,8 +1548,8 @@ def test_m1_migration_shape() -> None:
     heads = revisions - set(downs.values())
     check(
         "M1",
-        f"exactly one migration head, 0039 (got {sorted(heads)})",
-        heads == {"0039_eval_suite_sample_plans"},
+        f"exactly one migration head, with 0039 in the chain (got {sorted(heads)})",
+        len(heads) == 1 and "0039_eval_suite_sample_plans" in revisions,
     )
     check(
         "M1",

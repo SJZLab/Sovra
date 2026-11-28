@@ -2082,9 +2082,11 @@
       "blockers": []
     },
     "FTF-H010": {
-      "status": "NOT_STARTED",
+      "status": "CERTIFIED",
       "commits": [],
-      "evidence": [],
+      "evidence": [
+        "da4aaeefd24f1cbe3bfa27ec14e4e5f711456f55"
+      ],
       "independent_review": null,
       "blockers": []
     },
