@@ -321,6 +321,14 @@ _ALLOWED_GIT_ARGS = (
     ("status", "--porcelain"),
 )
 
+# The only git environment a run's allowed lookups see. /dev/null is a device, never a
+# directory, so no repository (a `.git`, a bare layout, a worktree pointer) can be planted there.
+_GIT_RUN_ENVIRONMENT = {
+    "GIT_DIR": os.devnull,
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": os.devnull,
+}
+
 _GUARD_LOCK = threading.Lock()
 _ACTIVE_GUARDS: list[_NetworkGuard] = []
 _AUDIT_HOOK_INSTALLED = [False]
@@ -346,12 +354,13 @@ def _allowed_process(event: str, args: tuple[object, ...]) -> bool:
     # repository discoverable from it.
     if args[2] is not None or args[3] is not None:
         return False
-    if any(name.startswith("GIT_") for name in os.environ):
+    # git's environment must be exactly the run's pinned one: GIT_DIR=/dev/null means no
+    # repository is ever discovered (no `.git`, bare-layout or worktree config can be read), and
+    # system/global configuration is not read either
+    if {k: v for k, v in os.environ.items() if k.startswith("GIT_")} != _GIT_RUN_ENVIRONMENT:
         return False
     cwd = Path.cwd().resolve()
-    if not _ACTIVE_GUARDS or any(guard.workspace != cwd for guard in _ACTIVE_GUARDS):
-        return False
-    return not any((folder / ".git").exists() for folder in (cwd, *cwd.parents))
+    return all(guard.workspace == cwd for guard in _ACTIVE_GUARDS)
 
 
 def _connected_non_local_sockets() -> int:
@@ -406,10 +415,11 @@ class _NetworkGuard:
 
     * an interpreter audit hook refusing every non-AF_UNIX connect/sendto/sendmsg, every name
       lookup, and every process start or `ctypes` foreign call except the pinned Inspect
-      release's own read-only git lookups (exact argv, no cwd/env override, no GIT_* variable,
-      from the run's workspace with no repository above it) -- raised from the C
+      release's own read-only git lookups (exact argv, no cwd/env override, from the run's
+      workspace, under the pinned git environment `GIT_DIR=/dev/null` with no system or global
+      configuration, so no repository or configuration can be read) -- raised from the C
       implementation, so it sees the raw `_socket` type, `os.system`, `os.posix_spawn` and
-      `ctypes` too. GIT_* variables are removed from the environment for the run;
+      `ctypes` too. The caller's GIT_* variables are replaced by that environment for the run;
     * a run refuses to START while the process holds any connected non-AF_UNIX Python socket
       (plain, raw `_socket` or TLS): a socket opened before the run, such as a keep-alive HTTPS
       pool, could otherwise carry data out through `_socket`/`ssl` sends no Python patch sees.
@@ -439,11 +449,13 @@ class _NetworkGuard:
             raise BridgeError(CODE_OUTBOUND, "socket open before the run")
         _install_audit_hook()
         # GIT_* variables (GIT_DIR, GIT_CONFIG_*) can redirect Inspect's own read-only git
-        # lookups to a repository or configuration that runs a command: they are removed for
-        # the run and restored after it, and a git call that still sees one is refused
+        # lookups to a repository or configuration that runs a command: the caller's are
+        # removed for the run and the pinned `_GIT_RUN_ENVIRONMENT` set in their place; both are
+        # undone after the run, and a git call that sees any other GIT_* environment is refused
         self._git_environment = {k: v for k, v in os.environ.items() if k.startswith("GIT_")}
         for name in self._git_environment:
             del os.environ[name]
+        os.environ.update(_GIT_RUN_ENVIRONMENT)
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.append(self)
         return self
@@ -451,6 +463,8 @@ class _NetworkGuard:
     def __exit__(self, *_exc: object) -> None:
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.remove(self)
+        for name in _GIT_RUN_ENVIRONMENT:
+            os.environ.pop(name, None)
         os.environ.update(self._git_environment)
 
 

@@ -2938,9 +2938,9 @@ def test_l2_git_allowlist_cannot_reach_a_command() -> None:
     )
     check(
         "FTF-R004-P3-AC8",
-        f"git status from a workspace inside a fsmonitor repository -> outbound_call_blocked, "
-        f"hook never ran (got {got})",
-        got == "outbound_call_blocked" and not marker.exists(),
+        f"git status from a workspace inside a fsmonitor repository: no repository is read, "
+        f"the hook never ran (got {got})",
+        not marker.exists(),
     )
     marker.unlink(missing_ok=True)
 
@@ -3042,13 +3042,76 @@ def test_l2_git_variables_are_removed_for_the_run_and_restored() -> None:
                 os.environ[k] = v
     check(
         "FTF-R004-P3-AC8",
-        "a run with GIT_* variables in the environment still passes (they are removed for it)",
-        ok and seen == [[]],
+        "a run with GIT_* variables in the environment still passes: they are replaced by the "
+        f"pinned git environment for it (saw {seen})",
+        ok and seen == [["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_DIR"]],
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "the pinned git environment is gone after the run",
+        os.environ.get("GIT_DIR") != os.devnull
+        and os.environ.get("GIT_CONFIG_NOSYSTEM") is None
+        and os.environ.get("GIT_CONFIG_GLOBAL") != os.devnull,
     )
     check(
         "FTF-R004-P3-AC8",
         "the GIT_* variables are restored after the run",
         restored == names,
+    )
+
+
+def _bare_layout(folder: Path, worktree: Path, hook: Path) -> None:
+    """The layout git's discovery treats as a git directory with no `.git` entry anywhere:
+    HEAD, objects/ and refs/, plus a config whose core.fsmonitor is a command."""
+    (folder / "objects").mkdir(parents=True, exist_ok=True)
+    (folder / "refs").mkdir(exist_ok=True)
+    (folder / "HEAD").write_text("ref: refs/heads/main\n")
+    (folder / "config").write_text(
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        f"\tworktree = {worktree}\n\tfsmonitor = {hook}\n"
+    )
+
+
+def test_l2_round2_bare_layout_discovery_cannot_reach_a_command() -> None:
+    _repo, hook, marker = _fsmonitor_repo()
+    probe = Path(tempfile.mkdtemp(prefix="p3-bare-probe-"))
+    _bare_layout(probe, probe, hook)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "status", "--porcelain"], cwd=probe, capture_output=True, env=env)
+    check("FTF-R004-P3-AC8", "the bare-layout fixture really executes its hook", marker.exists())
+    marker.unlink(missing_ok=True)
+
+    # (A) the caller-supplied workspace parent is a bare-layout git directory
+    parent = Path(tempfile.mkdtemp(prefix="p3-bare-parent-"))
+    _bare_layout(parent, parent, hook)
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=_git_status()),
+        _case_set(_records()[:1]),
+        workspace_parent=parent,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"git status under a bare-layout workspace parent: hook never ran (got {got})",
+        not marker.exists(),
+    )
+    marker.unlink(missing_ok=True)
+
+    # (B) the adapter writes a bare layout into its own workspace (the cwd) during the run
+    def plant(_r: Any) -> None:
+        here = Path.cwd()
+        _bare_layout(here, here, hook)
+        _git_status()(_r)
+
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=plant),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"a bare layout planted in the workspace during the run: hook never ran (got {got})",
+        not marker.exists(),
     )
 
 
