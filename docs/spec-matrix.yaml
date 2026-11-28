@@ -9624,15 +9624,18 @@ FTF-0619:
   proving_symbol: ''
   proving_test: ''
 FTF-0701:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Training config schema
-  evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=CAP-09; scenarios=Q10, Q13; deps=FTF-0307, FTF-0403, FTF-0519
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  evidence_hash: 5b1c50cb2abec37a3c6d0991d92bd2a458393020
+  implementation_state: IMPLEMENTED
+  notes: 'kind=retained_feature; requirements=CAP-09; scenarios=Q10, Q13; deps=FTF-0307, FTF-0403, FTF-0519.
+    Built as three slices in one PR (#1056, merge 5b1c50cb): P1 schema (workers/training/training_config_schema.py),
+    P2 store + migration 0040 with ENABLE + FORCE RLS (apps/api/app/training/training_experiment_store.py),
+    P3 routes mounted in apps/api/app/main.py. PROVISIONAL; independent L2 pending.'
+  proof_state: L1-PROVEN
+  proving_symbol: build_training_experiment_router
+  proving_test: tests/tasks/test_ftf_0701.py
 FTF-0702:
   certification_state: NONE
   criticality: MUST
