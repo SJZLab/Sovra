@@ -76,6 +76,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button, Dialog } from "../ui";
 import { dirFor, type Locale, phrase } from "../ui/phrases";
 
 // Redeclared from the server's own closed vocabularies (no shared TS/Python
@@ -738,6 +739,14 @@ function UploadInner({
   const [phase, setPhase] = useState<Phase>("idle");
   const [resumableDraft, setResumableDraft] = useState<Draft | null>(null);
   const [confirmingAbandon, setConfirmingAbandon] = useState(false);
+  // FTF-UX02 round-2 pre-review round 1 (CONFIRM-FOCUS-ON-CONFIRM): confirming abandon used to
+  // close the dialog AND discard the whole "resumable" section (the dialog's own trigger button
+  // included) in the same update, so the Dialog's close-focus had nowhere live to land and focus
+  // fell through to `<body>`. `pendingAbandon` defers the actual reset to a dedicated effect that
+  // runs only after the dialog has cleanly closed on its own (while the trigger is still mounted),
+  // and `needsFocusOnIdle` then moves focus to the fresh form's first control once IT has mounted.
+  const [pendingAbandon, setPendingAbandon] = useState(false);
+  const [needsFocusOnIdle, setNeedsFocusOnIdle] = useState(false);
   const [purpose, setPurpose] = useState<UploadPurpose>(ALLOWED_PURPOSES[0]);
   const [contentType, setContentType] = useState<UploadContentType>(SUPPORTED_CONTENT_TYPES[0]);
   const [file, setFile] = useState<File | null>(null);
@@ -750,6 +759,7 @@ function UploadInner({
   const aliveRef = useRef(true);
   const busyRef = useRef(false);
   const originRef = useRef<string | null>(storageOrigin ?? null);
+  const abandonTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -763,6 +773,25 @@ function UploadInner({
     };
     // Runs once per identity (the parent keys this component on it).
   }, [storageKey, organizationId, projectId, datasetSourceConnectionId]);
+
+  // Step 1: once the dialog has actually closed (confirmingAbandon became false) after the
+  // destructive button requested it, finish the reset. This runs in its own effect so the dialog's
+  // own close -- and Radix's close-focus handling, with the trigger button still mounted -- happens
+  // first, cleanly, instead of racing the section swap.
+  useEffect(() => {
+    if (!pendingAbandon || confirmingAbandon) return;
+    setPendingAbandon(false);
+    resetToIdle();
+    setNeedsFocusOnIdle(true);
+  }, [pendingAbandon, confirmingAbandon]);
+
+  // Step 2: once the fresh "idle" form has actually mounted, move focus to its first control
+  // (NN/g H3/WCAG 2.4.3: a destructive confirm must not strand focus on <body>).
+  useEffect(() => {
+    if (!needsFocusOnIdle || phase !== "idle") return;
+    setNeedsFocusOnIdle(false);
+    document.querySelector<HTMLElement>('[data-testid="upload-purpose-select"]')?.focus();
+  }, [needsFocusOnIdle, phase]);
 
   async function exclusive(run: () => Promise<void>) {
     if (busyRef.current) return;
@@ -1204,8 +1233,8 @@ function UploadInner({
       {phase === "resumable" && resumableDraft && (
         <section data-testid="upload-resume-banner">
           <p data-testid="upload-resume-text">
-            A previous upload of &quot;{resumableDraft.fileName}&quot; is still in progress. Choose
-            that same file to resume it.
+            {phrase("resumeBannerBeforeName", locale)} &quot;
+            <bdi>{resumableDraft.fileName}</bdi>&quot; {phrase("resumeBannerAfterName", locale)}
           </p>
           {errorMessage && (
             <p role="alert" data-testid="upload-resume-error">
@@ -1220,40 +1249,52 @@ function UploadInner({
               if (picked) void exclusive(() => resumeFromDraft(picked));
             }}
           />
-          {confirmingAbandon ? (
-            <div
-              role="alertdialog"
-              aria-label="Confirm abandon"
-              data-testid="upload-abandon-confirm"
-            >
-              <p>{phrase("abandonConfirmBody", locale)}</p>
-              <button
-                type="button"
-                data-testid="upload-abandon-confirm-button"
-                onClick={() => {
-                  setConfirmingAbandon(false);
-                  resetToIdle();
-                }}
-              >
-                {phrase("abandonDraft", locale)}
-              </button>
-              <button
-                type="button"
+          <Dialog
+            open={confirmingAbandon}
+            onOpenChange={setConfirmingAbandon}
+            title={phrase("abandonConfirmTitle", locale)}
+            description={phrase("abandonConfirmBody", locale)}
+            locale={locale}
+            data-testid="upload-abandon-confirm"
+            restoreFocusTo={abandonTriggerRef.current}
+          >
+            <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+              <Button
+                variant="secondary"
                 data-testid="upload-abandon-cancel-button"
                 onClick={() => setConfirmingAbandon(false)}
               >
                 {phrase("keepDraft", locale)}
-              </button>
+              </Button>
+              <Button
+                variant="danger"
+                data-testid="upload-abandon-confirm-button"
+                onClick={() => {
+                  setPendingAbandon(true);
+                  setConfirmingAbandon(false);
+                }}
+              >
+                {phrase("abandonDraft", locale)}
+              </Button>
             </div>
-          ) : (
-            <button
-              type="button"
-              data-testid="upload-abandon-draft-button"
-              onClick={() => setConfirmingAbandon(true)}
-            >
-              Abandon this draft and start a new upload
-            </button>
-          )}
+          </Dialog>
+          {/* Stays mounted while the dialog is open (the overlay already blocks interacting with
+              it -- never `disabled` either: disabling a FOCUSED control blurs it synchronously,
+              a browser behaviour, before any capture of it could run). `abandonTriggerRef`
+              captures this exact DOM node at click time and hands it to `Dialog` as
+              `restoreFocusTo` -- Radix's own default close-focus target only works when the
+              opener is its own `Dialog.Trigger`; confirmed empirically (real Chromium,
+              ftf_ux02_browser.spec.ts) that without this, focus lands on `<body>` on close. */}
+          <Button
+            variant="secondary"
+            data-testid="upload-abandon-draft-button"
+            onClick={(event) => {
+              abandonTriggerRef.current = event.currentTarget;
+              setConfirmingAbandon(true);
+            }}
+          >
+            {phrase("abandonDraftAction", locale)}
+          </Button>
         </section>
       )}
 

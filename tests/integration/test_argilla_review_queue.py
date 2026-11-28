@@ -3,12 +3,12 @@
 # mypy: disable-error-code="arg-type,attr-defined,assignment,call-arg,index,var-annotated,misc,union-attr,no-untyped-def,operator,return-value,call-overload"
 """FTF-R006-P2 -- real PostgreSQL 16 (+ real OpenBao in CI) proof for the Argilla review queue
 (`apps/api/app/reviews/review_queue_store.py`, `packages/integrations/argilla/review_mapping.py`,
-migration 0036).
+migration 0041).
 
 What `tests/tasks/test_ftf_r006_p2.py` cannot show (SQLite has no row-level security, triggers or
 row locks) is proved here, as the restricted `sovra_app` role:
 
-  I1  migration 0036 upgrade / downgrade / upgrade, one Alembic head; ENABLE + FORCE RLS and a
+  I1  migration 0041 upgrade / downgrade / upgrade, one Alembic head; ENABLE + FORCE RLS and a
       non-allow-all `tenant_isolation` policy on all three tables; SELECT / INSERT / UPDATE and no
       DELETE for `sovra_app`; the update-guard triggers and the sealed-purpose CHECK exist
   I2  a queue built from a real dataset version through the real FTF-0501 stores, the real FTF-0516

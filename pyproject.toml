@@ -46,7 +46,15 @@ extend-exclude = ["tools/r1_handoff.py", ".claude/skills/ui-ux-pro-max"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-python_version = "3.11"
+# Matches the Python version CI actually runs (every actions/setup-python step
+# in .github/workflows/ci.yml pins '3.12', not 3.11; requires-python above is
+# only the declared minimum). numpy 2.5.x's bundled .pyi stubs use unconditional
+# PEP 695 `type` alias statements; mypy only parses that stub syntax when its
+# own --python-version target is >=3.12, independent of the numpy version or of
+# this project's own source syntax. Pinning this below the interpreter CI
+# actually uses broke on any dependency whose stubs adopt PEP 695, not just
+# this one -- so this tracks the real CI toolchain instead.
+python_version = "3.12"
 warn_unused_ignores = true
 warn_redundant_casts = true
 ignore_missing_imports = true

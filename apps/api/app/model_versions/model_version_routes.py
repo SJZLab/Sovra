@@ -106,6 +106,18 @@ def _serialize(model_version: ModelVersion) -> dict[str, object]:
         "weights_digest": model_version.weights_digest,
         "endpoint_reference": model_version.endpoint_reference,
         "base_model_revision": model_version.base_model_revision,
+        # FTF-H010-P6 (Section 68.1 "Display unknown parent/training data as unknown"): the
+        # FTF-H010-P1 provenance columns, read-only and verbatim. Additive: no existing key changes.
+        "origin": model_version.origin,
+        "lineage_completeness": model_version.lineage_completeness,
+        "adapter_only": model_version.adapter_only,
+        "parent_model_version_id": (
+            str(model_version.parent_model_version_id)
+            if model_version.parent_model_version_id
+            else None
+        ),
+        "external_provider_model_ref": model_version.external_provider_model_ref,
+        "observed_deployment_fingerprint": model_version.observed_deployment_fingerprint,
         "created_by": model_version.created_by,
         "created_at": model_version.created_at.isoformat(),
     }

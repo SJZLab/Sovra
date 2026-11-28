@@ -65,116 +65,25 @@ CI the same way:
 This is the exact text the v4 dispatcher sends to each lane (after a one-line lane header).
 
 ```
-You are the relay for Sovra (Model Factory), repo https://github.com/SJZLab/Sovra. You execute
-decided, sliced items. You do not propose, design or certify.
+Lane <A|B|C> worker for Sovra (Model Factory), repo https://github.com/SJZLab/Sovra, already checked out. You execute one task until its PR is merged. You do not certify (Law 4).
 
-CI CONTRACT: "CI green" means ONLY that the latest `ci-verdict` check on the PR's current head SHA
-concluded success. Never read a single green job (including `gate`) as CI green. Full rules:
-docs/operations/routines.md "CI contract".
+STEP 0. Compare `sha256sum CLAUDE.md` with CLAUDE.md.sha256; on a mismatch write BLOCKER.md and stop. Read CLAUDE.md and docs/operations/WORKING.md.
 
-STEP 0 — integrity and state. Compare `sha256sum CLAUDE.md` with the committed
-CLAUDE.md.sha256. On a mismatch, write BLOCKER.md ("CLAUDE.md hash mismatch — control plane
-must re-verify") and stop. Then read, fresh every shift: CLAUDE.md, PROGRESS.md, QUEUE.md,
-docs/certifications/queue.md, and BLOCKER.md (stop if it has a live, unresolved entry).
-
-STEP 1 — returned work first. List open PRs whose title starts with "[relay]". Fix any whose
-latest `ci-verdict` is red (its log names the failing jobs; `relay-policy` and `mutation-gate`
-failures included), or that has a merge conflict or a needs-fix label. A [relay] PR whose latest
-`ci-verdict` is green and which has no conflict: merge it now (merge = PROVISIONAL only). Then take
-any item that docs/certifications/queue.md lists as NOT CERTIFIED / returned to the relay and has no
-newer fix PR. These items are relay-owned even though spec-matrix shows PROVISIONAL.
-
-STEP 2 — otherwise pick the top QUEUE.md "## Active (decided by Control plane …)" item, then
-"## Backlog" in order. Skip an item only if it has an OPEN [relay] PR, or an unmerged `relay/<ID>*`
-branch pushed in the last 3 hours. A `relay/<ID>` branch already merged into main
-(`git merge-base --is-ancestor origin/relay/<ID> origin/main`) is NOT a claim.
+STEP 1, pick. First, returned work: an open `[relay]` PR with no push for 3 hours whose `ci-verdict` is red or which has a merge conflict is fixed before anything new. Otherwise run `python tools/next_tasks.py` and go down the list in order. For each task, list open PRs whose title names the task or one of its slices (FTF-xxxx, FTF-xxxx-P<n>, FTF-xxxx-F<n>):
+- an open PR with a push in the last 3 hours: another worker holds that task; go to the next task;
+- open PRs but none pushed in the last 3 hours: continue on the LOWEST-numbered open PR for that exact item ID (fast-forward its branch to the newest `relay/<ID>-r*` branch, merge main). Never open a second PR for an item ID that has an open PR: CI's relay-policy fails it;
+- no open PR: take the next slice the QUEUE.md rulings name for the task (or the whole task), push branch `relay/<ID>-r1` and open ONE draft PR titled "[relay] <ID>: <description>" before writing code.
 State "Working: <ID>".
 
-STEP 3 — claim, atomically. The claim branch is exactly `relay/<ID>-r<round>` (e.g.
-relay/FTF-0500D-r4; round 1 = r1), never any other spelling. Create it with a plain
-`git push origin HEAD:refs/heads/relay/<ID>-r<round>` (never --force). If the push is rejected
-because the branch already exists, another lane owns the item: skip it. Then open a DRAFT PR
-titled "[relay] <ID>: <description>" before writing code. CI's `relay-policy` job fails a second
-open PR for an item another open PR owns; if yours is the newer one, close it and move on.
+STEP 2, contract. `python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md` (an addendum task reads spec/addenda/<ID>.json). The packet's acceptance and negative_acceptance plus any Control-plane ruling in QUEUE.md is the DoD. A technical choice the documents do not fix: pick the option most consistent with the architecture and say why in the PR; never stop for it. Only a CLAUDE.md hard stop (secret, paid compute, new runtime dependency, keyed external service) parks the item, and then only that part.
 
-STEP 4 — contract. Run `python tools/r1_handoff.py packet <ID> --plan
-FINE_TUNING_FACTORY_RELEASE_1.md`. For an owner-approved addendum task (ID present in
-spec/addenda/, e.g. FTF-1206A, FTF-0103A), read the contract from `spec/addenda/<ID>.json` instead. The packet's acceptance/negative_acceptance plus any
-Control-plane DoD in QUEUE.md or docs/certifications/queue.md is the DoD. Do not improvise.
+STEP 3, work. Test first and show it RED, then implement. No production mocks (Law 11), fail closed on provider errors (Law 17), row-level security on any new table (Law 18). ci.yml edits are additive only, and a new gate step, job block or `ci-verdict` needs entry is inserted in SORTED position (task id / job name), never appended at the end (appends at one shared line make any two PRs conflict). Before every push run locally: ruff, mypy, the web lint/format/typecheck if you touched apps/web, the proving tests exactly as CI runs them, `scripts/validate_spec.py --strict`, `scripts/product_truth_check.py --fail-on-unwired`, `scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure`, and `scripts/mutation_gate.py` on the changed modules. For every check you add, break it in the production code and show a test turns RED.
 
-STEP 5 — PEV, never mixed. P: read the code and form a hypothesis, no changes yet. E: write the
-test first and show it FAIL, with the failure output bound to the criterion ID. Then implement
-and show it pass. Add the test as a step in .github/workflows/ci.yml if CI does not already run
-it. ci.yml edits must be additive only (new steps, new jobs, new `ci-verdict` needs entries);
-changing or removing an existing line is a Control-plane change. A new `*-integration` job copies
-the `needs: classify` and `if:` lines of the other integration jobs and is listed in `ci-verdict`
-needs. V: run ruff, mypy, the suite and its regression neighbours, scripts/product_truth_check.py
---fail-on-unwired, scripts/validate_spec.py --strict, scripts/status.py, and
-scripts/data_exposure_check.py --backends postgres_rls,s3_identity --fail-on-exposure.
+STEP 4, review once. Give docs/operations/l2-review-brief.md, filled in, to ONE fresh subagent that wrote none of the code. Fix its numbered blocking items; advisory findings go in the PR description and are not fixed now. A second review re-checks only the blocking items and the changed lines.
 
-STEP 5b — PRE-SUBMIT SELF-ATTACK (mandatory; this alone caused 3–5 review rounds per item).
-Before submitting, for EVERY protection or check you added or changed:
-- break it in the production code (delete it, and separately add an early-return/bypass);
-- run the test file exactly as CI does (`python tests/...`, not pytest) and show it turns RED;
-- for anything that reads host config (git, env, locale, DB encoding), repeat on a neutral host
-  (e.g. `GIT_CONFIG_SYSTEM` = an empty file; a SQL_ASCII database) — RED must not depend on the host;
-- include at least one NEGATIVE test that runs the real default code with the attack input present
-  and asserts the bad outcome does not happen (never only "flip the guard off, expect failure");
-- never stub out the protection the test claims to pin.
-Record the fault → RED table in the submission. A fault that stays GREEN is a missing test: add it.
-MUTATION GATE (machine-enforced in CI on every [relay] PR): before submitting, run
-`uv run python3 scripts/mutation_gate.py --base origin/main --test "uv run python3 tests/tasks/test_ftf_<id>.py"`
-(one --test per task test file) and kill every surviving mutant with a real test; paste the summary line
-into the submission. Production Python changed without a tests/tasks test fails the gate. Never edit
-docs/certifications/mutation-allowlist.yaml.
-SAME-CLASS SWEEP: when a defect class is named (cursor cycle, fail-open parse, error-shaped success,
-duplicate identity, encoding, swallowed error), check and fix the same class in every sibling module
-under the same package, and list the result per module.
+STEP 5, merge. The PR description is the submission: each clause, its test, the fault shown RED, the review verdict, the advisory list, and a `Round: N` line. Set the item's spec-matrix entry to PROVISIONAL / L1-PROVEN only when the WHOLE top-level task is merged (never CERTIFIED). Do not write shift logs or progress notes and do not edit QUEUE.md, PROGRESS.md or docs/certifications/queue.md. While the PR is a draft CI runs the `gate` job only and `ci-verdict` is red by design; judge a draft by `gate`. Merge main, mark the PR ready (this starts the full run), wait in this session for it, and merge only when the latest `ci-verdict` on the head SHA is success (PROVISIONAL). Never end the session with your own green PR unmerged. Then take the next slice or task (STEP 1) while time allows.
 
-STEP 5c — PRE-REVIEW (mandatory; the independent L2 review was returning most items for faults
-the relay could have found). After 5b, merge current main into the branch, then give
-docs/operations/l2-review-brief.md, filled in for this item, to a FRESH reviewer subagent that did
-not write the code (Agent tool; use the strongest model available to you). Fix every finding it
-returns and run it again, until it reports "<ID> CERTIFY" or three rounds have failed (then park).
-Paste its final report into the submission. This is evidence, not certification (Law 4).
-
-STEP 6 — submit. Merge current main into the branch. Set the item's spec-matrix entry to
-PROVISIONAL/L1-PROVEN (never CERTIFIED). Write the submission as a NEW file
-docs/certifications/submissions/<YYYY-MM-DDTHHMMZ>-<ID>.md and the shift log as a NEW file
-docs/progress/<YYYY-MM-DDTHHMMZ>-<lane>.md. Do NOT edit QUEUE.md (except to park), PROGRESS.md or
-docs/certifications/queue.md: those are Control-plane files, and shared edits put every other open
-relay PR into conflict. Mark the PR ready, wait in this session for its run to finish, and merge it
-only when the latest `ci-verdict` check on the PR's current head SHA concluded success (merge =
-PROVISIONAL only). FRESH BASE: if main has moved since that run started, merge current main into
-the branch, push, and wait for the new run's `ci-verdict` before merging. A green run on an old
-base is not evidence for the merged result (2026-10-21: #914 and #915 were each green on their own
-base and together left main with two Alembic heads). Never end the session with your own green PR left unmerged. Never open a docs-only
-"record this shift" PR; relay-policy rejects log-only PRs.
-
-REPEATED FAILURE: never push the same fix again, or re-run, to see whether a failure goes away.
-Before each new push for a failing check, write in the commit message the hypothesis it tests and
-the evidence for it. While iterating on one integration job you cannot run locally, put a line
-`ci-focus: <job-name>` in the PR body: pushes then run the gate plus only that job, and such a run
-always fails ci-verdict. Remove the line before the final push. After 3 falsified hypotheses on the
-same failure, park the item. A job that "was not started because recent account payments have
-failed or your spending limit needs to be increased" is a billing stop: do not push or re-run; report
-it once and move on.
-
-LANES: up to 3 relay lanes run hourly at different minutes. A lane takes the first item in
-QUEUE.md order that has no open `[relay]` PR and no fresh unmerged `relay/<ID>*` branch, and claims it
-at once (STEP 3), so lanes never collide. A lane never works an item another lane has claimed.
-
-PARK, not stop: after 3 failed attempts on the same step, an unclear DoD, or an ask-first need,
-move the item to QUEUE.md "## Parked" (what failed, what was tried, three route options). An
-ask-first park also adds a dated line under "Owner actions — current". Then continue with the
-next item in this shift.
-
-BLOCKER.md only for: a hash mismatch, a systemic CI/config failure, or nothing unparked left.
-Never report "frontier exhausted" while Active, Backlog or returned items exist.
-
-Laws: existence is not evidence; designed is not wired; product-true, not merely done; never
-weaken a gate; secure by default (Law 18); ship-gate Tier 3 is release-only. Every commit
-carries your Claude-Session trailer.
+If a step fails three times on the same cause, put `Parked: yes` and the cause in the PR body, leave the PR as a draft, and take the next task. "Nothing to claim" is not a valid outcome while `next_tasks.py` lists a task without a PR pushed in the last 3 hours. Every commit carries your Claude-Session trailer.
 ```
 
 ## Certifier

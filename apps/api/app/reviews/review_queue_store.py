@@ -2,7 +2,7 @@
 (FTF-R006-P2, Section 8-10, 65, 67, 77.3-77.6, 78.4, 80.1-80.4, 81).
 
 Backed by `review_queues` / `review_items` / `review_responses`
-(`apps/api/alembic/versions/0036_review_queues.py`) and the P1b scope / reviewer-identity tables
+(`apps/api/alembic/versions/0041_review_queues.py`) and the P1b scope / reviewer-identity tables
 (`argilla_review_scopes`, `argilla_reviewer_identities`, `argilla_workspace_members`). Argilla is
 reached only through `packages/integrations/argilla/review_mapping.py` (P1a's guarded transport);
 this module never imports an HTTP library.

@@ -408,8 +408,24 @@ class ArgillaClient:
         """Raw `GET /status` payload (`version`, `search_engine`,
         `memory`). `ArgillaUnavailableError` on any network failure or
         5xx -- the caller (`compute_health`) reports that as unhealthy,
-        never as a fabricated healthy result (Law 17)."""
+        never as a fabricated healthy result (Law 17).
+
+        Search-engine note (FTF-R006-P1b round 4): the 422 once seen on this route
+        was observed only with Elasticsearch 8.x, a stack the owner did not choose.
+        On the owner-ruled OpenSearch 2.19.x stack the real server answers `/status`
+        with 200 and a version (probed in CI by
+        tests/integration/test_argilla_real_server.py). `get_version()` stays as a
+        lighter liveness call that never reaches the search engine."""
         return self._call("GET", "/status")
+
+    def get_version(self) -> dict[str, Any]:
+        """Raw `GET /version` payload (`version` only). Deliberately not
+        `search_engine`/`memory` -- this route never touches the search
+        engine, so it is unaffected by the real server's `/status` bug
+        documented on `get_status()` above. Prefer this over `get_status()`
+        for any liveness/health probe against a real (non-fake) Argilla
+        server."""
+        return self._call("GET", "/version")
 
     # -- workspaces ----------------------------------------------------
 

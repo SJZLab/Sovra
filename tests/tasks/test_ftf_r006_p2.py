@@ -2590,7 +2590,7 @@ def queue_dataset_id(env: Env, queue: store.ReviewQueueRecord) -> str:
 
 
 def test_m_migration_and_wiring() -> None:
-    migration = (ROOT / "apps/api/alembic/versions/0036_review_queues.py").read_text()
+    migration = (ROOT / "apps/api/alembic/versions/0041_review_queues.py").read_text()
     for table in ("review_queues", "review_items", "review_responses"):
         check(
             "M1",
@@ -2645,10 +2645,10 @@ def test_m_migration_and_wiring() -> None:
     check(
         "M1",
         "the migration chains onto the P1b identity migration",
-        'down_revision = "0034_argilla_review_identity"' in migration
-        and 'revision = "0036_review_queues"' in migration,
+        'down_revision = "0040_training_experiments"' in migration
+        and 'revision = "0041_review_queues"' in migration,
     )
-    check("M1", "the revision id fits 32 characters", len("0036_review_queues") <= 32)
+    check("M1", "the revision id fits 32 characters", len("0041_review_queues") <= 32)
     check(
         "M1",
         "downgrade drops tables, policies, triggers and grants",
@@ -4390,8 +4390,8 @@ class _Recorder:
 def test_s_migration_executed() -> None:
     import importlib.util
 
-    path = ROOT / "apps" / "api" / "alembic" / "versions" / "0036_review_queues.py"
-    spec = importlib.util.spec_from_file_location("migration_0036", path)
+    path = ROOT / "apps" / "api" / "alembic" / "versions" / "0041_review_queues.py"
+    spec = importlib.util.spec_from_file_location("migration_0041", path)
     assert spec is not None and spec.loader is not None
     mod: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
