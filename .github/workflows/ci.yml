@@ -579,7 +579,7 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0310.py
       - name: FTF-0602-P1 negative-test proof (evaluation cases -- migration SQL + RLS/GRANT shape + fault injection, real routes over the real store on SQLite, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0602_p1.py
-      - name: FTF-0603-F1 negative-test proof (server-side suite lock gate -- plan floors, typed 409 per clause, suite_sha256 shared vector, migration 0040 shape, real routes over the real CRUD on SQLite, no DB required)
+      - name: FTF-0603-F1 negative-test proof (server-side suite lock gate -- plan floors, typed 409 per clause, suite_sha256 shared vector, migration 0039 shape, real routes over the real CRUD on SQLite, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0603_f1.py
       - name: FTF-0501-P1 negative-test proof (dataset uploads -- migration SQL + RLS/GRANT/freeze-trigger shape + fault injection, store on SQLite, read routes, mounted app, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0501_p1.py
@@ -3197,7 +3197,7 @@ jobs:
 
   evaluation-suite-lock-gate-integration:
     # FTF-0603-F1: real Postgres evidence for the server-side suite lock gate
-    # (migration 0040): single head and downgrade/upgrade round trip, ENABLE+
+    # (migration 0039): single head and downgrade/upgrade round trip, ENABLE+
     # FORCE RLS and a non-allow-all tenant policy on
     # evaluation_suite_sample_plans, SELECT/INSERT only for the app role, the
     # assigned reviewer's direct POST /lock on an all-TBD suite refused for
