@@ -309,9 +309,6 @@ def _manifest_error(message: str) -> InvalidBoundaryManifestError:
 def _exact_mapping(value: object, keys: frozenset[str], what: str) -> Mapping[str, object]:
     if type(value) is not dict:
         raise _manifest_error(f"{what} must be a mapping")
-    for key in value:
-        if type(key) is not str:
-            raise _manifest_error(f"{what} has a non-string key")
     if set(value) != keys:
         raise _manifest_error(f"{what} must have exactly its declared keys")
     return value
@@ -354,8 +351,8 @@ def _permitted_network(value: object, what: str) -> Network:
 
 
 def _endpoint_host(value: object, network: Network, what: str) -> str:
-    if type(value) is not str or not value:
-        raise _manifest_error(f"{what} must be a non-empty string")
+    if type(value) is not str:
+        raise _manifest_error(f"{what} must be a string")
     try:
         literal = ipaddress.ip_address(value)
     except ValueError:
@@ -474,8 +471,6 @@ def parse_private_boundary(document: object) -> PrivateBoundary:
         endpoints: list[BoundaryEndpoint] = []
         for index, item in enumerate(items):
             endpoint = _endpoint(item, f"surface {surface} endpoint {index}")
-            if any(e.name == endpoint.name for e in endpoints):
-                raise _manifest_error(f"surface {surface} declares an endpoint name twice")
             if any(
                 (e.scheme, e.host, e.port) == (endpoint.scheme, endpoint.host, endpoint.port)
                 for e in endpoints
@@ -555,14 +550,12 @@ def _url_parts(url: object) -> tuple[str, str, int] | None:
         return None
     scheme = parsed.scheme
     host = parsed.hostname
-    if scheme not in FETCH_SCHEMES or not host or port is None:
-        return None
     # `hostname` lowercases; compare against what was really written so a
     # mixed-case spelling is a different (undeclared) destination.
     netloc_host = parsed.netloc.rsplit(":", 1)[0]
     if netloc_host.startswith("[") and netloc_host.endswith("]"):
         netloc_host = netloc_host[1:-1]
-    if netloc_host != host:
+    if host is None or port is None or netloc_host != host:
         return None
     return scheme, host, port
 
@@ -590,9 +583,7 @@ def endpoint_connection_policy(endpoint: BoundaryEndpoint) -> ConnectionPolicy:
         allowed_schemes=frozenset({endpoint.scheme}),
         allowed_ports=frozenset({endpoint.port}),
         explicit_private_allowlist=(endpoint.network,),
-        allow_redirects=False,
-        max_redirects=0,
-    )
+    )  # ConnectionPolicy's defaults: no redirects, max_redirects 0
 
 
 def _pinned_address(url: str, endpoint: BoundaryEndpoint, policy: ConnectionPolicy) -> str:

@@ -522,6 +522,23 @@ def test_manifest() -> None:
         lambda d: d["surfaces"]["training"].append(_ep("sink-a", 1)),
     )
     bad("non-string key", lambda d: d["surfaces"].__setitem__(1, []))
+    bad(
+        "deployment is a list of its key names",
+        lambda d: d.__setitem__("deployment", list(d["deployment"])),
+    )
+    bad("host is a list", lambda d: d["surfaces"]["preview"][0].__setitem__("host", ["x"]))
+    bad(
+        "host uppercase IPv6 literal",
+        lambda d: d["surfaces"].__setitem__(
+            "source", [_ep("v6u", 80, host="fd00::A", network="fd00::/16")]
+        ),
+    )
+    bad(
+        "unhashable exclusion",
+        lambda d: d.__setitem__(
+            "threat_model_exclusions", d["threat_model_exclusions"][:3] + [["model_memorization"]]
+        ),
+    )
     check(
         "FTF-H027-B",
         "unreadable file is refused",
@@ -607,6 +624,26 @@ def test_classification() -> None:
             f"external: {why}",
             got.destination.kind == "external" and got.endpoint is None,
         )
+    pad = f"http://127.0.0.1:{SINK_A.port}/"
+    long_ok = pad + "a" * (2048 - len(pad))
+    check(
+        "FTF-H027-C",
+        "a 2048-character declared URL is internal",
+        classify_destination(BOUNDARY, "data", long_ok).endpoint is not None,
+    )
+    check(
+        "FTF-H027-C",
+        "a 2049-character URL is external",
+        classify_destination(BOUNDARY, "data", long_ok + "a").endpoint is None,
+    )
+    from packages.security.privacy_boundary import BoundaryEndpoint as _BE
+
+    forged_ep = _BE("forged", "HTTP ", "127.0.0.1", 80, ipaddress.ip_network("127.0.0.1/32"))
+    check(
+        "FTF-H027-C",
+        "a forged endpoint with a non-canonical scheme has no fetch policy",
+        _raises(InvalidBoundaryRequestError, endpoint_connection_policy, forged_ep),
+    )
     check(
         "FTF-H027-C",
         "non-string url classifies external",
@@ -680,6 +717,24 @@ def test_fetch() -> None:
         and result.decision.effective_profile == "zero_egress"
         and result.surface == "data",
     )
+    check(
+        "FTF-H027-F",
+        "the request path is the URL's own path",
+        SINK_A.requests[-1].startswith(b"POST /obj HTTP/1.1"),
+    )
+    boundary_fetch(BOUNDARY, "data", a + "?q=1", **ZERO)
+    check(
+        "FTF-H027-F",
+        "the query string is sent",
+        SINK_A.requests[-1].startswith(b"GET /obj?q=1 HTTP/1.1"),
+    )
+    boundary_fetch(BOUNDARY, "data", f"http://127.0.0.1:{SINK_A.port}", **ZERO)
+    check(
+        "FTF-H027-F",
+        "an empty path is sent as /",
+        SINK_A.requests[-1].startswith(b"GET / HTTP/1.1"),
+    )
+    boundary_fetch(BOUNDARY, "data", a, method="POST", body=b"in-boundary", **ZERO)
     check(
         "FTF-H027-F",
         "the guard sends Connection: close",
@@ -1102,6 +1157,16 @@ def test_payload() -> None:
         )
     check(
         "FTF-H027-P",
+        "a declared field spelled in another case is refused",
+        _raises(PayloadRefusedError, encode_workflow_payload, SCHEMA, {**GOOD, "ROWS": 3}),
+    )
+    check(
+        "FTF-H027-P",
+        "an uppercase field kind is refused",
+        _raises(InvalidPayloadSchemaError, PayloadSchema, "s", {"a": PayloadField("BOOL")}),
+    )
+    check(
+        "FTF-H027-P",
         "unknown field refused (e.g. raw prompt)",
         _raises(PayloadRefusedError, encode_workflow_payload, SCHEMA, {**GOOD, "prompt": "x"}),
     )
@@ -1146,6 +1211,8 @@ def test_payload() -> None:
     bad_decode("not JSON", b"{")
     bad_decode("non-ASCII", '{"a":"é"}'.encode())
     bad_decode("JSON list", b"[]")
+    bad_decode("JSON list naming fields", b'["fields"]')
+    bad_decode("envelope without fields", b'{"schema":"train_step","v":1}')
     bad_decode("extra envelope key", json.dumps({**doc, "x": 1}).encode())
     bad_decode(
         "other schema",
@@ -1357,8 +1424,8 @@ FAULTS: list[tuple[Path, str, str, str]] = [
     (
         BOUNDARY_MODULE,
         "alternate host encoding classified internal",
-        r"    if netloc_host != host:\n        return None\n",
-        "",
+        r"if host is None or port is None or netloc_host != host:",
+        "if host is None or port is None:",
     ),
     (
         BOUNDARY_MODULE,
@@ -1406,8 +1473,8 @@ FAULTS: list[tuple[Path, str, str, str]] = [
     (
         PAYLOAD_MODULE,
         "free-text kind accepted as uuid",
-        r"        if not _UUID_RE\.fullmatch\(value\):\n",
-        "        if False:\n",
+        r'"uuid": lambda spec, value: _pattern_value\(_UUID_RE, value\),',
+        '"uuid": lambda spec, value: value,',
     ),
     (
         PAYLOAD_MODULE,

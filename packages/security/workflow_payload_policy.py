@@ -138,29 +138,43 @@ class PayloadSchema:
         object.__setattr__(self, "fields", MappingProxyType(frozen))
 
 
-def _value(spec: PayloadField, value: object) -> object:
-    kind = spec.kind
-    if kind == "bool":
-        if type(value) is not bool:
-            raise PayloadRefusedError("value is not a bool")
-        return value
-    if kind == "count":
-        if type(value) is not int or not 0 <= value <= _MAX_COUNT:
-            raise PayloadRefusedError("value is not a bounded count")
-        return value
-    if type(value) is not str:
-        raise PayloadRefusedError("value is not a string of the field's shape")
-    if kind == "uuid":
-        if not _UUID_RE.fullmatch(value):
-            raise PayloadRefusedError("value is not a canonical uuid")
-        return value
-    if kind == "sha256":
-        if not _SHA256_RE.fullmatch(value):
-            raise PayloadRefusedError("value is not a sha256 digest")
-        return value
-    if value not in spec.values:
+def _bool_value(spec: PayloadField, value: object) -> object:
+    if type(value) is not bool:
+        raise PayloadRefusedError("value is not a bool")
+    return value
+
+
+def _count_value(spec: PayloadField, value: object) -> object:
+    if type(value) is not int or not 0 <= value <= _MAX_COUNT:
+        raise PayloadRefusedError("value is not a bounded count")
+    return value
+
+
+def _pattern_value(pattern: re.Pattern[str], value: object) -> object:
+    if type(value) is not str or not pattern.fullmatch(value):
+        raise PayloadRefusedError("value does not have the field's shape")
+    return value
+
+
+def _enum_value(spec: PayloadField, value: object) -> object:
+    if type(value) is not str or value not in spec.values:
         raise PayloadRefusedError("value is not one of the field's declared values")
     return value
+
+
+_CHECKS = MappingProxyType(
+    {
+        "uuid": lambda spec, value: _pattern_value(_UUID_RE, value),
+        "sha256": lambda spec, value: _pattern_value(_SHA256_RE, value),
+        "count": _count_value,
+        "bool": _bool_value,
+        "enum": _enum_value,
+    }
+)
+
+
+def _value(spec: PayloadField, value: object) -> object:
+    return _CHECKS[spec.kind](spec, value)
 
 
 def _checked_schema(schema: object) -> PayloadSchema:
@@ -202,17 +216,13 @@ def decode_workflow_payload(schema: PayloadSchema, data: bytes) -> Mapping[str, 
         document = json.loads(data.decode("ascii"))
     except (UnicodeDecodeError, ValueError) as exc:
         raise PayloadRefusedError("payload is not canonical JSON") from exc
-    if type(document) is not dict or set(document) != {"schema", "v", "fields"}:
+    if type(document) is not dict or "fields" not in document:
         raise PayloadRefusedError("payload envelope is malformed")
-    if (
-        document["schema"] != checked.name
-        or type(document["v"]) is not int
-        or (document["v"] != _PAYLOAD_VERSION)
-    ):
-        raise PayloadRefusedError("payload belongs to another schema or version")
     values = _validated(checked, document["fields"])
+    # Re-encoding binds the schema name, version and envelope keys: another
+    # schema, another version, an extra key or other spacing all differ.
     if encode_workflow_payload(checked, values) != data:
-        raise PayloadRefusedError("payload is not in canonical form")
+        raise PayloadRefusedError("payload is not canonical for this schema")
     return MappingProxyType(values)
 
 
