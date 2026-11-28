@@ -14,6 +14,10 @@ export default defineConfig({
       "apps/web/tests/**/*.spec.ts",
     ],
     passWithNoTests: false,
+    // The real-Chromium specs (*_browser.spec.ts) open several pages per test and wait up to 10 s for
+    // each one; Vitest's 5 s default cut them off on a loaded CI runner (red gates on 2026-11-28).
+    // A test that hangs still fails, at 30 s.
+    testTimeout: 30_000,
     // FTF-UX01: the design tokens are read as text (`?raw`) so contrast is computed from the real file;
     // Vitest blanks every other stylesheet.
     css: { include: [/styles\/tokens\.css/] },
