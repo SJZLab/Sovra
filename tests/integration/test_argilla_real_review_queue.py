@@ -136,7 +136,7 @@ class RealWorld(Q.World):
         rationale="",
         expected_version=0,
         reviewer_api_factory=None,
-    ):  # type: ignore[override]
+    ):
         return super().respond(
             queue,
             position,
