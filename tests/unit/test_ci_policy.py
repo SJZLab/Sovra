@@ -457,6 +457,40 @@ def test_select_job_whose_test_names_the_changed_module(tmp_path):
     assert _select(tmp_path, ["apps/web/pages/index.tsx"])[0] == []
 
 
+def test_select_job_whose_test_imports_the_api_as_app(tmp_path):
+    """Integration tests put apps/api on sys.path and write `from app.x import y`."""
+    tests = tmp_path / "tests" / "integration"
+    tests.mkdir(parents=True)
+    (tests / "test_db.py").write_text("from app.datasets import dataset_mapping_store as store\n")
+    (tests / "test_s3.py").write_text("import app.storage.s3_client\n")
+    jobs = ["db-integration", "s3-integration"]
+
+    def pick(files):
+        return cp.select_jobs(files, _SELECT_WF, _SELECT_WF, "", jobs, root=tmp_path)[0]
+
+    assert pick(["apps/api/app/datasets/dataset_mapping_store.py"]) == ["db-integration"]
+    assert pick(["apps/api/app/datasets/other_store.py"]) == ["db-integration"], "same package"
+    assert pick(["apps/api/app/storage/s3_client.py"]) == ["s3-integration"]
+    assert pick(["apps/api/app/auth/roles.py"]) == []
+
+
+def test_select_job_whose_typescript_test_imports_the_changed_component(tmp_path):
+    wf = (
+        "jobs:\n  gate:\n    x: 1\n  ui-real-api-integration:\n"
+        "    run: vitest apps/web/tests/real_api/x.realapi.ts\n"
+    )
+    d = tmp_path / "apps" / "web" / "tests" / "real_api"
+    d.mkdir(parents=True)
+    (d / "x.realapi.ts").write_text('import { Panel } from "../../components/model/panel_ui";\n')
+    jobs = ["ui-real-api-integration"]
+
+    def pick(files):
+        return cp.select_jobs(files, wf, wf, "", jobs, root=tmp_path)[0]
+
+    assert pick(["apps/web/components/model/panel_ui.tsx"]) == jobs
+    assert pick(["apps/web/components/model/other_ui.tsx"]) == []
+
+
 def test_select_ignores_the_app_entry_point(tmp_path):
     assert _select(tmp_path, ["apps/api/app/main.py"])[0] == []
 

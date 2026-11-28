@@ -113,9 +113,23 @@ MODULE_NAME = re.compile(r"\b(?:apps|workers|packages|evals)(?:\.[A-Za-z_]\w*)+"
 SELECT_IGNORED_MODULES = {"apps/api/app/main"}
 
 
-def _module_prefixes(test_text: str) -> set[str]:
-    """Source path prefixes a test file names (`apps.api.app.x.y` -> `apps/api/app/x/y`)."""
+# Most integration tests put apps/api on sys.path and import the API as `app.<package>...`.
+API_IMPORT = re.compile(r"^[ \t]*(?:from|import)[ \t]+(app(?:\.[A-Za-z_]\w*)+)", re.M)
+# A TypeScript test names what it exercises by relative import.
+TS_IMPORT = re.compile(r"""from\s+["'](\.{1,2}/[^"']+)["']""")
+
+
+def _module_prefixes(test_text: str, test_path: str = "") -> set[str]:
+    """Source path prefixes a test file names: `apps.api.app.x.y` -> `apps/api/app/x/y`,
+    `from app.x import y` -> `apps/api/app/x`, and (TypeScript) `../components/x` resolved
+    against the test file's own directory."""
     prefixes = {m.group(0).replace(".", "/") for m in MODULE_NAME.finditer(test_text)}
+    prefixes |= {"apps/api/" + m.group(1).replace(".", "/") for m in API_IMPORT.finditer(test_text)}
+    if test_path.endswith((".ts", ".tsx")):
+        base = os.path.dirname(test_path)
+        prefixes |= {
+            os.path.normpath(os.path.join(base, m.group(1))) for m in TS_IMPORT.finditer(test_text)
+        }
     return prefixes - SELECT_IGNORED_MODULES
 
 
@@ -135,7 +149,7 @@ def select_jobs(
     only add jobs to the gate; it never removes a gate check."""
     _, head_blocks = _job_blocks(workflow_text)
     base_blocks = _job_blocks(base_workflow_text)[1] if base_workflow_text is not None else None
-    sources = [f[: -len(".py")] if f.endswith(".py") else f for f in files]
+    sources = [re.sub(r"\.(?:py|tsx?|jsx?)$", "", f) for f in files]
     selected: set[str] = set()
     for job in integration_jobs:
         block = head_blocks.get(job, "")
@@ -148,7 +162,7 @@ def select_jobs(
         prefixes: set[str] = set()
         for test in sorted(set(TEST_PATH.findall(block))):
             try:
-                prefixes |= _module_prefixes((root / test).read_text(encoding="utf-8"))
+                prefixes |= _module_prefixes((root / test).read_text(encoding="utf-8"), test)
             except (OSError, UnicodeDecodeError):
                 continue
         if any(
