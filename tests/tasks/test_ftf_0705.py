@@ -1118,7 +1118,7 @@ def part_v_order() -> None:
             setattr(nv, name, real_fn)
     # a probe status that is not exactly "passed" is never a pass
     real_storage = nv._probe_storage
-    for status in ("PASSED", "passed ", "Passed", "FAILED", "failed "):
+    for status in ("PASSED", "passed ", "Passed", "FAILED", "failed ", "NOT_RUN", " not_run"):
         nv._probe_storage = lambda host, req, st, status=status: nv.ProbeOutcome(
             "storage", status, "ok", ""
         )
@@ -1467,6 +1467,14 @@ def part_s_probe() -> None:
             "S3-3",
             "mismatch stops before delete",
             [entry[0] for entry in fake.log] == ["PUT", "GET"],
+        )
+    for body, returned in ((b"body", b" BODY\n"), (b" Body\t", b"body")):
+        fake = FakeS3()
+        fake.corrupt = lambda _b, returned=returned: returned
+        check(
+            "S3-3",
+            f"readback {returned!r} for {body!r} is a mismatch",
+            _s3_round_trip(fake, body) == "object_store_readback_mismatch",
         )
     fake = FakeS3()
     fake.keep_after_delete = True
