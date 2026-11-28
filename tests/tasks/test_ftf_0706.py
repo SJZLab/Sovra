@@ -124,6 +124,7 @@ class Store:
     objects: dict[str, list[tuple[str, bytes]]] = field(default_factory=dict)
     page_size: int = 2
     requests: list[str] = field(default_factory=list)
+    policies: list[Any] = field(default_factory=list)
     fail: Callable[[str], GuardedResponse | None] | None = None
 
     def put(self, key: str, body: bytes) -> str:
@@ -133,6 +134,7 @@ class Store:
 
     def fetch(self, url: str, policy: Any, **kwargs: Any) -> GuardedResponse:
         self.requests.append(url)
+        self.policies.append(policy)
         if "authorization" not in {k.lower() for k in kwargs.get("headers", {})}:
             return GuardedResponse(status=403, headers={}, body=b"", final_url=url)
         if self.fail is not None:
@@ -358,9 +360,17 @@ def run(case: Case, *, root: Path | None = None, config: Any = None) -> Outcome:
     return outcome
 
 
-def expect_refused(label: str, outcome: Outcome, code: str, state: str = "failed") -> None:
+def hex_of(artifact: TrainableArtifact) -> str:
+    return str(artifact.weights_digest).removeprefix("sha256:")
+
+
+def expect_refused(
+    label: str, outcome: Outcome, code: str, state: str = "failed", reason: str | None = None
+) -> None:
     err = outcome.error
     check(f"{label}: refused with {code}", err is not None and err.code == code)
+    if reason is not None:
+        check(f"{label}: reason {reason}", err is not None and err.reason == reason)
     check(f"{label}: state {state}", err is not None and err.state == state)
     check(
         f"{label}: code is a declared error code", err is not None and err.code in bal.ERROR_CODES
@@ -500,13 +510,11 @@ def record_suite() -> None:
     case = build_case()
     other_digest = make_config(str(case.artifact.id), "f" * 64, case.artifact.base_model_revision)
     expect_refused("job digest differs", run(case, config=other_digest), "digest_mismatch")
-    other_rev = make_config(
-        str(case.artifact.id), case.artifact.weights_digest[7:], "another-revision"
-    )
+    other_rev = make_config(str(case.artifact.id), hex_of(case.artifact), "another-revision")
     expect_refused("job revision differs", run(case, config=other_rev), "revision_not_approved")
     other_art = make_config(
         "c3333333-3333-4333-8333-333333333333",
-        case.artifact.weights_digest[7:],
+        hex_of(case.artifact),
         case.artifact.base_model_revision,
     )
     expect_refused("job names another artifact", run(case, config=other_art), "artifact_mismatch")
@@ -563,7 +571,7 @@ def record_suite() -> None:
 def _missing_manifest_version() -> Outcome:
     case = build_case()
     case.artifact.base_model_revision = "v9-missing"
-    cfg = make_config(str(case.artifact.id), case.artifact.weights_digest[7:], "v9-missing")
+    cfg = make_config(str(case.artifact.id), hex_of(case.artifact), "v9-missing")
     return run(case, config=cfg)
 
 
@@ -769,9 +777,340 @@ def workspace_suite() -> None:
     )
 
 
+def rehash(config: tcs.ResolvedTrainingConfig, edit: Callable[[dict[str, Any]], None]) -> Any:
+    doc = copy.deepcopy(tcs._thaw(config.doc))
+    edit(doc)
+    frozen = tcs._freeze(doc)
+    return tcs.ResolvedTrainingConfig(doc=frozen, config_sha256=tcs.compute_config_sha256(frozen))
+
+
+def manifest_case(
+    edit: Callable[[list[dict[str, Any]]], Any] = lambda entries: None, *, pad_to: int = 0
+) -> Case:
+    """A case whose real, uploaded manifest entries are edited by `edit` before publishing."""
+    store = Store()
+    entries = json.loads(manifest_for(store, base_files()))["files"]
+    edit(entries)
+    manifest = json.dumps({"schema": bal.MANIFEST_SCHEMA, "files": entries}).encode()
+    manifest += b" " * max(0, pad_to - len(manifest))
+    version = store.put(PREFIX + bal.MANIFEST_NAME, manifest)
+    digest = hashlib.sha256(manifest).hexdigest()
+    artifact = make_artifact(version, digest)
+    return Case(
+        store=store, artifact=artifact, config=make_config(str(artifact.id), digest, version)
+    )
+
+
+def hardening_suite() -> None:
+    # Job <-> record comparisons are exact: no case folding or trimming anywhere.
+    case = build_case()
+    rev = case.artifact.base_model_revision
+    upper_id = rehash(
+        case.config,
+        lambda d: d["base"].__setitem__("trainable_artifact_id", str(case.artifact.id).upper()),
+    )
+    expect_refused(
+        "artifact id differs only in case", run(case, config=upper_id), "artifact_mismatch"
+    )
+    up_job = rehash(case.config, lambda d: d["server"].__setitem__("base_revision", rev.upper()))
+    expect_refused(
+        "job revision differs only in case", run(case, config=up_job), "revision_not_approved"
+    )
+    up_tok = rehash(case.config, lambda d: d["tokenizer"].__setitem__("revision", rev.upper()))
+    expect_refused(
+        "tokenizer revision differs only in case", run(case, config=up_tok), "revision_not_approved"
+    )
+    rec_upper = build_case()
+    real = rec_upper.artifact.base_model_revision
+    rec_upper.artifact.base_model_revision = real.upper()
+    tok_matches_record = rehash(
+        rec_upper.config, lambda d: d["tokenizer"].__setitem__("revision", real.upper())
+    )
+    expect_refused(
+        "record revision differs only in case",
+        run(rec_upper, config=tok_matches_record),
+        "revision_not_approved",
+    )
+    upper_status = build_case()
+    upper_status.artifact.status = "READY"
+    expect_refused("status READY is not ready", run(upper_status), "artifact_not_approved")
+    upper_source = build_case()
+    upper_source.artifact.source_type = "PRIVATE_S3"
+    expect_refused("source type PRIVATE_S3", run(upper_source), "unsupported_source_type")
+    bad_hex = build_case()
+    bad_hex.artifact.weights_digest = "sha256:" + "A" * 64
+    expect_refused(
+        "record digest not lowercase hex",
+        run(bad_hex),
+        "digest_unknown",
+        reason="record_digest_malformed",
+    )
+    unreadable = rehash(case.config, lambda d: d.pop("server"))
+    expect_refused(
+        "config doc missing server",
+        run(case, config=unreadable),
+        "config_integrity_failed",
+        reason="config_unreadable",
+    )
+    upper_name = build_case(
+        artifact_over={"source_uri": f"s3://{BUCKET}/{PREFIX}{bal.MANIFEST_NAME.upper()}"}
+    )
+    expect_refused("manifest name differs in case", run(upper_name), "artifact_location_denied")
+
+    # The job id must be a sha256: never a path that escapes the workspace root.
+    root = Path(tempfile.mkdtemp(prefix="ftf0706-"))
+    evil = tcs.ResolvedTrainingConfig(doc=case.config.doc, config_sha256="../escape")
+    try:
+        prepare_training_job(
+            evil,
+            case.artifact,
+            connection=CONNECTION,
+            workspace_root=root / "w",
+            mount_datasets=lambda d: None,
+            fetch=case.store.fetch,
+        )
+        err: Any = None
+    except bal.BaseArtifactLoadError as exc:
+        err = exc
+    check(
+        "job id: a non-sha256 config hash is refused before any directory exists",
+        err is not None
+        and err.reason == "config_sha256_malformed"
+        and not (root / "escape").exists(),
+    )
+
+    # The default transport policy is the FTF-0303 private S3 policy.
+    case = build_case()
+    run(case)
+    check(
+        "policy: default FTF-0303 policy is used when none is given",
+        case.store.policies != []
+        and all(
+            p.name == bal.default_private_s3_resolver_policy().name for p in case.store.policies
+        ),
+    )
+    out = run(build_case())
+    check(
+        "loaded: artifact id is the record's",
+        out.prepared.base.artifact_id == "a1111111-1111-4111-8111-111111111111",
+    )
+
+    # Listing failures are blocked; listing limits are enforced with their own reasons.
+    def listing(response: Callable[[str], GuardedResponse | None]) -> Case:
+        c = build_case()
+        c.store.fail = lambda url: response(url) if "list-type" in url else None
+        return c
+
+    def unreachable_listing(url: str) -> GuardedResponse | None:
+        raise OutboundGuardError("refused")
+
+    expect_refused(
+        "listing unreachable",
+        run(listing(unreachable_listing)),
+        "object_store_unavailable",
+        "blocked",
+        "listing_unreachable",
+    )
+    expect_refused(
+        "listing 403",
+        run(listing(lambda u: GuardedResponse(status=403, headers={}, body=b"", final_url=u))),
+        "object_store_unavailable",
+        "blocked",
+        "listing_refused",
+    )
+    no_key = (
+        f'<ListBucketResult xmlns="{S3_NS}"><Contents></Contents>'
+        "<IsTruncated>false</IsTruncated></ListBucketResult>"
+    )
+    expect_refused(
+        "listing entry without a key",
+        run(
+            listing(
+                lambda u: GuardedResponse(status=200, headers={}, body=no_key.encode(), final_url=u)
+            )
+        ),
+        "object_store_unavailable",
+        "blocked",
+        "listing_unreadable",
+    )
+    no_token = (
+        f'<ListBucketResult xmlns="{S3_NS}"><IsTruncated>true</IsTruncated></ListBucketResult>'
+    )
+    expect_refused(
+        "truncated listing without a continuation token",
+        run(
+            listing(
+                lambda u: GuardedResponse(
+                    status=200, headers={}, body=no_token.encode(), final_url=u
+                )
+            )
+        ),
+        "object_store_unavailable",
+        "blocked",
+        "listing_unreadable",
+    )
+    many = build_case(extra_objects={f"{PREFIX}x{i}": b"" for i in range(bal.LIST_MAX_PAGES)})
+    many.store.page_size = 1
+    expect_refused(
+        "listing with more pages than allowed",
+        run(many),
+        "object_store_unavailable",
+        "blocked",
+        "listing_unbounded",
+    )
+    at_cap = build_case(extra_objects={f"{PREFIX}x{i}": b"" for i in range(bal.LIST_MAX_KEYS - 5)})
+    at_cap.store.page_size = 1000
+    expect_refused(
+        "exactly the key cap",
+        run(at_cap),
+        "artifact_file_unexpected",
+        reason="store_holds_unlisted_object",
+    )
+    over_cap = build_case(
+        extra_objects={f"{PREFIX}x{i}": b"" for i in range(bal.LIST_MAX_KEYS - 4)}
+    )
+    over_cap.store.page_size = 1000
+    expect_refused(
+        "one key over the cap",
+        run(over_cap),
+        "artifact_file_unexpected",
+        reason="prefix_holds_too_many_objects",
+    )
+
+    # Manifest strictness, each with its own reason.
+    for label, body, reason in (
+        (
+            "duplicate keys",
+            b'{"schema": "x", "schema": "' + bal.MANIFEST_SCHEMA.encode() + b'", "files": []}',
+            "manifest_not_strict_json",
+        ),
+        (
+            "NaN constant",
+            b'{"schema": "' + bal.MANIFEST_SCHEMA.encode() + b'", "files": NaN}',
+            "manifest_not_strict_json",
+        ),
+        ("not an object", b"[]", "manifest_keys"),
+        (
+            "extra key",
+            json.dumps({"schema": bal.MANIFEST_SCHEMA, "files": [], "x": 1}).encode(),
+            "manifest_keys",
+        ),
+        ("wrong schema", json.dumps({"schema": "v0", "files": [{}]}).encode(), "manifest_schema"),
+        ("too large", b" " * (bal.MANIFEST_MAX_BYTES + 1), "manifest_too_large"),
+    ):
+        expect_refused(
+            f"manifest {label}",
+            run(build_case(manifest_bytes=body)),
+            "manifest_invalid",
+            reason=reason,
+        )
+
+    exact = manifest_case(pad_to=bal.MANIFEST_MAX_BYTES)
+    check("manifest of exactly the size cap loads", run(exact).error is None)
+    for field_name, value in (
+        ("path", 7),
+        ("version_id", "bad id!"),
+        ("version_id", 3),
+        ("size_bytes", -1),
+        ("size_bytes", True),
+        ("sha256", "A" * 64),
+        ("sha256", None),
+    ):
+        expect_refused(
+            f"manifest entry {field_name}={value!r}",
+            run(manifest_case(lambda es, f=field_name, v=value: es[0].__setitem__(f, v))),
+            "manifest_invalid",
+            reason="manifest_entry_values",
+        )
+
+    def huge(entries: list[dict[str, Any]]) -> None:
+        for e in entries:
+            if e["path"] == "config.json":
+                e["size_bytes"] = 1 << 40
+
+    expect_refused(
+        "declared size at the cap is checked against the store",
+        run(manifest_case(huge)),
+        "artifact_file_size_mismatch",
+    )
+
+    with_readme = base_files()
+    with_readme["README.md"] = b""
+    check("an empty (0-byte) allowed file loads", run(build_case(with_readme)).error is None)
+
+    shards = {
+        f"model-{i:05d}-of-00253.safetensors": safetensors_bytes(f"t{i}.weight")
+        for i in range(1, 254)
+    }
+    full = {**{k: v for k, v in base_files().items() if k != "model.safetensors"}, **shards}
+    cap_case = build_case(full)
+    cap_case.store.page_size = 1000
+    check(
+        "manifest of exactly the file cap loads",
+        len(full) == bal.MANIFEST_MAX_FILES and run(cap_case).error is None,
+    )
+    full["README.md"] = b""
+    expect_refused(
+        "one file over the cap", run(build_case(full)), "manifest_invalid", reason="manifest_files"
+    )
+
+    # Remote-code keys are matched exactly as Hugging Face reads them.
+    files = base_files()
+    files["config.json"] = config_json(AUTO_MAP={"x": "y"})
+    check("an unrelated AUTO_MAP key is not auto_map", run(build_case(files)).error is None)
+    files = base_files()
+    files["model.safetensors.index.json"] = b'{"metadata": {}}'
+    expect_refused(
+        "index without weight_map",
+        run(build_case(files)),
+        "weights_index_inconsistent",
+        reason="weight_map_missing",
+    )
+    files = base_files()
+    files["tokenizer.json"] = tokenizer_json({**VOCAB, "a": 5, "b": 6, "c": 7})
+    check("tokenizer exactly the model vocab size loads", run(build_case(files)).error is None)
+
+    # Workspace errors inside the loader keep their own code.
+    c = build_case()
+    existing = Path(tempfile.mkdtemp(prefix="ftf0706-"))
+    try:
+        bal.load_base_artifact(
+            c.config, c.artifact, connection=CONNECTION, directory=existing, fetch=c.store.fetch
+        )
+        e1: Any = None
+    except bal.BaseArtifactLoadError as exc:
+        e1 = exc
+    check(
+        "loader: an existing base directory is refused",
+        e1 is not None and e1.reason == "base_directory_not_creatable",
+    )
+    original = bal._write_private
+
+    def failing_write(directory: Path, contents: Any) -> None:
+        raise OSError("disk full")
+
+    bal._write_private = failing_write  # type: ignore[assignment]
+    try:
+        target = Path(tempfile.mkdtemp(prefix="ftf0706-")) / "base"
+        try:
+            bal.load_base_artifact(
+                c.config, c.artifact, connection=CONNECTION, directory=target, fetch=c.store.fetch
+            )
+            e2: Any = None
+        except bal.BaseArtifactLoadError as exc:
+            e2 = exc
+        check(
+            "loader: a write failure is workspace_unavailable and leaves nothing",
+            e2 is not None and e2.reason == "base_file_not_writable" and not target.exists(),
+        )
+    finally:
+        bal._write_private = original
+
+
 def main() -> None:
     logging.disable(logging.CRITICAL)
     acceptance_suite()
+    hardening_suite()
     record_suite()
     remote_code_suite()
     consistency_suite()

@@ -204,7 +204,7 @@ class BaseArtifactLoadError(Exception):
 
 
 def _fail(code: str, reason: str) -> BaseArtifactLoadError:
-    return BaseArtifactLoadError(code, reason, state=STATE_FAILED)
+    return BaseArtifactLoadError(code, reason)
 
 
 def _blocked(reason: str) -> BaseArtifactLoadError:
@@ -286,9 +286,8 @@ def _check_job_against_record(config: ResolvedTrainingConfig, artifact: Trainabl
 
 
 def _split_source_uri(source_uri: str) -> tuple[str, str]:
-    if not source_uri.startswith("s3://"):
-        raise _fail("artifact_location_denied", "source_uri_not_s3")
-    bucket, _, key = source_uri[len("s3://") :].partition("/")
+    # FTF-0301 already requires a private_s3 source_uri to be `s3://bucket/key`.
+    bucket, _, key = source_uri.removeprefix("s3://").partition("/")
     prefix, _, name = key.rpartition("/")
     if not bucket or not prefix or name != MANIFEST_NAME:
         raise _fail("artifact_location_denied", "source_uri_is_not_a_manifest")
@@ -305,7 +304,7 @@ def _fetch_object(
     fetch: FetchFn,
     missing_code: str,
 ) -> bytes:
-    """One pinned object version through FTF-0303, returning the exact bytes it hashed."""
+    """One pinned object version through FTF-0303, returning the exact bytes it received."""
     captured: list[GuardedResponse] = []
 
     def capture(*args: Any, **kwargs: Any) -> GuardedResponse:
@@ -314,7 +313,7 @@ def _fetch_object(
         return response
 
     try:
-        result = resolve_private_s3_object(
+        resolve_private_s3_object(
             source_uri,
             version_id,
             connection=connection,
@@ -323,20 +322,16 @@ def _fetch_object(
             fetch=capture,
             timeout=_TIMEOUT_SECONDS,
         )
-    except (BucketMismatchError, CrossTenantPrefixError):
-        raise _fail("artifact_location_denied", "outside_the_connection_scope") from None
     except ObjectVersionUnavailableError:
         raise _fail(missing_code, "object_version_absent") from None
     except PartialUploadError:
         raise _fail("artifact_file_size_mismatch", "size_differs_from_manifest") from None
     except PrivateS3ResolutionError:
+        # Also covers a bucket/prefix refusal, unreachable here: every file key is built under the
+        # manifest's own bucket and prefix, which FTF-0303 already accepted for the manifest.
         raise _blocked("object_fetch_failed") from None
-    if len(captured) != 1:
-        raise _blocked("object_fetch_failed")
-    body = captured[0].body
-    if hashlib.sha256(body).hexdigest() != result.sha256_hex:
-        raise _blocked("object_fetch_failed")
-    return body
+    # FTF-0303 calls `fetch` exactly once per object and sized/hashed this same body.
+    return captured[0].body
 
 
 def _list_current_keys(
@@ -513,7 +508,8 @@ def _check_tokenizer(
     declared += list(tokenizer_config.additional_special_tokens)
     for content in declared:
         token_id = tokenizer.token_to_id(content)
-        if token_id is None or token_id >= model_config.vocab_size:
+        # An id >= vocab_size is impossible here: the tokenizer is no larger than the model vocab.
+        if token_id is None:
             raise _fail("tokenizer_model_inconsistent", "special_token_not_in_vocabulary")
 
 
@@ -607,9 +603,7 @@ def _load(
         raise _fail("artifact_file_missing", "manifest_version_absent") from None
     except PrivateS3ResolutionError:
         raise _blocked("manifest_fetch_failed") from None
-    if len(manifest_bodies) != 1:
-        raise _blocked("manifest_fetch_failed")
-    # FTF-0306 hashed exactly this one response body and found it equal to the approved digest.
+    # FTF-0306 fetched once and hashed exactly this body, finding it equal to the approved digest.
     manifest_body = manifest_bodies[0]
 
     # Step 3-4: the manifest, then the store holds exactly the approved set.

@@ -646,6 +646,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0701_p2.py
       - name: FTF-0701 negative-test proof (training experiment routes -- 07 contract paths equal the router, 6-role truth table, strict 64 KiB body, every refusal code with its status on every operation, identical 404s, main.py wiring on the real app, fault-injected route and contract copies; no DB or network required)
         run: uv run python3 tests/tasks/test_ftf_0701.py
+      - name: FTF-0706 negative-test proof (base artifact loading -- exact approved revision and digests, manifest/file/listing consistency, remote code and pickle refusals, tokenizer/model consistency, fail-closed blocked state, datasets mounted only after the verified base; no network required)
+        run: uv run python3 tests/tasks/test_ftf_0706.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -2799,6 +2801,27 @@ jobs:
       - name: Prove the real ManifestEvidence evidence against the live database
         run: uv run python3 tests/integration/test_ftf_04a20_manifest_evidence.py
 
+  base-artifact-loading-integration:
+    # FTF-0706: the training worker's base artifact load against the live
+    # SeaweedFS S3-API container -- a real versioned bucket, a small real
+    # artifact (real tokenizer, config files and safetensors), FTF-0306
+    # computing the approved digest from the live manifest, the worker
+    # fetching every pinned version over the network, and the extra-object,
+    # remote-code, pickle, deleted-version, digest-drift, wrong-credential and
+    # unreachable-endpoint refusals before any dataset mount. Same real
+    # container pattern as s3-minio-versioned-source-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' base-artifact-loading-integration ')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies
+        run: uv sync --all-packages
+      - name: Prove base artifact loading against the live S3 fixture
+        run: uv run python3 tests/integration/test_ftf_0706_base_artifact_loading_s3.py
+
   base-model-revision-digest-resolver-integration:
     # FTF-0306: real Postgres Base model revision/digest resolver
     # evidence -- reuses FTF-0301's own already-CERTIFIED
@@ -4657,6 +4680,7 @@ jobs:
       - discovered-agent-candidate-integration
       - agent-manifest-integration
       - manifest-evidence-integration
+      - base-artifact-loading-integration
       - base-model-revision-digest-resolver-integration
       - database-api-trace-source-integration
       - evaluation-suite-integration
