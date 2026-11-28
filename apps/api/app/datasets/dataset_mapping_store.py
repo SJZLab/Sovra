@@ -59,7 +59,7 @@ from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint, func, 
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session, mapped_column
-from workers.data import csv_importer, json_importer, jsonl_importer
+from workers.data import csv_importer, json_importer, jsonl_importer, xlsx_importer
 from workers.data.dataset_mapping_review import (
     JSONL_PREVIEW_CONTENT_TYPES,
     MappingPreviewResult,
@@ -128,12 +128,15 @@ MAX_LIST_LIMIT: Final = 200
 # Section 67.2 "masked unless the user has preview permission": admins always; an ml_engineer only
 # on a connection classified public or internal.
 REVEAL_CLASSIFICATIONS: Final = frozenset({"public", "internal"})
-_PROBE_BLOCKS: Final = frozenset({"csv", "json"})
+_PROBE_BLOCKS: Final = frozenset({"csv", "json", "xlsx"})
 # The verdicts a read-only probe or preview may show (`blocked` is a refusal: `_verdict_refusal`).
 _SHOWN_STATES: Final = frozenset({"completed", "failed"})
 # The probe's server-built slot per importer: a tabular source is read by column index, an object
 # source by key. The caller never supplies a slot.
-_PROBE_SLOTS: Final = {csv_importer.IMPORTER_NAME: {"index": 0}}
+_PROBE_SLOTS: Final = {
+    csv_importer.IMPORTER_NAME: {"index": 0},
+    xlsx_importer.IMPORTER_NAME: {"index": 0},
+}
 _RESOURCE: Final = "dataset_mapping"
 _HEX64: Final = re.compile(r"[0-9a-f]{64}")
 _CRITICAL_ROW_CODES: Final = ("rejected:unmapped_role", "rejected:unmapped_message_key")
@@ -141,7 +144,14 @@ _IMPORTER_VERSIONS: Final = {
     csv_importer.IMPORTER_NAME: csv_importer.IMPORTER_VERSION,
     json_importer.IMPORTER_NAME: json_importer.IMPORTER_VERSION,
     jsonl_importer.IMPORTER_NAME: jsonl_importer.IMPORTER_VERSION,
+    xlsx_importer.IMPORTER_NAME: xlsx_importer.IMPORTER_VERSION,
 }
+# The importers a `dataset_mappings` row may record: exactly the migration's CHECK
+# (`ck_dataset_mappings_importer`); a test pins the two equal. XLSX is previewed and probed
+# (FTF-H011-P6) but cannot be proposed until a migration admits it.
+STORABLE_IMPORTERS: Final = frozenset(
+    {csv_importer.IMPORTER_NAME, json_importer.IMPORTER_NAME, jsonl_importer.IMPORTER_NAME}
+)
 _REUSABLE_PAIRS: Final = frozenset({(csv_importer.IMPORTER_NAME, csv_importer.IMPORTER_NAME)})
 
 CODES: Final = frozenset(
@@ -290,6 +300,9 @@ def importer_for_content_type(verified_content_type: object) -> str:
         return json_importer.IMPORTER_NAME
     if verified_content_type == "text/csv":
         return csv_importer.IMPORTER_NAME
+    # The importer's own gate (`xlsx_importer.XLSX_CONTENT_TYPES`), exact membership.
+    if verified_content_type in xlsx_importer.XLSX_CONTENT_TYPES:
+        return xlsx_importer.IMPORTER_NAME
     raise MappingStoreError("importer_unavailable")
 
 
@@ -668,6 +681,11 @@ def propose_dataset_mapping(
         dataset_id=dataset_id,
         include_held_out=include_held_out,
     )
+    if not STORABLE_IMPORTERS.issuperset((importer,)):
+        # The table's own CHECK (migration 0037 `ck_dataset_mappings_importer`) does not admit
+        # this importer yet: refuse with a stable code before any byte is read, instead of a
+        # constraint error at INSERT (a schema change is its own prerequisite, never hidden here).
+        raise MappingStoreError("importer_unavailable")
     preview = _finished_preview(
         session,
         context,
@@ -1142,6 +1160,16 @@ def review_preview(
     return result, reveal
 
 
+def probe_mapping_for(importer: str, format_options: Mapping[str, object]) -> ImportMapping:
+    """The server-built probe mapping for an importer: its fixed slot (a tabular source by
+    column index, an object source by key) and the caller's format options block, parsed by the
+    certified grammar. The caller never supplies a slot."""
+    slot: dict[str, object] = dict(_PROBE_SLOTS.get(importer, {"key": "probe"}))
+    return _parse_document(
+        {"shape": "prompt_completion", "prompt": slot, "completion": slot, **format_options}
+    )
+
+
 def review_probe(
     session: Session,
     context: TenantContext,
@@ -1153,8 +1181,8 @@ def review_probe(
     storage: DatasetObjectStorage,
 ) -> tuple[ProbeResult, bool]:
     """Headers and raw rows of the dataset for `role`, read with the caller's `format_options`
-    (the `csv` / `json` blocks of the mapping grammar) and a server-built probe mapping: the
-    caller never supplies a slot. Returns the probe and whether values were revealed. Nothing is
+    (the `csv` / `json` / `xlsx` blocks of the mapping grammar) and a server-built probe mapping:
+    the caller never supplies a slot. Returns the probe and whether values were revealed. Nothing is
     written."""
     if type(format_options) is not dict or not _PROBE_BLOCKS.issuperset(format_options):
         raise MappingStoreError("mapping_invalid")
@@ -1168,10 +1196,7 @@ def review_probe(
         dataset_id=dataset_id,
         include_held_out=include_held_out,
     )
-    slot: dict[str, object] = dict(_PROBE_SLOTS.get(importer, {"key": "probe"}))
-    probe_mapping = _parse_document(
-        {"shape": "prompt_completion", "prompt": slot, "completion": slot, **format_options}
-    )
+    probe_mapping = probe_mapping_for(importer, format_options)
     with _storage_refusals():
         probe = probe_dataset_source(
             session,
