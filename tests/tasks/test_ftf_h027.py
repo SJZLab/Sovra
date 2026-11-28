@@ -305,7 +305,8 @@ def test_manifest() -> None:
     )
     for net in valid_nets:
         doc = _document()
-        first = str(next(ipaddress.ip_network(net).hosts(), ipaddress.ip_network(net)[0]))
+        parsed = ipaddress.ip_network(net)
+        first = str(parsed[1] if parsed.num_addresses > 1 else parsed[0])
         if net == "::1/128":
             first = "::1"
         doc["surfaces"]["source"] = [_ep("ok-net", 443, host=first, network=net, scheme="https")]
@@ -1414,7 +1415,8 @@ FAULTS: list[tuple[Path, str, str, str]] = [
     (
         BOUNDARY_MODULE,
         "boundary profile floor dropped",
-        r"floor = resolve_effective_security_profile\(boundary\.profile, organization_profile\)",
+        r"floor = resolve_effective_security_profile\(\s*boundary\.profile, "
+        r"cast\(str, organization_profile\)\s*\)",
         "floor = organization_profile",
     ),
     (

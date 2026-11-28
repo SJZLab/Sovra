@@ -666,7 +666,7 @@ def _decide(
     ):
         raise InvalidBoundaryRequestError("profile is not a known security profile")
     # The boundary's own profile is a floor nobody below it can lower.
-    floor = resolve_effective_security_profile(boundary.profile, organization_profile)
+    floor = resolve_effective_security_profile(boundary.profile, cast(str, organization_profile))
     request = EffectRequest(
         surface=SURFACE_TO_EFFECT_SURFACE[classification.surface],
         destination=classification.destination,
