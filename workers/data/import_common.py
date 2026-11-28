@@ -51,7 +51,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from types import MappingProxyType
-from typing import Final
+from typing import Final, cast
 
 from workers.data.canonical_conversation_normalizer import (
     ALLOWED_ROLES,
@@ -76,6 +76,9 @@ __all__ = [
     "ImportLimits",
     "ImportMapping",
     "ImportReport",
+    "GroupAssembler",
+    "GroupRows",
+    "GroupedRecord",
     "MappedRow",
     "MappingInvalidError",
     "MappingUnsupportedError",
@@ -137,6 +140,11 @@ REJECTION_CODES: Final = frozenset(
         "record_not_object",
         "formula_cell",
         "cell_error_value",
+        # FTF-H011-P5 (additive)
+        "group_metadata_conflict",
+        "incomplete_group",
+        "invalid_order_key",
+        "unmapped_label",
     }
     | STRICT_JSON_CODES
 )
@@ -153,6 +161,8 @@ FAILURE_CODES: Final = frozenset(
         "json_malformed",
         "limit_exceeded",
         "mapping_column_missing",
+        "mapping_unsupported",
+        "non_contiguous_group",
         "parse_timeout",
         "sheet_out_of_bounds",
         "source_changed",
@@ -191,7 +201,17 @@ MAPPING_INVALID_REASONS: Final = frozenset(
 
 # Recognised but deliberately not implemented: reported as `mapping_unsupported`
 # so a caller cannot mistake "we cannot do this" for "you wrote this wrong".
-UNSUPPORTED_SHAPES: Final = frozenset({"grouped_rows", "grouped_multi_row"})
+UNSUPPORTED_SHAPES: Final = frozenset({"grouped_rows"})
+# FTF-H011-P5: `grouped_multi_row` (one message per row, rows of one conversation sharing a
+# group key, in an explicit order) is supported by the CSV importer through `GroupAssembler`;
+# every other importer refuses it as a visible `failed` / `mapping_unsupported` verdict.
+GROUPED_SHAPE: Final = "grouped_multi_row"
+# order type -> whether consecutive values are required (`int`) or only strictly later ones.
+_CONSECUTIVE_ORDER: Final = MappingProxyType({"int": True, "rfc3339": False})
+GROUP_ORDER_TYPES: Final = tuple(_CONSECUTIVE_ORDER)
+# Section 67.2: an enum map is allowed for these labels only; `consent` and `quality_label` are
+# always copied verbatim (no invented "approved").
+LABEL_MAP_FIELDS: Final = ("language", "task_category")
 
 _METADATA_KEYS: Final = (
     "language",
@@ -460,9 +480,10 @@ class _ShapeKeys:
     optional: tuple[str, ...]
     message_based: bool
     pointer_based: bool
+    grouped: bool = False
 
 
-_COMMON_KEYS: Final = ("group_key", "metadata", "csv", "xlsx", "json")
+_COMMON_KEYS: Final = ("group_key", "metadata", "label_enum_map", "csv", "xlsx", "json")
 _MESSAGE_KEYS: Final = ("role_key", "content_key", "role_map", "on_unmapped_message_keys")
 _MESSAGE_OPTIONAL: Final = ("tool_calls_key", "tool_call_id_key", "name_key")
 _SHAPE_KEYS: Final = {
@@ -481,7 +502,26 @@ _SHAPE_KEYS: Final = {
     "prompt_completion": _ShapeKeys(
         ("shape", "prompt", "completion"), (*_COMMON_KEYS, "system"), False, False
     ),
+    # FTF-H011-P5: the group key lives in `group_rows`, so the top-level `group_key` is absent.
+    GROUPED_SHAPE: _ShapeKeys(
+        ("shape", "group_rows", "role", "content", "role_map"),
+        tuple(key for key in _COMMON_KEYS if key != "group_key"),
+        False,
+        False,
+        True,
+    ),
 }
+
+
+@dataclass(frozen=True)
+class GroupRows:
+    """`group_rows` of a `grouped_multi_row` mapping: the slot every row of one conversation
+    shares, and the slot that orders the rows (`int`: consecutive integers; `rfc3339`: strictly
+    increasing timestamps with an offset)."""
+
+    group_key: Slot
+    order_key: Slot
+    order_type: str
 
 
 @dataclass(frozen=True)
@@ -508,6 +548,12 @@ class ImportMapping:
     system: Slot | None = None
     group_key: Slot | None = None
     metadata_slots: tuple[tuple[str, Slot], ...] = ()
+    # FTF-H011-P5's additive fields: one message per row for `grouped_multi_row`, and the exact
+    # label maps (`language` / `task_category` only).
+    group_rows: GroupRows | None = None
+    role_slot: Slot | None = None
+    content_slot: Slot | None = None
+    label_maps: tuple[tuple[str, Mapping[str, str]], ...] = ()
     # FTF-H011-P1's own additive field (IMPORTER ORDER catalog rule): a caller-supplied tap
     # called first by `apply_mapping`, before any validation, with a *copy* of the row and
     # headers so a mapping preview can show the exact raw row a rejection or candidate came
@@ -651,6 +697,40 @@ def _role_map(value: object) -> Mapping[str, str]:
     return MappingProxyType(dict(value))
 
 
+def _group_rows(value: object) -> GroupRows:
+    block = _obj(value, ("group_key", "order_key", "order_type"), ())
+    order_type = block["order_type"]
+    if type(order_type) is not str:
+        raise _bad("wrong_type")
+    if order_type not in _CONSECUTIVE_ORDER:
+        raise _bad("bad_value")
+    return GroupRows(_slot(block["group_key"]), _slot(block["order_key"]), order_type)
+
+
+def _label_maps(
+    value: object, metadata_names: Iterable[str]
+) -> tuple[tuple[str, Mapping[str, str]], ...]:
+    """`label_enum_map`: `{field: {raw: label}}` for `language` / `task_category` only, each
+    for a metadata slot the mapping actually reads; an exact lookup, nothing normalized."""
+    block = _obj(value, (), LABEL_MAP_FIELDS)
+    if not block:
+        raise _bad("bad_value")
+    mapped = set(metadata_names)
+    out: list[tuple[str, Mapping[str, str]]] = []
+    for name, table in sorted(block.items()):
+        if not mapped.issuperset((name,)):
+            raise _bad("missing_key")
+        if type(table) is not dict:
+            raise _bad("wrong_type")
+        if not table or len(table) > MAX_ROLE_MAP_ENTRIES:
+            raise _bad("bad_value")
+        for raw, label in table.items():
+            _name(raw)
+            _name(label)
+        out.append((name, MappingProxyType(dict(table))))
+    return tuple(out)
+
+
 def _validate_formats(obj: dict[str, object]) -> None:
     if "csv" in obj:
         csv_block = _obj(obj["csv"], ("encoding", "delimiter", "has_header", "header_row"), ())
@@ -698,8 +778,16 @@ def mapping_from_object(obj: object) -> ImportMapping:
     if "metadata" in body:
         metadata = _obj(body["metadata"], (), _METADATA_KEYS)
         metadata_slots = [(key, _slot(raw)) for key, raw in sorted(metadata.items())]
+    label_maps = (
+        _label_maps(body["label_enum_map"], (name for name, _slot_ in metadata_slots))
+        if "label_enum_map" in body
+        else ()
+    )
     _validate_formats(body)
 
+    group_rows: GroupRows | None = None
+    role_slot: Slot | None = None
+    content_slot: Slot | None = None
     pointer: tuple[str, ...] | None = None
     messages_slot: Slot | None = None
     keys: MessageKeys | None = None
@@ -719,6 +807,10 @@ def mapping_from_object(obj: object) -> ImportMapping:
             pointer = parse_pointer(body["messages_pointer"])
         else:
             messages_slot = _slot(body["messages"])
+    elif spec.grouped:
+        group_rows = _group_rows(body["group_rows"])
+        role_slot, content_slot = _slot(body["role"]), _slot(body["content"])
+        role_map = _role_map(body["role_map"])
     else:
         prompt, completion = _slot(body["prompt"]), _slot(body["completion"])
         system = _slot(body["system"]) if "system" in body else None
@@ -737,6 +829,10 @@ def mapping_from_object(obj: object) -> ImportMapping:
         system=system,
         group_key=group_key,
         metadata_slots=tuple(metadata_slots),
+        group_rows=group_rows,
+        role_slot=role_slot,
+        content_slot=content_slot,
+        label_maps=label_maps,
     )
 
 
@@ -816,6 +912,8 @@ def _text_value(
 class MappedRow:
     raw_record: dict[str, object]
     group_key: str | None
+    # FTF-H011-P5 (additive): the row's position in its group (`grouped_multi_row` only).
+    order: int | datetime | None = None
 
 
 def _map_message(mapping: ImportMapping, raw: object, index: int) -> dict[str, object]:
@@ -857,13 +955,85 @@ def _parse_timestamp(value: str) -> None:
 
 
 _METADATA_CHECKS: Final = {"event_timestamp": _parse_timestamp}
+_INT_ORDER: Final = re.compile(r"[0-9]{1,18}")
+# RFC 3339 `date-time` (Section 5.6): a full date, `T`, a full time and a mandatory offset.
+_RFC3339: Final = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})"
+)
+
+
+def _order_value(text: str, order_type: str) -> int | datetime:
+    slot = "group_rows.order_key"
+    if _CONSECUTIVE_ORDER[order_type]:
+        if not _INT_ORDER.fullmatch(text):
+            raise RowMappingError("invalid_order_key", slot)
+        return int(text)
+    if not _RFC3339.fullmatch(text):
+        raise RowMappingError("invalid_order_key", slot)
+    try:
+        return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError:
+        raise RowMappingError("invalid_order_key", slot) from None
+
+
+def _grouped_row(mapping: ImportMapping, row: Row, headers: Sequence[str] | None) -> MappedRow:
+    group_rows = mapping.group_rows
+    assert group_rows is not None
+    # `required=True` never returns None (it raises), so each value is a str.
+    group_key = cast(
+        str, _text_value(group_rows.group_key, row, headers, "group_rows.group_key", required=True)
+    )
+    order_text = cast(
+        str, _text_value(group_rows.order_key, row, headers, "group_rows.order_key", required=True)
+    )
+    raw_role = cast(str, _text_value(mapping.role_slot, row, headers, "role", required=True))
+    content = _text_value(mapping.content_slot, row, headers, "content", required=True)
+    role = mapping.role_map.get(raw_role)
+    if role is None:
+        raise RowMappingError("unmapped_role", "role")
+    order = _order_value(order_text, group_rows.order_type)
+    metadata = _mapped_metadata(mapping, row, headers)
+    return MappedRow(
+        {"messages": [{"role": role, "content": content}], "metadata": metadata}, group_key, order
+    )
+
+
+def _mapped_metadata(
+    mapping: ImportMapping, row: Row, headers: Sequence[str] | None
+) -> dict[str, object]:
+    labels = dict(mapping.label_maps)
+    metadata: dict[str, object] = {}
+    for name, slot in mapping.metadata_slots:
+        text = _text_value(slot, row, headers, f"metadata.{name}", required=False)
+        if text is None:
+            continue
+        check = _METADATA_CHECKS.get(name)
+        if check is not None:
+            check(text)
+        table = labels.get(name)
+        if table is not None:
+            label = table.get(text)
+            if label is None:
+                raise RowMappingError("unmapped_label", f"metadata.{name}")
+            text = label
+        metadata[name] = text
+    return metadata
 
 
 def apply_mapping(
-    mapping: ImportMapping, row: Row, *, headers: Sequence[str] | None = None
+    mapping: ImportMapping,
+    row: Row,
+    *,
+    headers: Sequence[str] | None = None,
+    grouped: bool = False,
 ) -> MappedRow:
     """Builds the FTF-0506 raw record from one source row. A mapping never
-    defaults a value: an empty optional slot is omitted."""
+    defaults a value: an empty optional slot is omitted. A `grouped_multi_row`
+    mapping maps one row to one message and needs a caller that assembles groups
+    (`grouped=True`, the CSV importer's `GroupAssembler`); any other caller gets
+    the import verdict `failed` / `mapping_unsupported`, never a one-message record."""
+    if (mapping.group_rows is not None) != grouped:
+        raise ImportAborted("failed", "mapping_unsupported")
     if mapping.row_observer is not None:
         # OBSERVER-COPY: a *deep* copy, unconditionally -- a shallow
         # `dict()`/`list()` still shares every nested mutable value with
@@ -877,6 +1047,8 @@ def apply_mapping(
         copied_row = copy.deepcopy(row)
         copied_headers = None if headers is None else tuple(headers)
         mapping.row_observer(copied_row, copied_headers)
+    if grouped:
+        return _grouped_row(mapping, row, headers)
     messages: list[dict[str, object]] = []
     if mapping.prompt is not None:
         system = _text_value(mapping.system, row, headers, "system", required=False)
@@ -911,15 +1083,7 @@ def apply_mapping(
             raise RowMappingError("mapping_type_mismatch", "messages")
         messages = [_map_message(mapping, raw, i) for i, raw in enumerate(array)]
 
-    metadata: dict[str, object] = {}
-    for name, slot in mapping.metadata_slots:
-        text = _text_value(slot, row, headers, f"metadata.{name}", required=False)
-        if text is None:
-            continue
-        check = _METADATA_CHECKS.get(name)
-        if check is not None:
-            check(text)
-        metadata[name] = text
+    metadata = _mapped_metadata(mapping, row, headers)
     group_key = None
     if mapping.group_key is not None:
         group_key = _text_value(mapping.group_key, row, headers, "group_key", required=False)
@@ -1024,6 +1188,126 @@ class BlankLine:
 
 
 ImportEvent = AcceptedRecord | RowRejection | BlankLine
+
+
+@dataclass(frozen=True)
+class GroupedRecord:
+    """One assembled conversation of a `grouped_multi_row` source: the merged raw record and
+    the locator of the group's first row."""
+
+    locator: str
+    mapped: MappedRow
+
+
+@dataclass
+class _OpenGroup:
+    key: str
+    locator: str
+    metadata: dict[str, object]
+    messages: list[object]
+    last_order: int | datetime | None
+    size: int
+    problem: str | None
+
+
+class GroupAssembler:
+    """Assembles the rows of a `grouped_multi_row` source into one record per group
+    (FTF-H011-P5; Section 67.2 "multiple rows forming a conversation require deterministic
+    ordering and group identity; incomplete groups are quarantined").
+
+    Rows of one group must be contiguous and strictly ordered by `order_key` (`int`: each
+    exactly one more than the last; `rfc3339`: strictly later). A gap, a repeated or earlier
+    order, a group whose last turn is not the assistant's, or a row that failed to map
+    (`poison`: its group is unknown, so BOTH the group open at that moment and the next group
+    the source opens are suspect) makes the whole group ONE rejection, `incomplete_group`, at the
+    locator of its first row. Every row of a group must carry the same mapped metadata (labels
+    and consent are never chosen from one row and dropped from another): a difference is
+    `group_metadata_conflict`. A group whose rows add up to more than `max_record_bytes` is
+    `record_too_large`; its rows are counted but no longer buffered, so memory is bounded by one
+    group of at most `max_record_bytes`. A group key that reappears after its group closed
+    means the source is not grouped contiguously; the earlier part was already streamed, so the
+    whole import stops fail-closed (`failed` / `non_contiguous_group`) instead of keeping a
+    truncated conversation. Closed group keys are kept as SHA-256 digests (32 bytes each)."""
+
+    def __init__(self, mapping: ImportMapping, *, max_record_bytes: int) -> None:
+        if mapping.group_rows is None:
+            raise ValueError("GroupAssembler needs a grouped_multi_row mapping")
+        self._consecutive = _CONSECUTIVE_ORDER[mapping.group_rows.order_type]
+        self._max = max_record_bytes
+        self._closed: set[bytes] = set()
+        self._open: _OpenGroup | None = None
+        self._pending_poison = False
+
+    @staticmethod
+    def _digest(key: str) -> bytes:
+        return hashlib.sha256(key.encode("utf-8", "surrogatepass")).digest()
+
+    def add(self, locator: str, mapped: MappedRow, size: int) -> list[GroupedRecord | RowRejection]:
+        """Feeds one mapped row; returns the group(s) this row closed."""
+        out: list[GroupedRecord | RowRejection] = []
+        key = mapped.group_key
+        if key is None or mapped.order is None:
+            raise ValueError("a grouped row carries a group key and an order")
+        if self._open is not None and self._open.key != key:
+            out.append(self._close())
+        group = self._open
+        if group is None:
+            if self._digest(key) in self._closed:
+                raise ImportAborted("failed", "non_contiguous_group")
+            group = _OpenGroup(
+                key=key,
+                locator=locator,
+                metadata=dict(mapped.raw_record["metadata"]),  # type: ignore[call-overload]
+                messages=[],
+                last_order=None,
+                size=0,
+                problem="incomplete_group" if self._pending_poison else None,
+            )
+            self._open = group
+        self._pending_poison = False
+        if mapped.raw_record["metadata"] != group.metadata:
+            group.problem = group.problem or "group_metadata_conflict"
+        order = mapped.order
+        last = group.last_order
+        if last is not None:
+            if order <= last:  # type: ignore[operator]
+                group.problem = group.problem or "incomplete_group"
+            elif self._consecutive and order != last + 1:  # type: ignore[operator]
+                group.problem = group.problem or "incomplete_group"
+        group.last_order = order
+        group.size += size
+        if group.size > self._max:
+            group.problem = group.problem or "record_too_large"
+        if group.problem is None:
+            group.messages.extend(mapped.raw_record["messages"])  # type: ignore[arg-type]
+        else:
+            group.messages.clear()
+        return out
+
+    def poison(self) -> None:
+        """A row whose group cannot be read failed: the open group may be missing a turn."""
+        if self._open is not None:
+            self._open.problem = self._open.problem or "incomplete_group"
+        self._pending_poison = True
+
+    def finish(self) -> list[GroupedRecord | RowRejection]:
+        """Closes the last group at the end of the source."""
+        return [self._close()] if self._open is not None else []
+
+    def _close(self) -> GroupedRecord | RowRejection:
+        group = self._open
+        assert group is not None
+        self._open = None
+        self._closed.add(self._digest(group.key))
+        if group.problem is not None:
+            return RowRejection(group.locator, group.problem)
+        last = group.messages[-1] if group.messages else None
+        if not isinstance(last, dict) or last.get("role") != "assistant":
+            return RowRejection(group.locator, "incomplete_group")
+        return GroupedRecord(
+            group.locator,
+            MappedRow({"messages": list(group.messages), "metadata": group.metadata}, group.key),
+        )
 
 
 _STATE_NEEDS_FAILURE_CODE: Final = {"completed": False, "failed": True, "blocked": True}

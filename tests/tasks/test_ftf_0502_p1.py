@@ -399,7 +399,14 @@ def test_map_document_level_errors() -> None:
 
 
 def test_map_unsupported_and_unknown_shapes() -> None:
-    for shape in ("grouped_rows", "grouped_multi_row"):
+    # FTF-H011-P5 made grouped_multi_row a real shape (it is now refused as incomplete, not as
+    # unsupported); grouped_rows stays recognised-unsupported.
+    check(
+        "MAP-7",
+        "an incomplete grouped_multi_row is mapping_invalid",
+        is_invalid({"shape": "grouped_multi_row"}),
+    )
+    for shape in ("grouped_rows",):
         exc = raises(ic.MappingUnsupportedError, ic.mapping_from_object, {"shape": shape})
         check(
             "MAP-7",
@@ -3736,6 +3743,11 @@ _EXPECTED_STRICT_JSON = {
 _EXPECTED_ROW_ONLY = {
     "canonical_schema_invalid",
     "cell_error_value",
+    # FTF-H011-P5 (additive): grouped rows and label maps
+    "group_metadata_conflict",
+    "incomplete_group",
+    "invalid_order_key",
+    "unmapped_label",
     "column_count_mismatch",
     "formula_cell",
     "invalid_event_timestamp",
@@ -3760,6 +3772,8 @@ _EXPECTED_FAILURE = {
     "json_malformed",
     "limit_exceeded",
     "mapping_column_missing",
+    "mapping_unsupported",  # FTF-H011-P5: a grouped mapping outside the CSV importer
+    "non_contiguous_group",  # FTF-H011-P5: a group key reappears after its group closed
     "parse_timeout",
     "sheet_out_of_bounds",
     "source_changed",
