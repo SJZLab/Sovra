@@ -136,6 +136,15 @@ export const JOURNEYS: Journey[] = [
     ],
   },
   {
+    slug: "model-version",
+    title: "Model version: lineage, roles and actions",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "modelVersionId", label: "Model version ID" },
+    ],
+  },
+  {
     slug: "github-branch",
     title: "GitHub repository and branch",
     params: [
