@@ -174,9 +174,9 @@ to sibling modules. Items returned 3–5 times this week all failed on exactly t
    **CLAIM ORDER BY UNBLOCK COUNT (Control plane, 2026-11-27; replaces every earlier claim order).** Measured from spec/tasks.json against docs/spec-matrix.yaml: 144 tasks are uncertified and only 10 are dependency-ready; everything else waits on them. Tasks waiting on each (transitively): FTF-0701 100, FTF-R004 57, FTF-0603 47, FTF-H011 30, FTF-H010 22, FTF-R006 15, FTF-H027 9, FTF-0907 8, FTF-04A31 2, FTF-1504 1. UX items (FTF-UX01..UX07) are not in the 304 and unblock nothing, so they are LAST. Each lane takes the first line whose parent task no other lane holds:
    1. FTF-0701 (100): FTF-0701-P1 round 4 on PR #1056, then its remaining slices back to back until the parent certifies. Nothing else outranks this.
    2. FTF-R004 (57): unpark FTF-R004-P3 (park merged in #1031); Control plane rules its open question in the next sweep; then P4.
-   3. FTF-0603 (47): FTF-0603-F1 (server enforcement), then the UI round on PR #1066.
-   4. FTF-H011 (30): P1-P3 certified (P3 on 2026-11-27). Left: FTF-H011-P4 (wizard UI), then FTF-H011-P6 on PR #1035, then FTF-H011-P5.
-   5. FTF-H010 (22): FTF-H010-P6 is the LAST slice (P1-P5 certified 2026-11-27); merging and certifying it closes the parent (+1).
+   3. FTF-0603 (47): FTF-0603-F1 CERTIFIED 2026-11-28. Left: the UI round on PR #1066 (compute suite_sha256 from the shared vector, accept up to 200 categories, no browser-only checks), which closes the parent (+1).
+   4. FTF-H011 (30): P1-P3 certified. RETURNED WORK FIRST: FTF-H011-P5 round 2 (one blocking item, ledger 2026-11-28: a group whose first row fails to map and whose later rows return after another group is accepted truncated; quarantine or fail it, with a RED-able test). Then P4 (PR #1094) and P6 (PR #1035) merge on green. New child FTF-H011-P7: store, preview and approve grouped mappings and label maps through the API, the 05 contract and the wizard (the parent cannot close before it).
+   5. FTF-H010: CERTIFIED 2026-11-28 (159/304). Nothing left; its 22 dependents are no longer waiting on it.
    6. FTF-R006 (15): FTF-R006-P2 on PR #961 as soon as P1b is certified.
    7. FTF-H027 (9), FTF-0907 (8, PR #1046), FTF-04A31 (2).
    8. FTF-1504-F1 then FTF-1504 on PR #1026 (1). 9. FTF-1301-F1 round 3. 10. FTF-UX02 on PR #1007 and other UX work.
