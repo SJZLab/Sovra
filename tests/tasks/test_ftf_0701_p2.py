@@ -2,7 +2,7 @@
 # mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,method-assign,misc,func-returns-value"
 """FTF-0701-P2 negative-test proof: `training_experiments` persistence, no database or network.
 
-M  migration 0039, statically: revision chain, every constraint, the held-out consistency CHECK,
+M  migration 0040, statically: revision chain, every constraint, the held-out consistency CHECK,
    the BEFORE INSERT guard, SELECT+INSERT-only grant, ENABLE + FORCE row-level security and the
    `tenant_isolation` policy; each protection removed from a copy of the source turns the
    findings non-empty (fault -> RED). The offline `alembic upgrade --sql` rendering is pinned too.
@@ -59,7 +59,7 @@ from app.training import training_experiment_store as store  # noqa: E402
 CID = "FTF-0701-P2"
 FAILURES: list[str] = []
 CHECKS = [0]
-MIGRATION = ROOT / "apps" / "api" / "alembic" / "versions" / "0039_training_experiments.py"
+MIGRATION = ROOT / "apps" / "api" / "alembic" / "versions" / "0040_training_experiments.py"
 TABLE = "training_experiments"
 CANARY = "CANARY0701P2"
 
@@ -123,8 +123,8 @@ CONSTRAINTS = (
 )
 # exact source fragments the migration must contain (label -> needle)
 MIGRATION_NEEDLES: dict[str, str] = {
-    "revision": 'revision = "0039_training_experiments"',
-    "down_revision": 'down_revision = "0038_dataset_mapping_requests"',
+    "revision": 'revision = "0040_training_experiments"',
+    "down_revision": 'down_revision = "0039_eval_suite_sample_plans"',
     "table literal": 'op.create_table(\n        "training_experiments",',
     "enable RLS": '"ALTER TABLE training_experiments ENABLE ROW LEVEL SECURITY"',
     "force RLS": '"ALTER TABLE training_experiments FORCE ROW LEVEL SECURITY"',
@@ -266,7 +266,7 @@ def migration_findings(src: str) -> list[str]:
         findings.append("five composite RESTRICT foreign keys")
     if len(re.findall(r"nullable=True", upgrade)) != 2:
         findings.append("only parent_version and model_catalog_entry_id are nullable")
-    if len('"0039_training_experiments"') - 2 > 32:
+    if len('"0040_training_experiments"') - 2 > 32:
         findings.append("revision id fits alembic_version (32)")
     return findings
 
@@ -395,8 +395,8 @@ MIGRATION_FAULTS: dict[str, tuple[str, str]] = {
         "AND parent_version <= version)",
     ),
     "wrong down_revision": (
+        'down_revision = "0039_eval_suite_sample_plans"',
         'down_revision = "0038_dataset_mapping_requests"',
-        'down_revision = "0037_model_role_assignments"',
     ),
     "table name behind a variable": (
         'op.create_table(\n        "training_experiments",',
@@ -416,7 +416,7 @@ MIGRATION_FAULTS: dict[str, tuple[str, str]] = {
 def part_m() -> None:
     src = MIGRATION.read_text(encoding="utf-8")
     findings = migration_findings(src)
-    check("LAW18-MIGRATION", f"migration 0039 is compliant: {findings}", findings == [])
+    check("LAW18-MIGRATION", f"migration 0040 is compliant: {findings}", findings == [])
     for label, (old, new) in MIGRATION_FAULTS.items():
         present = src.count(old) >= 1
         check("LAW18-FAULT", f"fault text present: {label}", present)
@@ -443,7 +443,7 @@ def offline_sql(action: str, revision_range: str) -> str:
 
 
 def part_m_sql() -> None:
-    up = offline_sql("upgrade", "0038_dataset_mapping_requests:0039_training_experiments")
+    up = offline_sql("upgrade", "0039_eval_suite_sample_plans:0040_training_experiments")
     flat = " ".join(up.split())
     for needle in (
         "CREATE TABLE training_experiments (",
@@ -533,7 +533,7 @@ def part_m_sql() -> None:
         "CREATE POLICY tenant_isolation ON training_experiments FOR ALL USING (organization_id = "
         "NULLIF(current_setting('app.current_organization_id', true), '')::uuid) WITH CHECK "
         "(organization_id = NULLIF(current_setting('app.current_organization_id', true), '')::uuid)",
-        "UPDATE alembic_version SET version_num='0039_training_experiments'",
+        "UPDATE alembic_version SET version_num='0040_training_experiments'",
     ):
         check("LAW18-SQL", f"the upgrade SQL contains: {needle[:100]}", needle in flat)
     for bad in (
@@ -546,7 +546,7 @@ def part_m_sql() -> None:
         check("LAW18-SQL", f"the upgrade SQL never contains: {bad}", bad not in flat)
     check("LAW18-SQL", "exactly one GRANT in the upgrade SQL", flat.count("GRANT ") == 1)
     down = " ".join(
-        offline_sql("downgrade", "0039_training_experiments:0038_dataset_mapping_requests").split()
+        offline_sql("downgrade", "0040_training_experiments:0039_eval_suite_sample_plans").split()
     )
     for needle in (
         "DROP TRIGGER IF EXISTS tr_training_experiments_insert_guard ON training_experiments",
@@ -554,7 +554,7 @@ def part_m_sql() -> None:
         "DROP POLICY IF EXISTS tenant_isolation ON training_experiments",
         'REVOKE ALL ON training_experiments FROM "sovra_app"',
         "DROP TABLE training_experiments",
-        "UPDATE alembic_version SET version_num='0038_dataset_mapping_requests'",
+        "UPDATE alembic_version SET version_num='0039_eval_suite_sample_plans'",
     ):
         check("LAW18-SQL", f"the downgrade SQL contains: {needle}", needle in down)
     heads = subprocess.run(

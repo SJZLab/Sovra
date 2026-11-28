@@ -199,7 +199,7 @@ class ExperimentActor:
 
 
 class TrainingExperiment(Base):
-    """One immutable version of a training configuration (`0039_training_experiments.py`)."""
+    """One immutable version of a training configuration (`0040_training_experiments.py`)."""
 
     __tablename__ = "training_experiments"
 
