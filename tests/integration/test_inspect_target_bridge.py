@@ -484,6 +484,31 @@ def main() -> None:
         "bridge note" not in repr(result) and "quarterly" not in repr(result),
     )
 
+    # -- FTF-R004-P4: normalize the real run against the real backend ---------------------------
+    from workers.evaluation.adapters.inspect_adapter.result_reader import normalize_bridge_run
+
+    normalized = normalize_bridge_run(result, case_set, adapter)
+    by_case = {c.case_key: c.category for c in normalized.cases}
+    check(
+        "FTF-R004-P4",
+        f"the real run normalizes from per-case rows re-checked against the backend ({by_case})",
+        by_case
+        == {
+            "c-01-search": "pass",
+            "c-02-note": "pass",
+            "c-03-cross-tenant": "model_fail",
+            "c-04-unseeded": "not_run",
+        }
+        and (normalized.numerator, normalized.denominator) == (2, 4)
+        and normalized.blocking_codes == ("incomplete_run",)
+        and normalized.log_sha256 == result.log_sha256,
+    )
+    check(
+        "FTF-R004-P4",
+        "the normalized summary holds no stored input text",
+        "bridge note" not in repr(normalized) and "quarterly" not in repr(normalized),
+    )
+
     # -- round 3: provenance bound to content, on a set the real loader returned ------------------
     tampered = load(org1_id, p1_id, dev_suite)
     object.__setattr__(tampered.cases[0], "declared_inputs", (("tool_name", "create_note"),))
