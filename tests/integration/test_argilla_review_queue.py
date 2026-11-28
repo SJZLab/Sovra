@@ -1228,6 +1228,60 @@ def section_database_protections(world: World, built: dict[str, Any]) -> None:
     _ = train
 
 
+def section_real_extras(world: World) -> None:
+    """Folded in from the parallel r2 attempt (session_01TEaAUzE1SUyQzx5uwog2sB, RS4/RS5): a
+    reviewer never synced into the project's workspace, and a record deleted on the real server."""
+    env = world.env
+    data = world.dataset("real-extras", "training", rows_n(3, "extra"))
+    queue = world.create(data)
+    records = world.queue_records(queue)
+    outsider_identity = identity_store.ensure_reviewer_identity(
+        env.factory,
+        organization_id=world.org,
+        issuer=ISSUER,
+        subject=f"outsider-{uuid.uuid4().hex[:8]}",
+        client=world.client,
+        openbao_config=world.openbao,
+    )
+    outsider = SimpleNamespace(subject=outsider_identity.subject, identity=outsider_identity)
+    state = world.state()
+    check(
+        "RS4: a reviewer with no workspace membership is reviewer_not_authorized, nothing written",
+        code_of(lambda: world.respond(queue, 1, data, outsider, "accept", "x"))
+        == "reviewer_not_authorized"
+        and world.state() == state,
+    )
+    if world.openbao is not None:
+        key = resolve_secret_ref(outsider_identity.credential_secret_ref, config=world.openbao)
+        world.seen_keys.append(key)
+        own_key_api = rm.ArgillaReviewApi(world.server.client(api_key=key).transport)
+        refused = code_of(
+            lambda: own_key_api.submit_response(records[f"{data.id}:1"]["id"], "accept", "")
+        )
+        check(
+            f"RS4: the real server itself refuses that annotator's own key on the record ({refused})",
+            refused is not None
+            and "ArgillaRejectedError" in refused
+            and ("HTTP 403" in refused or "HTTP 404" in refused),
+        )
+    check(
+        "RS4: the real record holds no response",
+        not world.queue_records(queue)[f"{data.id}:1"]["responses"],
+    )
+    world.client._call("DELETE", f"/records/{records[f'{data.id}:2']['id']}")
+    world.reconcile(queue)
+    marked = dict(
+        env.rows(
+            "SELECT record_id, drift_reason FROM review_items WHERE queue_id = :q AND status = 'drift'",
+            q=queue.id,
+        )
+    )
+    check(
+        f"RS5: a record deleted on the real server is record_missing drift: {marked}",
+        marked == {f"{data.id}:2": "record_missing"},
+    )
+
+
 def section_secrecy(world: World) -> None:
     env = world.env
     keys = sorted({u["api_key"] for u in world.server.users.values()} | set(world.seen_keys))
@@ -1325,6 +1379,7 @@ def main() -> None:
         section_reconcile_race(world)
         section_reconcile_waits_for_submit(world)
         section_database_protections(world, built)
+        section_real_extras(world)
         section_secrecy(world)
     finally:
         identity_store.store_secret_ref, store.resolve_secret_ref = saved
