@@ -146,6 +146,15 @@ def main() -> None:
         isinstance(version.get("version"), str) and version["version"] != "",
     )
 
+    # Finding 4 (round 3): the /status 'upstream bug' was only ever seen on Elasticsearch. Probe the
+    # real /status on the ruled OpenSearch stack so the workaround is kept or dropped on evidence.
+    status = real_client.get_status()
+    check(
+        "the real /status answers 200 with a version on the OpenSearch 2.19.x stack "
+        f"(got keys {sorted(status)})",
+        isinstance(status.get("version"), str) and status["version"] != "",
+    )
+
     real_workspaces = real_client.list_workspaces_me()
     check(
         "the real server's own /me/workspaces responds in the exact shape ArgillaClient "
