@@ -1032,9 +1032,13 @@ def hardening_suite() -> None:
         ("sha256", "A" * 64),
         ("sha256", None),
     ):
+
+        def set_first(entries: list[dict[str, Any]], f: str = field_name, v: Any = value) -> None:
+            entries[0][f] = v
+
         expect_refused(
             f"manifest entry {field_name}={value!r}",
-            run(manifest_case(lambda es, f=field_name, v=value: es[0].__setitem__(f, v))),
+            run(manifest_case(set_first)),
             "manifest_invalid",
             reason="manifest_entry_values",
         )
@@ -1105,7 +1109,7 @@ def hardening_suite() -> None:
     def failing_write(directory: Path, contents: Any) -> None:
         raise OSError("disk full")
 
-    bal._write_private = failing_write  # type: ignore[assignment]
+    bal._write_private = failing_write
     try:
         target = Path(tempfile.mkdtemp(prefix="ftf0706-")) / "base"
         try:
