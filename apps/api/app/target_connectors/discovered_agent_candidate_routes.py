@@ -77,6 +77,12 @@ from app.target_connectors.discovered_agent_candidate_schema import (
     DiscoveredAgentCandidate,
     DiscoveredAgentCandidateValidationError,
 )
+from app.target_connectors.target_application_connection_crud import (
+    TargetApplicationConnectionNotFoundError as ConnectionNotInProjectError,
+)
+from app.target_connectors.target_application_connection_crud import (
+    get_target_application_connection,
+)
 
 __all__ = ["DISCOVERED_CANDIDATE_ROLES", "build_discovered_agent_candidate_router"]
 
@@ -214,7 +220,7 @@ def build_discovered_agent_candidate_router(
         snapshot_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         payload = await _read_json_body(request)
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
@@ -223,6 +229,11 @@ def build_discovered_agent_candidate_router(
                 for field_name in _EVIDENCE_FIELDS
             }
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 candidate = create_discovered_agent_candidate(
                     session,
                     tenant_context,
@@ -237,6 +248,7 @@ def build_discovered_agent_candidate_router(
                 )
                 body = _serialize(candidate)
         except (
+            ConnectionNotInProjectError,
             TargetApplicationConnectionNotFoundError,
             TargetSourceSnapshotNotFoundError,
             TenantContextError,
@@ -258,21 +270,27 @@ def build_discovered_agent_candidate_router(
         limit: int = Query(default=DEFAULT_PAGE_LIMIT, ge=1),
         offset: int = Query(default=0, ge=0),
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 page = list_discovered_agent_candidates(
                     session, tenant_context, connection_id, snapshot_id, limit=limit, offset=offset
                 )
                 body = _serialize_page(page)
         except (
+            ConnectionNotInProjectError,
             TargetApplicationConnectionNotFoundError,
             TargetSourceSnapshotNotFoundError,
             TenantContextError,
         ) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)  # 200, the default
 
     @router.get(_ITEM_PATH)
     async def get_one(
@@ -283,21 +301,27 @@ def build_discovered_agent_candidate_router(
         candidate_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 candidate = get_discovered_agent_candidate(
                     session, tenant_context, connection_id, snapshot_id, candidate_id
                 )
                 body = _serialize(candidate)
         except (
+            ConnectionNotInProjectError,
             TargetApplicationConnectionNotFoundError,
             TargetSourceSnapshotNotFoundError,
             DiscoveredAgentCandidateNotFoundError,
             TenantContextError,
         ) as exc:
             raise HTTPException(status_code=404, detail="not_found") from exc
-        return JSONResponse(body, status_code=200)
+        return JSONResponse(body)  # 200, the default
 
     return router

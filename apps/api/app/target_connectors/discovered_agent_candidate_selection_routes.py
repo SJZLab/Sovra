@@ -56,6 +56,12 @@ from app.target_connectors.discovered_agent_candidate_selection import (
     TargetSourceSnapshotNotFoundError,
     select_discovered_agent_candidate,
 )
+from app.target_connectors.target_application_connection_crud import (
+    TargetApplicationConnectionNotFoundError as ConnectionNotInProjectError,
+)
+from app.target_connectors.target_application_connection_crud import (
+    get_target_application_connection,
+)
 
 __all__ = ["CANDIDATE_SELECTION_ROLES", "build_discovered_agent_candidate_selection_router"]
 
@@ -114,10 +120,15 @@ def build_discovered_agent_candidate_selection_router(
         candidate_id: uuid.UUID,
         ctx: AuthorizedContext = role_dependency,
     ) -> JSONResponse:
-        del organization_id, project_id
+        del organization_id
         tenant_context = TenantContext.from_authorized_context(ctx)
         try:
             with tenant_scoped_session_for(session_factory, tenant_context) as session:
+                # FTF-1504-F1: the connection must belong to the project in the path; a
+                # foreign or random project is the same 404 as a missing row
+                get_target_application_connection(
+                    session, tenant_context, project_id, connection_id
+                )
                 record = select_discovered_agent_candidate(
                     session,
                     tenant_context,
@@ -133,6 +144,7 @@ def build_discovered_agent_candidate_selection_router(
                     "selected_at": record.selected_at.isoformat(),
                 }
         except (
+            ConnectionNotInProjectError,
             TargetApplicationConnectionNotFoundError,
             TargetSourceSnapshotNotFoundError,
             DiscoveredAgentCandidateNotFoundError,
