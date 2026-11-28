@@ -79,6 +79,7 @@ from app.datasets.dataset_object_source import DatasetSourceInconsistentError  #
 from app.db.tenant_context import TenantContext  # noqa: E402
 
 FAILURES: list[str] = []
+XLSX_CT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 HERE = Path(__file__).resolve().parent
 ROUTES_PATH = ROOT / "apps" / "api" / "app" / "datasets" / "dataset_mapping_routes.py"
 REQUEST_STORE_PATH = ROOT / "apps" / "api" / "app" / "datasets" / "dataset_mapping_request_store.py"
@@ -640,7 +641,8 @@ def part_r_validation() -> None:
                 )
         for label, body in (
             ("array of options", []),
-            ("unknown option block", {"xlsx": {}}),
+            # FTF-H011-P6 made `xlsx` a probe block; the unknown-block row keeps its meaning.
+            ("unknown option block", {"parquet": {}}),
             ("unknown key", {"mapping": MSG}),
         ):
             got = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", body)
@@ -1704,6 +1706,13 @@ def part_r_review() -> None:
                 "a bad container pointer",
                 {"json": {"container": "no-slash", "ignored_top_level_keys": []}},
             ),
+            # FTF-H011-P6: the xlsx block is parsed by the same certified grammar
+            ("an empty xlsx block", {"xlsx": {}}),
+            ("an xlsx block without a header row", {"xlsx": {"sheet_name": "Data"}}),
+            (
+                "an xlsx block with an extra key",
+                {"xlsx": {"sheet_name": "Data", "header_row": 0, "x": 1}},
+            ),
         ):
             got = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", body)
             check(
@@ -1711,6 +1720,17 @@ def part_r_review() -> None:
                 f"probe with {label} is 400 mapping_invalid (got {got[0]} {code(got)})",
                 got == (400, {"detail": "mapping_invalid"}),
             )
+        before_calls = len(w.probe_calls)
+        xlsx_block = {"xlsx": {"sheet_name": "الورقة", "header_row": 2}}
+        got = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", xlsx_block)
+        sent = w.probe_calls[before_calls:]
+        check(
+            "R-BODY-XLSX",
+            f"a valid xlsx block is accepted and reaches the probe with the block (got {got[0]})",
+            got[0] == 200
+            and len(sent) == 1
+            and sent[0]["probe_mapping"].document.get("xlsx") == xlsx_block["xlsx"],
+        )
         w.probe_state = ("failed", "limit_exceeded")
         status, failed = call(base, "POST", f"{BASE_DS}/{ds.id}/mapping-probe", "admin", {})
         check(
@@ -2689,7 +2709,7 @@ def part_s_store_reads() -> None:
             ("a list", []),
             ("None", None),
             ("a string", "csv"),
-            ("an unknown block", {"xlsx": {}}),
+            ("an unknown block", {"parquet": {}}),
             ("a mapping key", {"shape": "messages"}),
         ):
             got = p2.code_of(
@@ -4504,8 +4524,27 @@ def part_u2() -> None:
                     role="workspace_admin",
                     storage=w.storage,
                 )
+                xlsx_ds = w.dataset("xlsx", "training", conn, content_type=XLSX_CT)
+                store.review_probe(
+                    w.session,
+                    w.ctx,
+                    project_id=PROJECT,
+                    dataset_id=xlsx_ds.id,
+                    format_options={"xlsx": {"sheet_name": "Data", "header_row": 0}},
+                    role="workspace_admin",
+                    storage=w.storage,
+                )
             finally:
                 store.probe_dataset_source = orig_probe
+            xlsx_seen, seen = seen[3:], seen[:3]
+            check(
+                "S-PROBE-XLSX",
+                "an XLSX dataset is probed by column index 0 with the caller's xlsx block",
+                len(xlsx_seen) == 1
+                and (xlsx_seen[0].prompt.kind, xlsx_seen[0].prompt.value) == ("index", 0)
+                and (xlsx_seen[0].completion.kind, xlsx_seen[0].completion.value) == ("index", 0)
+                and xlsx_seen[0].document.get("xlsx") == {"sheet_name": "Data", "header_row": 0},
+            )
             check(
                 "S-PROBE",
                 "a CSV is probed by column index, JSONL and JSON by key",
