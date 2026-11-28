@@ -11,6 +11,10 @@ rules where they differ. The Laws and hard stops in CLAUDE.md are unchanged.
    push for 3 hours is continued on the same PR by the next worker; nobody opens a second PR for
    the same item. Split a task only when it cannot fit one PR, into at most three slices named in
    the first PR.
+   When a PR adds a gate step or a `ci-verdict` needs entry to ci.yml, it goes in SORTED position
+   (by task id for gate steps, by job name for needs entries and job blocks), never at the end of
+   the list. Appending at one shared line made any two PRs conflict: on 2026-11-28 the PR for
+   FTF-0701 went green and lost the merge to a ci.yml append twice.
 3. **Before every push.** Run lint, format and type checks, the proving tests the way CI runs
    them, and the mutation gate on the changed modules, locally. CI confirms; it is not the first
    run.
