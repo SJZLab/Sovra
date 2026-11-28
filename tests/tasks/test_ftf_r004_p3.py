@@ -2887,6 +2887,263 @@ def test_review2_process_allowlist_is_exact() -> None:
     )
 
 
+# --------------------------------------------------------------------------- L2 return (git allowlist)
+
+
+def _fsmonitor_repo() -> tuple[Path, Path, Path]:
+    """A real git repository whose core.fsmonitor is a command that leaves a marker file: an
+    allowed `git status --porcelain` run against it executes that command."""
+    root = Path(tempfile.mkdtemp(prefix="p3-git-"))
+    marker = root / "MARKER"
+    hook = root / "hook.sh"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n")
+    hook.chmod(0o755)
+    repo = root / "repo"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, env=env)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.fsmonitor", str(hook)], check=True, env=env
+    )
+    return repo, hook, marker
+
+
+def _git_status(**kwargs: Any) -> Any:
+    git = shutil.which("git") or "/usr/bin/git"
+
+    def call(_r: Any) -> None:
+        try:
+            subprocess.run([git, "status", "--porcelain"], capture_output=True, **kwargs)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return call
+
+
+def test_l2_git_allowlist_cannot_reach_a_command() -> None:
+    repo, hook, marker = _fsmonitor_repo()
+    # sanity: outside any run the repository really does run the hook
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, env=env)
+    check("FTF-R004-P3-AC8", "the fsmonitor fixture really executes its hook", marker.exists())
+    marker.unlink()
+
+    # (1) a workspace inside a repository whose core.fsmonitor is a command
+    parent = repo / "workspaces"
+    parent.mkdir()
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=_git_status()),
+        _case_set(_records()[:1]),
+        workspace_parent=parent,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"git status from a workspace inside a fsmonitor repository: no repository is read, "
+        f"the hook never ran (got {got})",
+        not marker.exists(),
+    )
+    marker.unlink(missing_ok=True)
+
+    # (2) GIT_DIR / GIT_CONFIG_* set during the run point git at that repository's hook
+    def env_route(_r: Any) -> None:
+        os.environ.update(
+            {
+                "GIT_DIR": str(repo / ".git"),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "core.fsmonitor",
+                "GIT_CONFIG_VALUE_0": str(hook),
+            }
+        )
+        try:
+            _git_status()(_r)
+        finally:
+            for name in ("GIT_DIR", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"):
+                os.environ.pop(name, None)
+
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=env_route),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"GIT_DIR / GIT_CONFIG_* in the environment during a run -> outbound_call_blocked, hook "
+        f"never ran (got {got})",
+        got == "outbound_call_blocked" and not marker.exists(),
+    )
+    marker.unlink(missing_ok=True)
+
+    # (3) the allowed argv with a cwd override, or an env override
+    for label, kwargs in (
+        ("a cwd override", {"cwd": str(repo)}),
+        (
+            "an env override",
+            {"env": {"GIT_DIR": str(repo / ".git"), "PATH": os.environ.get("PATH", "")}},
+        ),
+    ):
+        got = _code(
+            _run,
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=_git_status(**kwargs)),
+            _case_set(_records()[:1]),
+        )
+        check(
+            "FTF-R004-P3-AC8",
+            f"git status with {label} -> outbound_call_blocked, hook never ran (got {got})",
+            got == "outbound_call_blocked" and not marker.exists(),
+        )
+        marker.unlink(missing_ok=True)
+
+    # (4) the allowed argv from a directory that is not the run's workspace
+    elsewhere = Path(tempfile.mkdtemp(prefix="p3-elsewhere-"))
+
+    def moved(_r: Any) -> None:
+        previous = os.getcwd()
+        os.chdir(elsewhere)
+        try:
+            _git_status()(_r)
+        finally:
+            os.chdir(previous)
+
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=moved),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"git status from outside the run's workspace -> outbound_call_blocked (got {got})",
+        got == "outbound_call_blocked",
+    )
+
+
+def test_l2_git_variables_are_removed_for_the_run_and_restored() -> None:
+    names = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "x.y", "GIT_CONFIG_VALUE_0": "z"}
+    saved = {k: os.environ.get(k) for k in names}
+    os.environ.update(names)
+    seen: list[list[str]] = []
+
+    def look(_r: Any) -> None:
+        seen.append(sorted(k for k in os.environ if k.startswith("GIT_")))
+
+    try:
+        res = _run(
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=look),
+            _case_set(_records()[:1]),
+        )
+        ok = res.network_attempts == 0 and len(res.cases) == 1
+    except BridgeError:
+        ok = False
+    finally:
+        restored = {k: os.environ.get(k) for k in names}
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    check(
+        "FTF-R004-P3-AC8",
+        "a run with GIT_* variables in the environment still passes: they are replaced by the "
+        f"pinned git environment for it (saw {seen})",
+        ok and seen == [["GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_DIR"]],
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "the pinned git environment is gone after the run",
+        os.environ.get("GIT_DIR") != os.devnull
+        and os.environ.get("GIT_CONFIG_NOSYSTEM") is None
+        and os.environ.get("GIT_CONFIG_GLOBAL") != os.devnull,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        "the GIT_* variables are restored after the run",
+        restored == names,
+    )
+
+
+def _bare_layout(folder: Path, worktree: Path, hook: Path) -> None:
+    """The layout git's discovery treats as a git directory with no `.git` entry anywhere:
+    HEAD, objects/ and refs/, plus a config whose core.fsmonitor is a command."""
+    (folder / "objects").mkdir(parents=True, exist_ok=True)
+    (folder / "refs").mkdir(exist_ok=True)
+    (folder / "HEAD").write_text("ref: refs/heads/main\n")
+    (folder / "config").write_text(
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        f"\tworktree = {worktree}\n\tfsmonitor = {hook}\n"
+    )
+
+
+def test_l2_round2_bare_layout_discovery_cannot_reach_a_command() -> None:
+    _repo, hook, marker = _fsmonitor_repo()
+    probe = Path(tempfile.mkdtemp(prefix="p3-bare-probe-"))
+    _bare_layout(probe, probe, hook)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "status", "--porcelain"], cwd=probe, capture_output=True, env=env)
+    check("FTF-R004-P3-AC8", "the bare-layout fixture really executes its hook", marker.exists())
+    marker.unlink(missing_ok=True)
+
+    # (A) the caller-supplied workspace parent is a bare-layout git directory
+    parent = Path(tempfile.mkdtemp(prefix="p3-bare-parent-"))
+    _bare_layout(parent, parent, hook)
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=_git_status()),
+        _case_set(_records()[:1]),
+        workspace_parent=parent,
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"git status under a bare-layout workspace parent: hook never ran (got {got})",
+        not marker.exists(),
+    )
+    marker.unlink(missing_ok=True)
+
+    # (B) the adapter writes a bare layout into its own workspace (the cwd) during the run
+    def plant(_r: Any) -> None:
+        here = Path.cwd()
+        _bare_layout(here, here, hook)
+        _git_status()(_r)
+
+    got = _code(
+        _run,
+        _Spy(build_isolated_tool_backend_adapter(), on_invoke=plant),
+        _case_set(_records()[:1]),
+    )
+    check(
+        "FTF-R004-P3-AC8",
+        f"a bare layout planted in the workspace during the run: hook never ran (got {got})",
+        not marker.exists(),
+    )
+
+
+def test_l2_round2_any_other_git_variable_is_refused() -> None:
+    """The exact-set check, not only GIT_DIR: any GIT_* variable added during the run (here
+    GIT_EXEC_PATH, which chooses the git sub-commands that run) refuses the allowed lookup."""
+    for name, value in (
+        ("GIT_EXEC_PATH", tempfile.mkdtemp(prefix="p3-exec-")),
+        ("GIT_CONFIG_COUNT", "0"),
+        ("GIT_WORK_TREE", tempfile.mkdtemp(prefix="p3-wt-")),
+    ):
+
+        def add(_r: Any, n: str = name, v: str = value) -> None:
+            os.environ[n] = v
+            try:
+                _git_status()(_r)
+            finally:
+                os.environ.pop(n, None)
+
+        got = _code(
+            _run,
+            _Spy(build_isolated_tool_backend_adapter(), on_invoke=add),
+            _case_set(_records()[:1]),
+        )
+        check(
+            "FTF-R004-P3-AC8",
+            f"{name} added to the pinned git environment during a run -> outbound_call_blocked "
+            f"(got {got})",
+            got == "outbound_call_blocked",
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
