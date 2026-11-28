@@ -681,6 +681,11 @@ def test_classification() -> None:
     )
     check(
         "FTF-H027-C",
+        "a surface name in another case is refused",
+        _raises(InvalidBoundaryRequestError, classify_destination, BOUNDARY, "DATA", a),
+    )
+    check(
+        "FTF-H027-C",
         "non-boundary refused",
         _raises(InvalidBoundaryRequestError, classify_destination, object(), "data", a),
     )
@@ -695,7 +700,8 @@ def test_classification() -> None:
     check(
         "FTF-H027-C",
         "endpoint policy is exactly one scheme, port and network",
-        policy.allowed_schemes == frozenset({"http"})
+        policy.name == "boundary-sink-a"
+        and policy.allowed_schemes == frozenset({"http"})
         and policy.allowed_ports == frozenset({SINK_A.port})
         and policy.explicit_private_allowlist == (ipaddress.ip_network("127.0.0.1/32"),)
         and policy.allow_redirects is False
@@ -945,6 +951,9 @@ def test_fetch() -> None:
     invalid("unknown organization profile", organization_profile="private")
     invalid("unknown project profile", project_profile=None)
     invalid("unknown job profile", job_profile="loose")
+    invalid("uppercase organization profile", organization_profile="ZERO_EGRESS")
+    invalid("uppercase project profile", project_profile="ZERO_EGRESS")
+    invalid("uppercase job profile", job_profile="AIR_GAPPED")
     invalid("non-string url", url=b"http://x")
     invalid("authorization of the wrong type", authorization={"provider": "x"})
     invalid("unknown surface", surface="serving")

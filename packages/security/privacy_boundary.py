@@ -96,7 +96,6 @@ from packages.security.url_policy import (
     OutboundPolicyError,
     normalize_host_literal,
     validate_resolved_address,
-    validate_url_shape,
 )
 
 __all__ = [
@@ -448,11 +447,11 @@ def parse_private_boundary(document: object) -> PrivateBoundary:
         maximum=len(THREAT_MODEL_EXCLUSIONS),
         allow_empty=False,
     )
-    exclusions: list[str] = []
-    for item in exclusions_raw:
-        if type(item) is not str or item not in THREAT_MODEL_EXCLUSIONS:
-            raise _manifest_error("threat_model_exclusions has an unknown entry")
-        exclusions.append(item)
+    # At most four entries that must equal the four required risks: an unknown,
+    # duplicated or missing entry all fail this one comparison.
+    if any(type(item) is not str for item in exclusions_raw):
+        raise _manifest_error("threat_model_exclusions has a non-string entry")
+    exclusions = cast(list[str], exclusions_raw)
     if set(exclusions) != REQUIRED_THREAT_MODEL_EXCLUSIONS:
         raise _manifest_error("threat_model_exclusions must name every remaining risk")
 
@@ -544,8 +543,7 @@ def _url_parts(url: object) -> tuple[str, str, int] | None:
         port = parsed.port
     except ValueError:
         return None
-    if parsed.username is not None or parsed.password is not None:
-        return None
+    # Userinfo ("u:p@host") never survives the netloc == hostname check below.
     scheme = parsed.scheme
     host = parsed.hostname
     # `hostname` lowercases; compare against what was really written so a
@@ -584,7 +582,6 @@ def endpoint_connection_policy(endpoint: BoundaryEndpoint) -> ConnectionPolicy:
 
 def _pinned_address(url: str, endpoint: BoundaryEndpoint, policy: ConnectionPolicy) -> str:
     try:
-        validate_url_shape(url, policy)
         literal = normalize_host_literal(endpoint.host)
         if literal is not None:
             validate_resolved_address(endpoint.host, literal, policy)

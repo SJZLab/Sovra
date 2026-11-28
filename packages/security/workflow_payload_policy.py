@@ -60,7 +60,11 @@ __all__ = [
     "validate_workflow_identity",
 ]
 
-FIELD_KINDS: tuple[str, ...] = ("uuid", "sha256", "count", "bool", "enum")
+# Kind -> whether it declares its own value set.
+_DECLARES_VALUES: Mapping[str, bool] = MappingProxyType(
+    {"uuid": False, "sha256": False, "count": False, "bool": False, "enum": True}
+)
+FIELD_KINDS: tuple[str, ...] = tuple(_DECLARES_VALUES)
 
 _CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _QUEUE_RE = re.compile(r"[a-z][a-z0-9-]{0,62}")
@@ -125,7 +129,7 @@ class PayloadSchema:
                 raise InvalidPayloadSchemaError("required must be a bool")
             if type(spec.values) is not tuple:
                 raise InvalidPayloadSchemaError("enum values must be a tuple")
-            if spec.kind == "enum":
+            if _DECLARES_VALUES[spec.kind]:
                 if not 0 < len(spec.values) <= _MAX_ENUM_VALUES:
                     raise InvalidPayloadSchemaError("an enum field needs 1..64 values")
                 if len(set(spec.values)) != len(spec.values) or any(
@@ -191,9 +195,9 @@ def _validated(schema: PayloadSchema, fields: object) -> dict[str, object]:
         if type(key) is not str or key not in schema.fields:
             raise PayloadRefusedError("field is not declared by the schema")
         out[key] = _value(schema.fields[key], value)
-    for key, spec in schema.fields.items():
-        if spec.required and key not in out:
-            raise PayloadRefusedError("a required field is missing")
+    required = {key for key, spec in schema.fields.items() if spec.required}
+    if not required.issubset(out):
+        raise PayloadRefusedError("a required field is missing")
     return out
 
 
