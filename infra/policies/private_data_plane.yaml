@@ -1,0 +1,53 @@
+# FTF-H027 -- declared private data boundary (FINE_TUNING_FACTORY_RELEASE_1.md §11.1, §12, §65).
+#
+# Data, never instructions (CLAUDE.md Law 10). Loaded and validated by
+# packages/security/privacy_boundary.py (`load_private_boundary`), which refuses
+# anything outside this closed shape: an unknown key or surface, a public,
+# default-route, link-local or cloud-metadata network, a port outside 1..65535,
+# a duplicate endpoint name, or a missing surface.
+#
+# This file declares the boundary of the repository's own local stack
+# (infra/docker/docker-compose.yml, published on the docker host's loopback).
+# A customer deployment ships its own file with its own account / cluster /
+# network / storage / region / operator identities; it is never edited to
+# "allow" a destination outside its boundary. Every surface is listed even when
+# it has no endpoint: an empty list means "nothing on this surface may leave the
+# process", not "unrestricted".
+#
+# Endpoint schemes: http / https are effects `boundary_fetch` may perform; tcp
+# endpoints (PostgreSQL, Temporal gRPC) are declared for CNI policy rendering and
+# destination classification only, never fetched.
+schema_version: 1
+boundary_id: sovra-local-stack
+profile: zero_egress
+deployment:
+  account: local-docker-host
+  cluster: none
+  network: host-loopback
+  storage: seaweedfs-local
+  region: local
+  operator_identities:
+    - local-operator
+threat_model_exclusions:
+  - authorized_operator_access
+  - model_memorization
+  - privileged_host_compromise
+  - ciphertext_only_capture
+surfaces:
+  source: []
+  preview:
+    - {name: api, scheme: http, host: 127.0.0.1, port: 8080, network: 127.0.0.1/32}
+  data:
+    - {name: object-store, scheme: http, host: 127.0.0.1, port: 8333, network: 127.0.0.1/32}
+    - {name: postgres, scheme: tcp, host: 127.0.0.1, port: 5432, network: 127.0.0.1/32}
+  embedding: []
+  training:
+    - {name: object-store, scheme: http, host: 127.0.0.1, port: 8333, network: 127.0.0.1/32}
+  judge: []
+  registry:
+    - {name: object-store, scheme: http, host: 127.0.0.1, port: 8333, network: 127.0.0.1/32}
+  history:
+    - {name: temporal, scheme: tcp, host: 127.0.0.1, port: 7233, network: 127.0.0.1/32}
+  browser:
+    - {name: api, scheme: http, host: 127.0.0.1, port: 8080, network: 127.0.0.1/32}
+  telemetry: []
