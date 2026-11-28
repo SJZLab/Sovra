@@ -399,14 +399,114 @@ def test_classify_focus_narrows_a_full_run(tmp_path, monkeypatch):
     assert o["focus"] == " network-policy-enforcement-integration "
 
 
+def test_classify_draft_runs_the_gate_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "true")
+    o = _classify(tmp_path, monkeypatch, "", ["a.py"])
+    assert o["scope"] == "draft"
+    assert o["focus"].strip() == "", "no integration job is selected for a draft"
+
+
+def test_classify_ready_pr_is_change_scoped(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "false")
+    o = _classify(tmp_path, monkeypatch, "", ["a.py"])
+    assert o["scope"] == "pr"
+    assert o["focus"].strip() == "", "a.py is named by no integration job"
+
+
+def test_classify_ci_run_adds_named_jobs(tmp_path, monkeypatch):
+    o = _classify(tmp_path, monkeypatch, f"ci-run: {JOBS[0]}, nonsense-job", ["a.py"])
+    assert o["scope"] == "pr" and o["focus"] == f" {JOBS[0]} "
+
+
+def test_classify_ci_full_and_suite_wide_inputs_run_everything(tmp_path, monkeypatch):
+    assert _classify(tmp_path, monkeypatch, "notes\nci-full\n", ["a.py"])["scope"] == "full"
+
+
+def test_classify_lockfile_change_runs_everything(tmp_path, monkeypatch):
+    assert _classify(tmp_path, monkeypatch, "", ["uv.lock"])["scope"] == "full"
+
+
+_SELECT_WF = """jobs:
+  gate:
+    x: 1
+  db-integration:
+    run: python3 tests/integration/test_db.py
+  s3-integration:
+    run: python3 tests/integration/test_s3.py
+"""
+
+
+def _select(tmp_path, files, body="", head=_SELECT_WF, base=_SELECT_WF):
+    tests = tmp_path / "tests" / "integration"
+    tests.mkdir(parents=True, exist_ok=True)
+    (tests / "test_db.py").write_text(
+        "from apps.api.app.store import crud\nimport apps.api.app.main\n"
+    )
+    (tests / "test_s3.py").write_text("from packages.storage import s3_client\n")
+    jobs = ["db-integration", "s3-integration"]
+    return cp.select_jobs(files, head, base, body, jobs, root=tmp_path)
+
+
+def test_select_job_whose_test_file_changed(tmp_path):
+    assert _select(tmp_path, ["tests/integration/test_s3.py"])[0] == ["s3-integration"]
+
+
+def test_select_job_whose_test_names_the_changed_module(tmp_path):
+    assert _select(tmp_path, ["apps/api/app/store/crud.py"])[0] == ["db-integration"]
+    assert _select(tmp_path, ["packages/storage/s3_client.py"])[0] == ["s3-integration"]
+    assert _select(tmp_path, ["apps/web/pages/index.tsx"])[0] == []
+
+
+def test_select_ignores_the_app_entry_point(tmp_path):
+    assert _select(tmp_path, ["apps/api/app/main.py"])[0] == []
+
+
+def test_select_new_or_changed_job_block(tmp_path):
+    head = _SELECT_WF + "  new-integration:\n    run: python3 tests/integration/test_new.py\n"
+    jobs = ["db-integration", "s3-integration", "new-integration"]
+    assert cp.select_jobs(["x.md"], head, _SELECT_WF, "", jobs, root=tmp_path)[0] == [
+        "new-integration"
+    ]
+    changed = _SELECT_WF.replace("test_db.py", "test_db.py --strict")
+    assert _select(tmp_path, ["x.md"], head=changed)[0] == ["db-integration"]
+
+
+def test_select_reports_unknown_ci_run_names(tmp_path):
+    selected, unknown = _select(tmp_path, ["x.md"], body="ci-run: s3-integration bogus")
+    assert selected == ["s3-integration"] and unknown == ["bogus"]
+
+
+def test_change_scoped_run_passes_with_unselected_jobs_skipped():
+    problems, exempt = cp.evaluate(_ok(**{"db-integration": "skipped"}), EXPECTED, "pr", False)
+    assert problems == []
+    assert "nightly full run" in exempt["db-integration"]
+
+
+def test_change_scoped_run_still_fails_on_a_failed_or_cancelled_job():
+    assert cp.evaluate(_ok(**{"db-integration": "failure"}), EXPECTED, "pr", False)[0]
+    assert cp.evaluate(_ok(gate="skipped"), EXPECTED, "pr", False)[0], "the gate is never exempt"
+
+
+def test_classify_draft_never_widens_a_tracker_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("PR_DRAFT", "true")
+    assert _classify(tmp_path, monkeypatch, "", ["QUEUE.md"])["scope"] == "tracker"
+
+
+def test_draft_run_never_passes_even_when_everything_ran_green():
+    problems, exempt = cp.evaluate(_ok(**{"db-integration": "skipped"}), EXPECTED, "draft", False)
+    assert any("draft run" in p for p in problems)
+    assert "db-integration" in exempt
+    assert any("draft run" in p for p in cp.evaluate(_ok(), EXPECTED, "draft", False)[0])
+
+
 def test_classify_focus_never_widens_a_tracker_run(tmp_path, monkeypatch):
     o = _classify(tmp_path, monkeypatch, "ci-focus: storage-semantics-integration", ["QUEUE.md"])
     assert o["scope"] == "tracker" and o["focus"].strip() == ""
 
 
-def test_classify_unknown_focus_stays_full(tmp_path, monkeypatch):
+def test_classify_unknown_focus_is_not_a_focused_run(tmp_path, monkeypatch):
     o = _classify(tmp_path, monkeypatch, "ci-focus: gate", ["a.py"])
-    assert o["scope"] == "full" and o["focus"].strip() == ""
+    assert o["scope"] == "pr" and o["focus"].strip() == ""
 
 
 def test_verdict_writes_bound_evidence_and_exit_code(tmp_path, monkeypatch):
@@ -519,3 +619,61 @@ def test_mutation_gate_selects_reference_tests():
     assert r"tests/(tasks|reference)/test_[^/]+\.py" in block
     assert 'pathlib.Path(f"tests/reference/test_ftf_{i}.py")' in block
     assert '"workers", "packages", "evals")' in block
+
+
+# --- FTF-R006-P1b: the real-Argilla job runs the store on the owner-ruled stack ---------
+
+
+def _argilla_job_and_compose() -> tuple[str, str]:
+    block = _jobs_block(CI.read_text(), "argilla-real-server-integration")
+    compose = (ROOT / "infra" / "docker" / "argilla" / "docker-compose.yml").read_text()
+    return block, compose
+
+
+def test_real_argilla_job_runs_the_store_against_the_real_server():
+    block, _ = _argilla_job_and_compose()
+    assert "tests/integration/test_argilla_real_server.py" in block
+    assert (
+        "tests/integration/test_argilla_real_store.py" in block
+    ), "must call the store (round-3 #3)"
+    assert (
+        "infra/docker/argilla/docker-compose.yml up" in block
+    ), "stack comes from the compose file"
+    assert "postgres:" in block and "go build" in block, "real Postgres and a real OpenBao"
+    assert (
+        "ARGILLA_SERVER_CONTAINER: argilla-server" in block
+    ), "outage test stops the real container"
+    assert "openssl rand" in block and "add-mask" in block, "bootstrap credentials are CI-generated"
+
+
+def test_real_argilla_stack_is_the_owner_ruled_licence_stack():
+    block, compose = _argilla_job_and_compose()
+    both = (block + compose).lower()
+    for banned in ("elasticsearch@", "elasticsearch:8", "redis:7-alpine", "redis:7.4", "redis:8"):
+        assert banned not in both, f"{banned} breaks the licence ruling (round-3 #4)"
+    assert "opensearchproject/opensearch@sha256:" in compose
+    assert re.search(
+        r"image: redis@sha256:[0-9a-f]{64} # 7\.2\.\d+", compose
+    ), "Redis 7.2.x by digest"
+    assert 'ARGILLA_ENABLE_TELEMETRY: "0"' in compose
+    assert "argilla_server worker" in compose, "the Argilla worker container is part of the stack"
+    for image in re.findall(r"image: (\S+)", compose):
+        assert "@sha256:" in image, f"{image} must be pinned by digest"
+    assert not re.search(
+        r"(API_KEY|PASSWORD|SECRET_KEY): [^$\s]", compose
+    ), "no committed credential"
+
+
+def test_model_import_ui_real_api_job_is_wired_into_the_verdict():
+    """FTF-H010-P5: the real-API job exists, is scope/focus-gated like its siblings, runs its
+    harness and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""
+    text = CI.read_text()
+    block = _jobs_block(text, "model-import-ui-real-api-integration")
+    assert "needs: classify" in block
+    assert (
+        "contains(needs.classify.outputs.focus, ' model-import-ui-real-api-integration ')" in block
+    )
+    assert "tests/integration/test_ftf_h010_p5_ui_real_api.py" in block
+    assert "image: postgres@sha256:" in block
+    assert "      - model-import-ui-real-api-integration\n" in _jobs_block(text, "ci-verdict")
+    assert "tests/tasks/test_ftf_h010_p5.py" in text
