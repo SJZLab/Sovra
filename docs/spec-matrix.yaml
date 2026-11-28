@@ -9093,16 +9093,31 @@ FTF-0602:
   proving_symbol: EvaluationCaseEditorImport
   proving_test: apps/web/tests/ftf_0602.spec.ts
 FTF-0603:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Suite validation/locking
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q16, Q17, Q18; deps=FTF-0519, FTF-0601,
-    FTF-0602
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q16, Q17, Q18; deps=FTF-0519, FTF-0601,
+    FTF-0602 (all CERTIFIED). apps/web/components/evaluation-factory/suite_validation_locking.tsx
+    consumes only the frozen routes (GET suite, GET cases pages, POST lock). The reviewer declares
+    a sample plan (required critical categories, minimum total, critical and per-category counts;
+    a final suite starts from the 1000/100 reference floors); the component loads every case,
+    validates against the plan, computes suite_sha256 (SHA-256 over suite identity and every case,
+    in case_key order) and only then enables the lock. Missing critical categories, an
+    insufficient sample plan and unresolved expected output each block the lock in the control and
+    again in the handler, which reloads, re-validates and compares the hash before the POST. Lock
+    replies are accepted only for the same suite with status locked (Law 17). Disclosed: the frozen
+    contract has no persisted sample plan or suite_sha256 column (database_changes none), so the
+    plan and hash are browser-session and display only; the server lock route stays the enforcement
+    for reviewer identity, independence and tenant scope. Page apps/web/pages/suite-validation.tsx
+    (journey suite-validation) mounts it. Real-Chromium UX evidence:
+    apps/web/tests/ftf_0603_browser.spec.ts. Fault -> RED table:
+    docs/certifications/submissions/2026-11-20T0100Z-FTF-0603.md. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
+  proving_symbol: SuiteValidationLocking
+  proving_test: apps/web/tests/ftf_0603.spec.ts
 FTF-0604:
   certification_state: CERTIFIED
   criticality: MUST
