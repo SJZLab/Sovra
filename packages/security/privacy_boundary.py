@@ -453,8 +453,6 @@ def parse_private_boundary(document: object) -> PrivateBoundary:
         if type(item) is not str or item not in THREAT_MODEL_EXCLUSIONS:
             raise _manifest_error("threat_model_exclusions has an unknown entry")
         exclusions.append(item)
-    if len(set(exclusions)) != len(exclusions):
-        raise _manifest_error("threat_model_exclusions has a duplicate")
     if set(exclusions) != REQUIRED_THREAT_MODEL_EXCLUSIONS:
         raise _manifest_error("threat_model_exclusions must name every remaining risk")
 
@@ -524,11 +522,11 @@ def boundary_digest(boundary: PrivateBoundary) -> str:
 
 
 def _checked_boundary(boundary: object) -> PrivateBoundary:
-    if type(boundary) is not PrivateBoundary:
-        raise InvalidBoundaryRequestError("boundary must be a PrivateBoundary")
-    if boundary_digest(boundary) != boundary.digest:
+    checked = cast(PrivateBoundary, boundary)
+    # boundary_digest itself refuses anything that is not a PrivateBoundary.
+    if boundary_digest(checked) != checked.digest:
         raise InvalidBoundaryRequestError("boundary was altered after validation")
-    return boundary
+    return checked
 
 
 def _surface(value: object) -> str:
@@ -552,9 +550,7 @@ def _url_parts(url: object) -> tuple[str, str, int] | None:
     host = parsed.hostname
     # `hostname` lowercases; compare against what was really written so a
     # mixed-case spelling is a different (undeclared) destination.
-    netloc_host = parsed.netloc.rsplit(":", 1)[0]
-    if netloc_host.startswith("[") and netloc_host.endswith("]"):
-        netloc_host = netloc_host[1:-1]
+    netloc_host = parsed.netloc.rsplit(":", 1)[0].removeprefix("[").removesuffix("]")
     if host is None or port is None or netloc_host != host:
         return None
     return scheme, host, port

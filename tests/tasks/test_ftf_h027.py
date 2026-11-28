@@ -523,6 +523,18 @@ def test_manifest() -> None:
     )
     bad("non-string key", lambda d: d["surfaces"].__setitem__(1, []))
     bad(
+        "network given as packed bytes",
+        lambda d: d["surfaces"]["data"][0].update(network=bytes([10, 0, 0, 1]), host="10.0.0.1"),
+    )
+    bad("profile uppercase", lambda d: d.__setitem__("profile", "ZERO_EGRESS"))
+    bad(
+        "exclusion in another case",
+        lambda d: d.__setitem__(
+            "threat_model_exclusions",
+            d["threat_model_exclusions"][:3] + ["Ciphertext_Only_Capture"],
+        ),
+    )
+    bad(
         "deployment is a list of its key names",
         lambda d: d.__setitem__("deployment", list(d["deployment"])),
     )
@@ -530,7 +542,7 @@ def test_manifest() -> None:
     bad(
         "host uppercase IPv6 literal",
         lambda d: d["surfaces"].__setitem__(
-            "source", [_ep("v6u", 80, host="fd00::A", network="fd00::/16")]
+            "source", [_ep("v6u", 80, host="fd12::A", network="fd12::/16")]
         ),
     )
     bad(
@@ -1362,7 +1374,13 @@ def test_failure_and_identity() -> None:
         (f"train_job-{cid}", marker.value, queues, "canary queue"),
         (f"train_job-{cid}", "training", frozenset(), "no declared queues"),
         (f"train_job-{cid}", "training", {"training"}, "queues not a frozenset"),
-        (f"train_job-{cid}", "training", frozenset({"Bad Queue"}), "malformed declared queue"),
+        (
+            f"train_job-{cid}",
+            "training",
+            frozenset({"training", "Bad Queue"}),
+            "malformed declared queue beside a good one",
+        ),
+        (f"train_job-{cid}", "training", frozenset({"training", 5}), "non-string declared queue"),
         (5, "training", queues, "non-string workflow id"),
     ):
         check(
@@ -1442,7 +1460,7 @@ FAULTS: list[tuple[Path, str, str, str]] = [
     (
         BOUNDARY_MODULE,
         "altered boundary trusted",
-        r"if boundary_digest\(boundary\) != boundary\.digest:",
+        r"if boundary_digest\(checked\) != checked\.digest:",
         "if False:",
     ),
     (
