@@ -38,6 +38,7 @@ const SETS = [
       datasetId: "dddddddd-0000-4000-8000-000000000004",
       suiteId: "eeeeeeee-0000-4000-8000-000000000005",
       connectionId: "ffffffff-0000-4000-8000-000000000006",
+      modelVersionId: "abababab-0000-4000-8000-000000000007",
       modelName: "model-x",
       securityProfile: "strict",
     } as Record<string, string>,
@@ -51,6 +52,7 @@ const SETS = [
       datasetId: "d4d4d4d4-4444-4444-8444-444444444444",
       suiteId: "e5e5e5e5-5555-4555-8555-555555555555",
       connectionId: "f6f6f6f6-6666-4666-8666-666666666666",
+      modelVersionId: "a7a7a7a7-7777-4777-8777-777777777777",
       modelName: "model-y",
       securityProfile: "standard",
     } as Record<string, string>,
@@ -138,6 +140,18 @@ const CASES: Case[] = [
     mount: () => screen.getByRole("region", { name: "Evaluation cases" }),
     trigger: () => fireEvent.click(screen.getByTestId("load-cases-button")),
     urls: (v) => [`${proj(v)}/evaluation-suites/${v.suiteId}/cases`],
+  },
+  {
+    // FTF-H010-P6: the panel loads the FTF-1001 item and the FTF-H010-P4 roles and actions on mount.
+    slug: "model-version",
+    title: "Model version: lineage, roles and actions",
+    params: [...ORG_PROJECT, ["modelVersionId", "Model version ID"]],
+    mount: () => screen.getByTestId("model-version-panel"),
+    urls: (v) => [
+      `${proj(v)}/model-versions/${v.modelVersionId}`,
+      `${proj(v)}/model-versions/${v.modelVersionId}/roles`,
+      `${proj(v)}/model-versions/${v.modelVersionId}/actions`,
+    ],
   },
   {
     slug: "github-repositories",

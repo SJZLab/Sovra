@@ -13963,16 +13963,40 @@ FTF-H009:
   proving_symbol: ''
   proving_test: ''
 FTF-H010:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Endpoint, weights and adapter import with honest continuation
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=audit_hardening; requirements=AF-14; scenarios=Q07; deps=FTF-1001, FTF-1002, FTF-0306, FTF-0307,
-    FTF-0308, FTF-H005
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: 'kind=audit_hardening; requirements=AF-14; scenarios=Q07; deps=FTF-1001, FTF-1002, FTF-0306, FTF-0307,
+    FTF-0308, FTF-H005. Parent closure by FTF-H010-P6 (children P1, P2, P3a, P3, P4, P5 CERTIFIED;
+    P6 PROVISIONAL, never self-certified). Clause table (QUEUE.md "FTF-H010 parent remainder"):
+    (1) import a real existing endpoint-only fine-tune -- P1/P2 (stand-in gateway)/P5 UI; the real
+    endpoint is BLOCKED_EXTERNAL (litellm_gateway in spec/compatibility-lock.json; next action: the
+    owner supplies the org gateway virtual key plus one existing fine-tuned deployment id, Owner
+    actions 2026-10-08 FTF-0616 line). (2) ... and evaluate it -- BLOCKED_EXTERNAL (same key) and
+    BLOCKED_DEPENDENCY (next action: FTF-R004 target-runtime evaluation and the FTF-0601-series runs).
+    (3) import full weights and adapter+base (validation) -- met for local sources by P3a/P3/P5;
+    private_s3/huggingface end blocked_external metadata_files_unavailable (next action: P3''s remote
+    metadata reader). (4) load full weights and adapter+base -- BLOCKED_EXTERNAL (gpu_driver) and
+    BLOCKED_DEPENDENCY (next action: FTF-1003/1004 vLLM). (5) continue only permitted artifacts --
+    met as eligibility (P4 server denial, P6 display); the actual continued training is
+    BLOCKED_EXTERNAL (GPU) and BLOCKED_DEPENDENCY (next action: FTF-R003/0701/0801). (6) resumed step
+    differs from new continuation -- met as a plan property (P4 continuation_plan, P6 display); the
+    real resume is BLOCKED_EXTERNAL (GPU) and BLOCKED_DEPENDENCY (next action: FTF-0713/0714).
+    (7) negatives: no fictitious hash for endpoints (P1 CHECK, P2, P5 no hash field, P6 no
+    placeholder digest), no retrainability inferred from alias (P2, P4, P6), incompatible
+    adapter/base and license denial block use (P3, P4, P5/P6) -- met. (8) alias role assignment -- P4,
+    P6, met. (9) production dispatch of import jobs -- dispatch UNWIRED until FTF-0801/H016
+    (BLOCKED_DEPENDENCY; a real job stays queued and the UI says so). (10) no full release claim --
+    no Q07/release claim is made. UI wiring: the P6 model version panel is WIRED at /model-version
+    (journey in apps/web/lib/journeys.ts, reached from "/"; pinned by ftf_wire_pages.spec.ts); the
+    P5 import wizard UI stays UNWIRED until FTF-H029 (it needs a real session role). The live API
+    routes are build_model_role_router / build_model_import_router / build_model_version_router in
+    apps/api/app/main.py.'
+  proof_state: L1-PROVEN
+  proving_symbol: ModelVersionPanel
+  proving_test: tests/tasks/test_ftf_h010_p1.py, tests/tasks/test_ftf_h010_p2.py, tests/tasks/test_ftf_h010_p3a.py, tests/tasks/test_ftf_h010_p3.py, tests/tasks/test_ftf_h010_p4.py, tests/tasks/test_ftf_h010_p5.py, tests/tasks/test_ftf_h010_p6.py, tests/integration/test_ftf_h010_p1_model_import.py, tests/integration/test_ftf_h010_p2_import_validation.py, tests/integration/test_ftf_h010_p3_weights_import.py, tests/integration/test_ftf_h010_p4_model_roles.py, tests/integration/test_ftf_h010_p5_ui_real_api.py, tests/integration/test_ftf_h010_p6_ui_real_api.py, apps/web/tests/ftf_h010_p5.spec.ts, apps/web/tests/ftf_h010_p5_browser.spec.ts, apps/web/tests/real_api/ftf_h010_p5_ui_real_api.realapi.ts, apps/web/tests/ftf_h010_p6.spec.ts, apps/web/tests/ftf_h010_p6_browser.spec.ts, apps/web/tests/real_api/ftf_h010_p6_ui_real_api.realapi.ts, apps/web/tests/ftf_wire_pages.spec.ts
 FTF-H011:
   certification_state: NONE
   criticality: MUST
