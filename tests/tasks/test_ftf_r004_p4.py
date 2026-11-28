@@ -618,6 +618,330 @@ def test_summary_is_content_free() -> None:
     )
 
 
+# --------------------------------------------------------------------------- review round 1
+
+
+def test_review1_adapter_exception_after_a_real_effect() -> None:
+    records = [
+        P3._record(
+            "case-001", "search_records", "subject-a1", {"query": "quarterly"}, critical=True
+        )
+    ]
+
+    class _RaisesAfterEffect(_Spy):
+        def invoke(self, request):
+            super().invoke(request)  # the real tool effect happens
+            raise RuntimeError("adapter crashed after the effect")
+
+    inner = build_isolated_tool_backend_adapter()
+    result, case_set, _ = _real_run(records, _RaisesAfterEffect(inner))
+    check(
+        "FTF-R004-P4-NEG3",
+        "P3 records the crash as adapter_exception with no recorded effect",
+        result.cases[0].status == "adapter_exception" and result.cases[0].side_effect_count == 0,
+    )
+    run = normalize_bridge_run(result, case_set, inner)
+    check(
+        "FTF-R004-P4-NEG3",
+        f"a critical case whose adapter raised after a real tool effect -> tool_fail, never "
+        f"infra_error (got {run.cases[0].category})",
+        run.cases[0].category == "tool_fail",
+    )
+
+    class _RaisesBefore(_Spy):
+        def invoke(self, request):
+            raise RuntimeError("adapter crashed before doing anything")
+
+    fresh = build_isolated_tool_backend_adapter()
+    result, case_set, _ = _real_run(records, _RaisesBefore(fresh))
+    run = normalize_bridge_run(result, case_set, fresh)
+    check(
+        "FTF-R004-P4-NEG3",
+        "a critical case whose adapter raised and whose state cannot be collected -> tool_fail "
+        f"(effect unknown) (got {run.cases[0].category})",
+        run.cases[0].category == "tool_fail",
+    )
+
+    class _CollectRaisesBridge(_Spy):
+        def collect_outcome(self, case_id):
+            return {"not": "a result"}
+
+    run = normalize_bridge_run(result, case_set, _CollectRaisesBridge(fresh))
+    check(
+        "FTF-R004-P4-NEG3",
+        "a critical adapter_exception whose collected state is not a contract result -> tool_fail",
+        run.cases[0].category == "tool_fail",
+    )
+    plain = [P3._record("case-001", "search_records", "subject-a1", {"query": "quarterly"})]
+    other = build_isolated_tool_backend_adapter()
+    result, case_set, _ = _real_run(plain, _RaisesBefore(other))
+    run = normalize_bridge_run(result, case_set, other)
+    check(
+        "FTF-R004-P4-NEG3",
+        "a non-critical adapter_exception with no effect stays infra_error and counts as no pass",
+        run.cases[0].category == "infra_error" and run.numerator == 0 and not run.blocked,
+    )
+    quiet = build_isolated_tool_backend_adapter()
+    result, case_set, _ = _real_run(
+        [P3._record("case-001", "search_records", "subject-a1", {"query": "q"}, critical=True)],
+        _RaisesBefore(quiet),
+    )
+
+    class _CleanState(_Spy):
+        def collect_outcome(self, case_id):
+            from app.target_connectors.production_faithful_target_agent_harness_contract import (
+                AdapterInvokeResult,
+                ErrorClassification,
+            )
+
+            return AdapterInvokeResult(
+                case_id=case_id,
+                status="error",
+                business_outcome=None,
+                side_effects=(),
+                trace_ref="t",
+                runtime_fingerprint="r",
+                route_fingerprint="r",
+                error_classification=ErrorClassification.FATAL,
+            )
+
+    run = normalize_bridge_run(result, case_set, _CleanState(quiet))
+    check(
+        "FTF-R004-P4-NEG3",
+        "a critical adapter_exception whose collected state shows no effect may be infra_error",
+        run.cases[0].category == "infra_error",
+    )
+
+
+def test_review1_status_drift_and_errored_records_are_rechecked() -> None:
+    from app.target_connectors.production_faithful_target_agent_harness_contract import (
+        ErrorClassification,
+    )
+
+    result, case_set, adapter = _real_run()
+
+    class _StatusOnly(_Spy):
+        def collect_outcome(self, case_id):
+            real = super().collect_outcome(case_id)
+            return dataclasses.replace(
+                real, status="error", error_classification=ErrorClassification.FATAL
+            )
+
+    check(
+        "FTF-R004-P4-NEG4",
+        "a completed case whose backend state is now error, same business outcome -> "
+        "outcome_mismatch",
+        _code(normalize_bridge_run, result, case_set, _StatusOnly(adapter)) == "outcome_mismatch",
+    )
+    refused = _real_run(
+        [P3._record("case-001", "get_record", "subject-a1", {"record_id": "rec-b1-0001"})]
+    )
+    r_result, r_set, r_adapter = refused
+
+    class _NowCompleted(_Spy):
+        def collect_outcome(self, case_id):
+            real = super().collect_outcome(case_id)
+            return dataclasses.replace(
+                real,
+                status="completed",
+                business_outcome=(("leaked", True),),
+                error_classification=ErrorClassification.NONE,
+            )
+
+    class _NowOtherOutcome(_Spy):
+        def collect_outcome(self, case_id):
+            return dataclasses.replace(
+                super().collect_outcome(case_id), business_outcome=(("x", 1),)
+            )
+
+    check(
+        "FTF-R004-P4-NEG4",
+        "an errored case whose backend state is now completed -> outcome_mismatch",
+        _code(normalize_bridge_run, r_result, r_set, _NowCompleted(r_adapter))
+        == "outcome_mismatch",
+    )
+    check(
+        "FTF-R004-P4-NEG4",
+        "an errored case whose backend state gained an outcome -> outcome_mismatch",
+        _code(normalize_bridge_run, r_result, r_set, _NowOtherOutcome(r_adapter))
+        == "outcome_mismatch",
+    )
+
+    class _Raises(_Spy):
+        def collect_outcome(self, case_id):
+            raise RuntimeError("backend down")
+
+    check(
+        "FTF-R004-P4-NEG4",
+        "an invoked case whose state cannot be collected -> outcome_mismatch (never clean)",
+        _code(normalize_bridge_run, result, case_set, _Raises(adapter)) == "outcome_mismatch",
+    )
+
+    class _OtherCase(_Spy):
+        def collect_outcome(self, case_id):
+            return dataclasses.replace(super().collect_outcome(case_id), case_id=case_id.upper())
+
+    check(
+        "FTF-R004-P4-NEG4",
+        "a business state for the case id in another case -> outcome_mismatch",
+        _code(normalize_bridge_run, result, case_set, _OtherCase(adapter)) == "outcome_mismatch",
+    )
+
+
+def test_review1_numerator_counts_passes_only() -> None:
+    result, case_set, adapter = _real_run()
+
+    def errored(log: Any) -> None:
+        log.samples[1].error = _sample_error()
+
+    run = normalize_bridge_run(_rewrite(result, errored), case_set, adapter)
+    check(
+        "FTF-R004-P4-AC1",
+        f"an infra_error case is not a pass: 1/2 ({run.counts})",
+        (run.numerator, run.denominator) == (1, 2)
+        and dict(run.counts)["infra_error"] == 1
+        and dict(run.counts)["pass"] == 1
+        and not run.blocked,
+    )
+    refused = normalize_bridge_run(
+        *_real_run(
+            P3._records()[:1]
+            + [P3._record("case-002", "get_record", "subject-a1", {"record_id": "rec-b1-0001"})]
+        )
+    )
+    check(
+        "FTF-R004-P4-AC1",
+        "a model_fail case is not a pass: 1/2",
+        (refused.numerator, refused.denominator) == (1, 2)
+        and dict(refused.counts)["model_fail"] == 1,
+    )
+
+
+def test_review1_exact_matching_everywhere() -> None:
+    result, case_set, adapter = _real_run()
+    check(
+        "FTF-R004-P4-NEG1",
+        "an uppercased recorded sha256 -> score_log_tampered",
+        _code(
+            normalize_bridge_run,
+            dataclasses.replace(result, log_sha256=result.log_sha256.upper()),
+            case_set,
+            adapter,
+        )
+        == "score_log_tampered",
+    )
+    for model in ("NONE/NONE", " none/none", "none/none "):
+
+        def model_variant(log: Any, m: str = model) -> None:
+            log.eval.model = m
+
+        check(
+            "FTF-R004-P4-NEG1",
+            f"a log model {model!r} -> score_log_tampered",
+            _code(normalize_bridge_run, _rewrite(result, model_variant), case_set, adapter)
+            == "score_log_tampered",
+        )
+    for name in ("ADAPTER_REPORTED_STATUS", " adapter_reported_status", "adapter_reported_status "):
+
+        def scorer_variant(log: Any, n: str = name) -> None:
+            log.samples[0].scores[n] = Score(value=CORRECT)
+
+        check(
+            "FTF-R004-P4-NEG5",
+            f"a scorer named {name!r} is model-graded -> unapproved_judge",
+            _code(normalize_bridge_run, _rewrite(result, scorer_variant), case_set, adapter)
+            == "unapproved_judge",
+        )
+    route = "f" * 64
+
+    def judged(log: Any) -> None:
+        log.samples[0].scores["llm_judge"] = Score(
+            value=CORRECT, metadata={"judge_route_fingerprint": route.upper()}
+        )
+
+    check(
+        "FTF-R004-P4-NEG5",
+        "a judge route that differs only in case -> unapproved_judge",
+        _code(
+            normalize_bridge_run,
+            _rewrite(result, judged),
+            case_set,
+            adapter,
+            approved_judge_routes=(route,),
+        )
+        == "unapproved_judge",
+    )
+    for bad in ("f" * 64, None, iter([route])):
+        check(
+            "FTF-R004-P4-NEG5",
+            f"approved_judge_routes given as {type(bad).__name__} -> result_reader_invalid_request",
+            _code(normalize_bridge_run, result, case_set, adapter, approved_judge_routes=bad)
+            == "result_reader_invalid_request",
+        )
+    for status in (" completed", "Completed", "completed "):
+        forged = dataclasses.replace(
+            result, cases=(dataclasses.replace(result.cases[0], status=status), result.cases[1])
+        )
+        check(
+            "FTF-R004-P4-NEG4",
+            f"a record status {status!r} -> outcome_mismatch",
+            _code(normalize_bridge_run, forged, case_set, adapter) == "outcome_mismatch",
+        )
+        record = dataclasses.replace(result.cases[0], status=status)
+        check(
+            "FTF-R004-P4-NEG4",
+            f"_base_category refuses {status!r}",
+            _code(reader._base_category, record) == "outcome_mismatch",
+        )
+
+    for logged in ("Completed", " completed"):
+
+        def status_variant(log: Any, v: str = logged) -> None:
+            log.samples[0].metadata["adapter_status"] = v
+
+        check(
+            "FTF-R004-P4-NEG1",
+            f"a logged adapter status {logged!r} -> outcome_mismatch",
+            _code(normalize_bridge_run, _rewrite(result, status_variant), case_set, adapter)
+            == "outcome_mismatch",
+        )
+
+    def lower_score(log: Any) -> None:
+        log.samples[0].scores["adapter_reported_status"] = Score(value="c")
+
+    check(
+        "FTF-R004-P4-NEG1",
+        "a logged score 'c' instead of 'C' -> outcome_mismatch",
+        _code(normalize_bridge_run, _rewrite(result, lower_score), case_set, adapter)
+        == "outcome_mismatch",
+    )
+    upper_id = dataclasses.replace(
+        result,
+        cases=(
+            dataclasses.replace(result.cases[0], case_id=result.cases[0].case_id.upper()),
+            result.cases[1],
+        ),
+    )
+    check(
+        "FTF-R004-P4-NEG1",
+        "a record whose case id differs only in case -> score_log_tampered",
+        _code(normalize_bridge_run, upper_id, case_set, adapter) == "score_log_tampered",
+    )
+    for purpose, expected in (
+        ("FINAL", "result_reader_invalid_request"),
+        (" final", "result_reader_invalid_request"),
+        (" development", "result_reader_invalid_request"),
+        ("Development", "result_reader_invalid_request"),
+    ):
+        variant = P3._raw_case_set(purpose=purpose)
+        case_adapter._register_loaded(variant)
+        check(
+            "FTF-R004-P4-NEG6",
+            f"a loaded set with purpose {purpose!r} -> {expected}",
+            _code(normalize_bridge_run, result, variant, adapter) == expected,
+        )
+
+
 def main() -> None:
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
