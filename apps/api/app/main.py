@@ -181,6 +181,7 @@ from app.tools.critical_behavior_requirement_routes import (
     build_critical_behavior_requirement_router,
 )
 from app.tools.tool_definition_routes import build_tool_definition_router
+from app.training.training_experiment_routes import build_training_experiment_router
 
 
 def create_app() -> FastAPI:
@@ -370,6 +371,11 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         build_discovered_agent_candidate_selection_router(
+            session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
+        )
+    )
+    app.include_router(
+        build_training_experiment_router(
             session_factory, principal_resolver=principal_resolver, role_lookup=role_lookup
         )
     )
