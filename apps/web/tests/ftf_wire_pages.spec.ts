@@ -142,6 +142,15 @@ const CASES: Case[] = [
     urls: (v) => [`${proj(v)}/evaluation-suites/${v.suiteId}/cases`],
   },
   {
+    // FTF-0603 UI round 2: the first request is the suite record; its cases are read only after it.
+    slug: "suite-validation",
+    title: "Evaluation suite validation and locking",
+    params: [...ORG_PROJECT, ["suiteId", "Suite ID"]],
+    mount: () => screen.getByTestId("suite-lock-load-button"),
+    trigger: () => fireEvent.click(screen.getByTestId("suite-lock-load-button")),
+    urls: (v) => [`${proj(v)}/evaluation-suites/${v.suiteId}`],
+  },
+  {
     // FTF-H010-P6: the panel loads the FTF-1001 item and the FTF-H010-P4 roles and actions on mount.
     slug: "model-version",
     title: "Model version: lineage, roles and actions",

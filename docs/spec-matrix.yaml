@@ -9077,16 +9077,32 @@ FTF-0602:
   proving_symbol: EvaluationCaseEditorImport
   proving_test: apps/web/tests/ftf_0602.spec.ts, apps/web/tests/ftf_wire_pages.spec.ts
 FTF-0603:
-  certification_state: NONE
+  certification_state: PROVISIONAL
   criticality: MUST
   description: Suite validation/locking
   evidence_hash: ''
-  implementation_state: ABSENT
-  notes: kind=retained_feature; requirements=AF-23; scenarios=Q16, Q17, Q18; deps=FTF-0519, FTF-0601,
-    FTF-0602
-  proof_state: UNPROVEN
-  proving_symbol: ''
-  proving_test: ''
+  implementation_state: IMPLEMENTED
+  notes: >-
+    kind=retained_feature; requirements=AF-23; scenarios=Q16, Q17, Q18; deps=FTF-0519, FTF-0601,
+    FTF-0602 (all CERTIFIED), FTF-0603-F1 (server enforcement, merged).
+    apps/web/components/evaluation-factory/suite_validation_locking.tsx consumes the frozen routes
+    (GET suite, GET cases pages, POST lock). The reviewer declares a sample plan in the server's
+    four-field wire shape (a final suite starts from every Section 26 category and the 1000/100
+    floors, which it can raise but not lower; counts are of distinct group_key values); the
+    component loads every case, validates with the server's own rules, computes suite_sha256 as the
+    server does (canonical JSON over organization, project, suite identity and every case; the
+    shared test vector packages/contracts/test-vectors/evaluation-suite-sha256.json is reproduced
+    byte for byte) and only then enables the lock. The handler reloads, re-validates and compares
+    the hash, then POSTs {sample_plan, suite_sha256}; the server re-runs every clause and refuses
+    with typed 409 findings, shown localized with the suite unchanged. A lock request whose result
+    cannot be read is reported as outcome unknown, never as nothing changed. The confirmation is
+    the UX01 Dialog (focus trap, Escape, focus returns). Page apps/web/pages/suite-validation.tsx
+    (journey suite-validation) mounts it. Real-Chromium UX evidence:
+    apps/web/tests/ftf_0603_browser.spec.ts. Submission and fault -> RED table:
+    docs/certifications/submissions/2026-11-28T0045Z-FTF-0603-r6.md. Not self-certified (Law 4).
+  proof_state: L1-PROVEN
+  proving_symbol: SuiteValidationLocking
+  proving_test: apps/web/tests/ftf_0603.spec.ts
 FTF-0604:
   certification_state: CERTIFIED
   criticality: MUST

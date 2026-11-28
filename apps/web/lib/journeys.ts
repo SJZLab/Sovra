@@ -136,6 +136,15 @@ export const JOURNEYS: Journey[] = [
     ],
   },
   {
+    slug: "suite-validation",
+    title: "Evaluation suite validation and locking",
+    params: [
+      { name: "organizationId", label: "Organization ID" },
+      { name: "projectId", label: "Project ID" },
+      { name: "suiteId", label: "Suite ID" },
+    ],
+  },
+  {
     slug: "model-version",
     title: "Model version: lineage, roles and actions",
     params: [
