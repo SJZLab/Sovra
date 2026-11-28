@@ -3,6 +3,7 @@
 ## Current status (Control plane; refreshed in every CERT PR, read this block for reports)
 Updated: 2026-11-10T14:50Z. Source: `python3 scripts/status.py` on main.
 - **Status: 159/304 certified · 59 product-true** (FTF-H010 certified 2026-11-28, the first rise since 2026-11-10).
+- **2026-11-28 verdicts:** FTF-R006-P1b, FTF-R004-P4 and FTF-H011-P6 certified (child slices); the seven page-wired proving symbols confirmed 7 of 7 by an independent reviewer; FTF-R004-P3 returned (an allowed git command could send data out of an evaluation run) and FTF-H011-P5 returned (a truncated conversation was accepted). FTF-0701 (100 tasks wait on it) is one PR, #1056, in CI.
 - **Certified slices (2026-11-27): FTF-H010-P4, FTF-H010-P5, FTF-H011-P3.** FTF-H010 needs only P6 to close (+1). First verdicts under the bounded review rule; each converged in one round.
   status.py prints 48 product-true: it counts FTF-0309 and FTF-0501 through their live API routes, but their screens
   (capability UI, resumable upload UI) stay UNWIRED until FTF-H029, so they are not counted here (Law 7).
