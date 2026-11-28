@@ -814,6 +814,15 @@ function Inner({
 
   // After a successful create / found-after-lost-reply the form unmounts: focus the notice so
   // focus never falls to <body>.
+  // Move focus to the submit error AFTER React has rendered it. A zero-delay timer set next to
+  // setSubmitError could fire before the commit on a busy machine, so the alert did not exist yet
+  // and focus never moved (seen as an intermittent CI failure of H010P5-F6).
+  useEffect(() => {
+    if (submitError) {
+      document.querySelector<HTMLElement>(`[data-testid="import-submit-error"]`)?.focus();
+    }
+  }, [submitError]);
+
   useEffect(() => {
     if (notice === "jobCreated" || notice === "jobFound") noticeRef.current?.focus();
   }, [notice]);
@@ -953,12 +962,6 @@ function Inner({
     setFieldErrors([]);
   }
 
-  function focusAlert() {
-    setTimeout(() => {
-      document.querySelector<HTMLElement>(`[data-testid="import-submit-error"]`)?.focus();
-    }, 0);
-  }
-
   /** After a write whose outcome is unknown: re-list; never re-POST. */
   async function verifyCreated() {
     setOutcome("verifying");
@@ -1003,7 +1006,6 @@ function Inner({
       if (!alive.current) return;
       if (fresh === null) {
         setSubmitError(uiError(tr("failedLoadJobs", locale), "retry"));
-        focusAlert();
         return;
       }
       idsBeforeSubmit.current = new Set(fresh.map((j) => j.id));
@@ -1018,7 +1020,6 @@ function Inner({
       } catch (caught) {
         if (!alive.current) return;
         setSubmitError(networkError(caught, locale, { write: true }));
-        focusAlert();
         await verifyCreated();
         return;
       }
@@ -1047,7 +1048,6 @@ function Inner({
           return;
         }
         setSubmitError(uiError(tr("unknownOutcome", locale), "verify-state"));
-        focusAlert();
         await verifyCreated();
         return;
       }
@@ -1068,7 +1068,6 @@ function Inner({
               ? tr("signIn", locale)
               : tr("failedSubmit", locale);
       setSubmitError(uiError(message, kindForStatus(status)));
-      focusAlert();
       // A 5xx may have committed before failing: check, do not blindly retry.
       if (status >= 500) await verifyCreated();
     } finally {
