@@ -63,7 +63,8 @@
         "reviewer_id": { "type": ["string", "null"] },
         "created_by": { "type": "string" },
         "locked_at": { "type": ["string", "null"], "format": "date-time" },
-        "created_at": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "suite_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
       },
       "required": [
         "id",
@@ -80,6 +81,23 @@
         "locked_at",
         "created_at"
       ],
+      "additionalProperties": false
+    },
+    "EvaluationSuiteSamplePlan": {
+      "description": "FTF-0603-F1: the reviewer's sample plan sent with POST .../lock (apps/api/app/evaluation/evaluation_suite_lock_gate.py parse_sample_plan). Counts are distinct group_key values; floors are enforced as typed 409 findings.",
+      "type": "object",
+      "properties": {
+        "required_categories": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "min_independent_tasks": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "min_critical_scenarios": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "min_cases_per_category": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      },
+      "required": ["required_categories", "min_independent_tasks", "min_critical_scenarios", "min_cases_per_category"],
       "additionalProperties": false
     }
   }

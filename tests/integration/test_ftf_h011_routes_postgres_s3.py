@@ -137,17 +137,20 @@ def main() -> None:
     # ---- I0: the migration chain ---------------------------------------------------------
     for args, label in (
         (["upgrade", "head"], "alembic upgrade head"),
-        (["downgrade", "-1"], "alembic downgrade -1"),
-        (["upgrade", "head"], "alembic upgrade head after downgrade -1"),
+        (["downgrade", "0037_model_role_assignments"], "alembic downgrade to 0037"),
+        (["upgrade", "head"], "alembic upgrade head after downgrade to 0037"),
     ):
         result = p1._alembic(args, migration_url)
         check(f"I0 {label} ({result.stdout[-200:]}{result.stderr[-300:]})", result.returncode == 0)
         if result.returncode != 0:
             return _finish()
+    # Not pinned to 0038 being the head itself: that goes stale the moment a later
+    # migration lands (0039, FTF-0603-F1). 0038 must be on the single head's chain.
     heads = p1._alembic(["heads"], migration_url)
+    history = p1._alembic(["history"], migration_url)
     check(
-        f"I0 exactly one alembic head, 0038 ({heads.stdout!r})",
-        heads.stdout.count("(head)") == 1 and "0038_dataset_mapping_requests" in heads.stdout,
+        f"I0 exactly one alembic head, 0038 on its chain ({heads.stdout!r})",
+        heads.stdout.count("(head)") == 1 and "0038_dataset_mapping_requests" in history.stdout,
     )
 
     endpoint, credentials = s3lab._load_endpoint_and_credentials()
