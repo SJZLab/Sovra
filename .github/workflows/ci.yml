@@ -638,6 +638,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p4.py
       - name: FTF-R004-P3 negative-test proof (pinned Inspect worker + case adapter + native runtime bridge over the real isolated tool backend, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p3.py
+      - name: FTF-R004-P4 negative-test proof (Inspect log normalization, complete accounting and sealed-data guard over real P3 runs, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_r004_p4.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
