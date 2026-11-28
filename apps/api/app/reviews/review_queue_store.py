@@ -1315,15 +1315,22 @@ def reconcile_review_queue(
 def _item_responses(
     session: Session, organization_id: uuid.UUID, item_id: uuid.UUID
 ) -> dict[str, Mapping[str, Any]]:
-    """The recorded responses of one item, by identity id text."""
+    """The recorded responses of one item, by identity id text, that Argilla is still expected to
+    hold. A reviewer whose identity was revoked AND whose real Argilla user was deleted
+    (`argilla_user_deleted_at`, migration 0041) has no response on Argilla any more -- the server
+    cascades it away with the user -- so its row stays in the Factory as provenance but is not
+    expected back (never `response_missing` drift). Such a response is never counted for export
+    (FTF-R006-P3 counts only active mapped annotators)."""
     return {
         str(row[0]): {"argilla_response_id": row[1], "response_sha256": row[2]}
         for row in execute_tenant_scoped(
             session,
             organization_id,
             text(
-                "SELECT identity_id, argilla_response_id, response_sha256 "
-                "FROM review_responses WHERE item_id = :item"
+                "SELECT r.identity_id, r.argilla_response_id, r.response_sha256 "
+                "FROM review_responses r JOIN argilla_reviewer_identities i "
+                "ON i.organization_id = r.organization_id AND i.id = r.identity_id "
+                "WHERE r.item_id = :item AND i.argilla_user_deleted_at IS NULL"
             ),
             {"item": item_id},
         )
@@ -1392,8 +1399,10 @@ def _factory_state(
         session,
         organization_id,
         text(
-            "SELECT item_id, identity_id, argilla_response_id, response_sha256 "
-            "FROM review_responses WHERE queue_id = :queue"
+            "SELECT r.item_id, r.identity_id, r.argilla_response_id, r.response_sha256 "
+            "FROM review_responses r JOIN argilla_reviewer_identities i "
+            "ON i.organization_id = r.organization_id AND i.id = r.identity_id "
+            "WHERE r.queue_id = :queue AND i.argilla_user_deleted_at IS NULL"
         ),
         {"queue": queue_id},
     ):
