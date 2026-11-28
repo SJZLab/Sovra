@@ -73,6 +73,8 @@ export const PHRASES = {
   statusQualifiedBare: { en: "Qualified", ar: "مؤهّل" },
   statusUnknown: { en: "Unknown state", ar: "حالة غير معروفة" },
   statusProduction: { en: "Production", ar: "الإنتاج" },
+  statusApproved: { en: "Approved", ar: "معتمد" },
+  statusRejected: { en: "Rejected", ar: "مرفوض" },
 
   // FTF-UX02 round 2: FTF-0500A rebuilt on the UX01 components (NOT-ON-UX01 /
   // NOT-BILINGUAL findings). Raw backend enum values (source type, purpose,

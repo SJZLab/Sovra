@@ -12,7 +12,11 @@ export type StatusState =
   | "failed"
   | "cancelled"
   | "qualified"
-  | "production";
+  | "production"
+  // FTF-H011-P4: a reviewed decision on a versioned record (a dataset mapping), distinct from a
+  // qualification of a model and never shown as one.
+  | "approved"
+  | "rejected";
 
 const WORD_KEY: Record<StatusState, Parameters<typeof phrase>[0]> = {
   draft: "statusDraft",
@@ -25,6 +29,8 @@ const WORD_KEY: Record<StatusState, Parameters<typeof phrase>[0]> = {
   cancelled: "statusCancelled",
   qualified: "statusQualified",
   production: "statusProduction",
+  approved: "statusApproved",
+  rejected: "statusRejected",
 };
 
 const ICON: Record<StatusState, string> = {
@@ -38,6 +44,8 @@ const ICON: Record<StatusState, string> = {
   cancelled: "■",
   qualified: "✓",
   production: "★",
+  approved: "✔",
+  rejected: "✗",
 };
 
 const TONE: Record<StatusState, "success" | "warning" | "danger" | "muted"> = {
@@ -51,6 +59,8 @@ const TONE: Record<StatusState, "success" | "warning" | "danger" | "muted"> = {
   cancelled: "muted",
   qualified: "success",
   production: "success",
+  approved: "success",
+  rejected: "danger",
 };
 
 export interface StatusBadgeProps {

@@ -134,6 +134,14 @@ const CASES: Case[] = [
     ],
   },
   {
+    // FTF-H011-P4: the mapping wizard lists the dataset's saved versions on mount.
+    slug: "dataset-mapping",
+    title: "Dataset preview, field mapping and approval",
+    params: [...ORG_PROJECT, ["datasetId", "Dataset ID"]],
+    mount: () => screen.getByTestId("dataset-mapping-wizard"),
+    urls: (v) => [`${proj(v)}/datasets/${v.datasetId}/mappings?limit=200`],
+  },
+  {
     slug: "evaluation-cases",
     title: "Evaluation case editor and import",
     params: [...ORG_PROJECT, ["suiteId", "Suite ID"]],
