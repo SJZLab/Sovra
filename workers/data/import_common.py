@@ -79,6 +79,7 @@ __all__ = [
     "GroupAssembler",
     "GroupRows",
     "GroupedRecord",
+    "grouped_row_key",
     "MappedRow",
     "MappingInvalidError",
     "MappingUnsupportedError",
@@ -976,6 +977,17 @@ def _order_value(text: str, order_type: str) -> int | datetime:
         raise RowMappingError("invalid_order_key", slot) from None
 
 
+def grouped_row_key(
+    mapping: ImportMapping, row: Row, headers: Sequence[str] | None = None
+) -> str | None:
+    """The group key of a `grouped_multi_row` row when it can be read, else None. Used for a
+    row that failed to map, so the failure is attributed to its own group (FTF-H011-P5 r2)."""
+    if mapping.group_rows is None:
+        return None
+    value = _read_slot(mapping.group_rows.group_key, row, headers)
+    return value if type(value) is str and value != "" else None
+
+
 def _grouped_row(mapping: ImportMapping, row: Row, headers: Sequence[str] | None) -> MappedRow:
     group_rows = mapping.group_rows
     assert group_rows is not None
@@ -1208,6 +1220,9 @@ class _OpenGroup:
     last_order: int | datetime | None
     size: int
     problem: str | None
+    # Opened by a failed row and joined by no good row yet: its only row is already counted
+    # by that row's own rejection, so closing it adds nothing.
+    only_failed: bool = False
 
 
 class GroupAssembler:
@@ -1249,7 +1264,7 @@ class GroupAssembler:
         if key is None or mapped.order is None:
             raise ValueError("a grouped row carries a group key and an order")
         if self._open is not None and self._open.key != key:
-            out.append(self._close())
+            out.extend(self._close())
         group = self._open
         if group is None:
             if self._digest(key) in self._closed:
@@ -1275,6 +1290,7 @@ class GroupAssembler:
             elif self._consecutive and order != last + 1:  # type: ignore[operator]
                 group.problem = group.problem or "incomplete_group"
         group.last_order = order
+        group.only_failed = False
         group.size += size
         if group.size > self._max:
             group.problem = group.problem or "record_too_large"
@@ -1282,6 +1298,38 @@ class GroupAssembler:
             group.messages.extend(mapped.raw_record["messages"])  # type: ignore[arg-type]
         else:
             group.messages.clear()
+        return out
+
+    def fail(self, locator: str, key: str | None) -> list[GroupedRecord | RowRejection]:
+        """A row failed to map. When its group key could be read the failure belongs to that
+        group: the row counts for contiguity exactly like a good row of the group (a different
+        key closes the open group; a key whose group already closed fails the import
+        `non_contiguous_group`) and the group is quarantined `incomplete_group`, so a later
+        segment of it can never be accepted without the lost turn. When the key cannot be read
+        the failure is unattributable: `poison`."""
+        if key is None:
+            self.poison()
+            return []
+        out: list[GroupedRecord | RowRejection] = []
+        if self._open is not None and self._open.key != key:
+            out.extend(self._close())
+        if self._open is None:
+            if self._digest(key) in self._closed:
+                raise ImportAborted("failed", "non_contiguous_group")
+            self._open = _OpenGroup(
+                key=key,
+                locator=locator,
+                metadata={},
+                messages=[],
+                last_order=None,
+                size=0,
+                problem="incomplete_group",
+                only_failed=True,
+            )
+        else:
+            self._open.problem = self._open.problem or "incomplete_group"
+            self._open.messages.clear()
+        self._pending_poison = False
         return out
 
     def poison(self) -> None:
@@ -1292,22 +1340,28 @@ class GroupAssembler:
 
     def finish(self) -> list[GroupedRecord | RowRejection]:
         """Closes the last group at the end of the source."""
-        return [self._close()] if self._open is not None else []
+        return self._close() if self._open is not None else []
 
-    def _close(self) -> GroupedRecord | RowRejection:
+    def _close(self) -> list[GroupedRecord | RowRejection]:
         group = self._open
         assert group is not None
         self._open = None
         self._closed.add(self._digest(group.key))
+        if group.only_failed:
+            return []
         if group.problem is not None:
-            return RowRejection(group.locator, group.problem)
+            return [RowRejection(group.locator, group.problem)]
         last = group.messages[-1] if group.messages else None
         if not isinstance(last, dict) or last.get("role") != "assistant":
-            return RowRejection(group.locator, "incomplete_group")
-        return GroupedRecord(
-            group.locator,
-            MappedRow({"messages": list(group.messages), "metadata": group.metadata}, group.key),
-        )
+            return [RowRejection(group.locator, "incomplete_group")]
+        return [
+            GroupedRecord(
+                group.locator,
+                MappedRow(
+                    {"messages": list(group.messages), "metadata": group.metadata}, group.key
+                ),
+            )
+        ]
 
 
 _STATE_NEEDS_FAILURE_CODE: Final = {"completed": False, "failed": True, "blocked": True}

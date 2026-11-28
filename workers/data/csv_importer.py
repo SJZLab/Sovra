@@ -101,6 +101,7 @@ from workers.data.import_common import (
     RowRejection,
     Slot,
     apply_mapping,
+    grouped_row_key,
     normalize_mapped_record,
     to_dataset_record_candidate,
 )
@@ -587,14 +588,15 @@ class CsvEventStream(Iterator[ImportEvent]):
         total = 0
         for name, position in positions:
             if "\x00" in row[position]:
-                assembler.poison()
-                return [RowRejection(locator, "nul_character", name)]
+                closed = assembler.fail(locator, grouped_row_key(self._mapping, row, headers))
+                return [*closed, RowRejection(locator, "nul_character", name)]
             total += len(row[position].encode("utf-8"))
         try:
             mapped = apply_mapping(self._mapping, row, headers=headers, grouped=True)
         except RowMappingError as exc:
-            assembler.poison()
-            return [RowRejection(locator, exc.code, exc.slot)]
+            # FTF-H011-P5 r2: a readable group key attributes the failure to its own group.
+            closed = assembler.fail(locator, grouped_row_key(self._mapping, row, headers))
+            return [*closed, RowRejection(locator, exc.code, exc.slot)]
         return list(assembler.add(locator, mapped, total))
 
     def _grouped_event(self, group: GroupedRecord, index: int) -> ImportEvent:

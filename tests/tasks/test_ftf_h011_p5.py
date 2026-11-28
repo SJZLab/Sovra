@@ -792,7 +792,8 @@ def test_csv_importer_requalifies() -> None:
 
 
 def test_review_round_1_pins() -> None:
-    # (1) a failed row at a group boundary also flags the NEXT group (its first turn may be lost)
+    # (1) round 2: a failed row whose group key is readable belongs to ITS group; one whose key
+    # cannot be read (empty key) poisons the open group and the next one it may have opened.
     for order_type, a, b, c in (
         ("int", "1", "2", "3"),
         ("rfc3339", "2026-01-01T00:00:00Z", "2026-01-01T00:00:01Z", "2026-01-01T00:00:02Z"),
@@ -808,23 +809,82 @@ def test_review_round_1_pins() -> None:
         got = sorted(rejections(report))
         check(
             "BOUND-1",
-            f"{order_type}: a NUL first row of c2 quarantines c2 (and the open c1) ({got}, {len(accepted)})",
-            got
-            == [
-                ("line:2", "incomplete_group"),
-                ("line:4", "nul_character"),
-                ("line:5", "incomplete_group"),
-            ]
-            and not accepted,
+            f"{order_type}: a NUL first row of c2 quarantines c2 only; c1 is complete ({got}, {len(accepted)})",
+            got == [("line:4", "incomplete_group"), ("line:4", "nul_character")]
+            and [texts(x) for x in accepted] == [[("user", "q"), ("assistant", "r")]],
         )
         rows = [["c1", a, "x", "?"], ["c1", b, "u", "q"], ["c1", c, "a", "r"]]
         report, accepted = run_csv(csv_bytes(rows), grouped(order_type))
         got = sorted(rejections(report))
         check(
             "BOUND-2",
-            f"{order_type}: an unreadable first data row quarantines the group it may have opened ({got})",
-            got == [("line:2", "unmapped_role"), ("line:3", "incomplete_group")] and not accepted,
+            f"{order_type}: a failed first data row quarantines its group ({got})",
+            got == [("line:2", "incomplete_group"), ("line:2", "unmapped_role")] and not accepted,
         )
+        rows = [
+            ["c1", a, "u", "q"],
+            ["c1", b, "a", "r"],
+            ["", a, "u", "?"],
+            ["c2", a, "u", "q"],
+            ["c2", b, "a", "r"],
+        ]
+        report, accepted = run_csv(csv_bytes(rows), grouped(order_type))
+        got = sorted(rejections(report))
+        check(
+            "BOUND-3",
+            f"{order_type}: a row whose key cannot be read poisons both neighbouring groups ({got})",
+            got
+            == [
+                ("line:2", "incomplete_group"),
+                ("line:4", "required_field_empty"),
+                ("line:5", "incomplete_group"),
+            ]
+            and not accepted,
+        )
+        # the L2 round-2 finding: C's failed first row, then B, then the rest of C
+        rows = [
+            ["A", a, "u", "q"],
+            ["A", b, "a", "r"],
+            ["C", a, "x", "?"],
+            ["B", a, "u", "q"],
+            ["B", b, "a", "r"],
+            ["C", b, "u", "q2"],
+            ["C", c, "a", "r2"],
+        ]
+        report, _accepted = run_csv(csv_bytes(rows), grouped(order_type))
+        check(
+            "BOUND-4",
+            f"{order_type}: a group whose failed first row is not adjacent fails the import ({report.state}/{report.failure_code})",
+            (report.state, report.failure_code) == ("failed", "non_contiguous_group"),
+        )
+        rows = [
+            ["A", a, "u", "q"],
+            ["A", b, "a", "r"],
+            ["C", a, "x", "?"],
+            ["C", b, "u", "q2"],
+            ["C", c, "a", "r2"],
+        ]
+        report, accepted = run_csv(csv_bytes(rows), grouped(order_type))
+        got = sorted(rejections(report))
+        check(
+            "BOUND-5",
+            f"{order_type}: an adjacent failed first row quarantines C and keeps A ({got})",
+            got == [("line:4", "incomplete_group"), ("line:4", "unmapped_role")]
+            and len(accepted) == 1,
+        )
+    # advisory: Unicode-distinct keys are distinct groups (NFC vs NFD are different strings)
+    rows = [
+        ["\u00e9", "1", "u", "q"],
+        ["\u00e9", "2", "a", "r"],
+        ["e\u0301", "1", "u", "q"],
+        ["e\u0301", "2", "a", "r"],
+    ]
+    report, accepted = run_csv(csv_bytes(rows), grouped())
+    check(
+        "BOUND-6",
+        f"NFC and NFD keys are two groups, never merged ({rejections(report)})",
+        len(accepted) == 2 and report.records_rejected == 0,
+    )
     # (2) a key that reappears stops the whole import fail-closed
     rows = [
         ["c1", "1", "u", "q"],
@@ -880,6 +940,87 @@ def test_review_round_1_pins() -> None:
         == [("line:2", "incomplete_group"), ("line:3", "column_count_mismatch")]
         and not accepted,
     )
+
+
+def test_round_2_mutation_pins() -> None:
+    # a failed row's key is exact: C1 is not c1
+    rows = [
+        ["c1", "1", "u", "q"],
+        ["c1", "2", "a", "r"],
+        ["C1", "1", "x", "?"],
+        ["C1", "2", "u", "q"],
+        ["C1", "3", "a", "r"],
+    ]
+    report, accepted = run_csv(csv_bytes(rows), grouped())
+    got = sorted(rejections(report))
+    check(
+        "R2-1",
+        f"a failed C1 row never joins c1 ({got})",
+        got == [("line:4", "incomplete_group"), ("line:4", "unmapped_role")] and len(accepted) == 1,
+    )
+    # a failed row of a group that already closed fails the import
+    rows = [
+        ["A", "1", "u", "q"],
+        ["A", "2", "a", "r"],
+        ["B", "1", "u", "q"],
+        ["B", "2", "a", "r"],
+        ["A", "3", "x", "?"],
+    ]
+    report, _ = run_csv(csv_bytes(rows), grouped())
+    check(
+        "R2-2",
+        f"a failed row of a closed group is non_contiguous_group ({report.state}/{report.failure_code})",
+        (report.state, report.failure_code) == ("failed", "non_contiguous_group"),
+    )
+    # grouped_row_key reads the key, and only for a grouped mapping
+    mapping = ic.mapping_from_object(grouped())
+    headers = ["conv", "turn", "who", "text"]
+    check(
+        "R2-3",
+        "the key of a readable row",
+        ic.grouped_row_key(mapping, ["c9", "1", "x", "?"], headers) == "c9",
+    )
+    check(
+        "R2-4",
+        "an empty key is unreadable",
+        ic.grouped_row_key(mapping, ["", "1", "x", "?"], headers) is None,
+    )
+    check(
+        "R2-5",
+        "a non-text key is unreadable",
+        ic.grouped_row_key(
+            ic.mapping_from_object(
+                {
+                    **grouped(),
+                    "group_rows": {**grouped()["group_rows"], "group_key": {"key": "conv"}},
+                }
+            ),
+            {"conv": 5},
+        )
+        is None,
+    )
+    check(
+        "R2-7",
+        "a whitespace key is a key, read verbatim",
+        ic.grouped_row_key(mapping, [" ", "1", "x", "?"], headers) == " ",
+    )
+    rows = [
+        ["C1", "1", "u", "q"],
+        ["C1", "2", "x", "?"],
+        ["D1", "1", "u", "q"],
+        ["D1", "2", "a", "r"],
+    ]
+    report, accepted = run_csv(csv_bytes(rows), grouped())
+    got = sorted(rejections(report))
+    check(
+        "R2-8",
+        f"a failed row of the open group C1 quarantines C1, the import goes on ({report.state}/{got})",
+        report.state != "failed" and ("line:2", "incomplete_group") in got and len(accepted) == 1,
+    )
+    plain = ic.mapping_from_object(
+        {"shape": "prompt_completion", "prompt": {"index": 0}, "completion": {"index": 1}}
+    )
+    check("R2-6", "a plain mapping has no group key", ic.grouped_row_key(plain, ["q", "a"]) is None)
 
 
 def main() -> int:
