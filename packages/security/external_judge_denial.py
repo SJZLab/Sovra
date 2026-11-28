@@ -1,0 +1,392 @@
+"""FTF-0907 -- External judge denial (Section 11.1-11.3, 12, 65, 66, 70, 77, 81).
+
+Non-bypassable denial, at the security layer, of an external or unknown-upstream
+judge on a private project, both at *admission* and at *request time*. FTF-0617
+owns judge selection and per-call identity; this module owns the boundary check
+around it. It composes FTF-0901 `enforce_effect` / `effective_profile` (the
+profile ordering and the no-relaxation rule are not re-implemented here).
+
+Rules:
+
+* A project is *private* when the effective profile is `zero_egress` or
+  `air_gapped` (FTF-0901 boundary-only profiles). On a private project every
+  upstream that is not `internal` is denied (`external_judge_upstream_external`)
+  and an upstream that is not known is denied (`external_judge_upstream_unknown`).
+  A name, alias or gateway address that *looks* local is never evidence.
+* Fallback aliases are part of the route: every alias must name its resolved
+  upstream and each is checked exactly like the primary
+  (`external_judge_fallback_denied`); a route whose fallbacks are not fully
+  enumerated, or one with an unknown fallback upstream, is denied.
+* On `standard` an external judge still needs FTF-0901 `enforce_effect(surface=
+  "judge")` to allow it with an explicit `RouteAuthorization`; an unknown
+  upstream is denied on every profile. (The Section 11.2 managed-provider
+  approval stays with FTF-0908.)
+* Request time cannot be reached around admission: `check_judge_request` and
+  `guarded_judge_call` refuse a missing, forged or `dataclasses.replace`d
+  `JudgeAdmission` (`external_judge_admission_missing`), refuse a route that is
+  not exactly the admitted route (`external_judge_route_changed`), and
+  re-evaluate the boundary against the profile in force *now*. A caller that
+  holds a raw client can only reach the judge through `guarded_judge_call`,
+  which runs the check before `send` is invoked and passes `send` the admitted
+  route snapshot (all inputs must be exact types, never subclasses).
+* Unknown, str-subclass or unhashable values raise the module's own
+  `InvalidJudgeRequestError`, never TypeError, never allow.
+
+Denials carry a content-free `AuditReason` (profile, surface, code) -- never a
+host, model name, alias or provider text.
+
+Disclosure: pure decision library, no network, no DB, no live caller yet (the
+evaluation worker's judge call path that will use `guarded_judge_call` is a
+separate dependency-gated task). UNWIRED until that caller exists.
+"""
+
+from __future__ import annotations
+
+import functools
+import weakref
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, TypeVar
+
+from packages.security.security_profile_enforcement import (
+    DESTINATION_KINDS,
+    SURFACES,
+    Destination,
+    EffectRequest,
+    RouteAuthorization,
+    RouteBlockedByProfileError,
+    RouteNotAuthorizedError,
+    SecurityProfileEnforcementError,
+    effective_profile,
+    enforce_effect,
+)
+
+__all__ = [
+    "JUDGE_SURFACE",
+    "ExternalJudgeError",
+    "InvalidJudgeRequestError",
+    "ExternalJudgeDeniedError",
+    "AuditReason",
+    "FallbackAlias",
+    "JudgeRoute",
+    "ProfilesInForce",
+    "JudgeAdmission",
+    "admit_judge_route",
+    "check_judge_request",
+    "guarded_judge_call",
+]
+
+JUDGE_SURFACE = "judge"
+_STRING_MAX_LENGTH = 200
+T = TypeVar("T")
+
+
+class ExternalJudgeError(Exception):
+    """Base; every subclass has a stable `code` for the API error body."""
+
+    code = "external_judge_error"
+
+
+class InvalidJudgeRequestError(ExternalJudgeError):
+    code = "external_judge_invalid_request"
+
+
+@dataclass(frozen=True)
+class AuditReason:
+    """Content-free: profile, surface and code only."""
+
+    profile: str
+    surface: str
+    code: str
+
+
+class ExternalJudgeDeniedError(ExternalJudgeError):
+    """A denial; `code` is one of the stable `external_judge_*` codes."""
+
+    def __init__(self, code: str, reason: AuditReason) -> None:
+        super().__init__(code)
+        self.code = code
+        self.reason = reason
+
+
+def _fields_guard(fn: Callable[..., T]) -> Callable[..., T]:
+    """An exact-type instance built with `object.__new__` can have unset fields: that is an
+    invalid request (the module's own error), never a raw AttributeError."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> T:
+        try:
+            return fn(*args, **kwargs)
+        except AttributeError:
+            raise InvalidJudgeRequestError("object has missing fields") from None
+
+    return wrapper
+
+
+def _exact_text(value: object, what: str) -> str:
+    if type(value) is not str or not value or value.isspace() or len(value) > _STRING_MAX_LENGTH:
+        raise InvalidJudgeRequestError(f"{what} must be a non-empty exact string")
+    return value
+
+
+@_fields_guard
+def _exact_destination(value: object, what: str) -> None:
+    """None (unknown) or a fully valid exact Destination. Re-asserts the FTF-0901
+    invariants (known kind, provider rule) because an exact-type instance built with
+    `object.__new__` skips its own `__post_init__`; a str subclass with a lying `__eq__`
+    must never reach `enforce_effect`'s `kind == "internal"`."""
+    if value is None:
+        return
+    if (
+        type(value) is not Destination
+        or type(value.kind) is not str
+        or type(value.provider) not in (str, type(None))
+    ):
+        raise InvalidJudgeRequestError(f"{what} must be an exact Destination or None")
+    try:
+        kind_index = DESTINATION_KINDS.index(value.kind)
+    except ValueError:
+        raise InvalidJudgeRequestError(f"{what} has an unknown kind") from None
+    if DESTINATION_KINDS[kind_index] == "internal":
+        if value.provider is not None:
+            raise InvalidJudgeRequestError(f"{what}: an internal destination has no provider")
+    else:
+        _exact_text(value.provider, f"{what} provider")
+
+
+MAX_FALLBACKS = 16
+
+
+@_fields_guard
+def _validate_route(route: object) -> JudgeRoute:
+    """Full validation of a route, independent of `__post_init__` (which an exact-type
+    instance built with `object.__new__` skips). Run on every route that is evaluated."""
+    if type(route) is not JudgeRoute:
+        raise InvalidJudgeRequestError("route must be a JudgeRoute")
+    _exact_text(route.judge_model_id, "judge model id")
+    _exact_destination(route.upstream, "upstream")
+    if type(route.fallbacks) is not tuple:
+        raise InvalidJudgeRequestError("fallbacks must be a tuple")
+    if len(route.fallbacks) > MAX_FALLBACKS:
+        raise InvalidJudgeRequestError(f"at most {MAX_FALLBACKS} fallbacks are allowed")
+    for fallback in route.fallbacks:
+        if type(fallback) is not FallbackAlias:
+            raise InvalidJudgeRequestError("each fallback must be a FallbackAlias")
+        _exact_text(fallback.alias, "fallback alias")
+        _exact_destination(fallback.upstream, "fallback upstream")
+    if type(route.fallbacks_enumerated) is not bool:
+        raise InvalidJudgeRequestError("fallbacks_enumerated must be a bool")
+    return route
+
+
+@dataclass(frozen=True)
+class FallbackAlias:
+    """A fallback alias and the upstream it resolves to (`None` = unknown)."""
+
+    alias: str
+    upstream: Destination | None
+
+
+@dataclass(frozen=True)
+class JudgeRoute:
+    """Everything the gateway could send a judge request to.
+
+    `upstream` is the primary's resolved destination; `fallbacks` is the
+    complete list of fallback aliases. `fallbacks_enumerated` must be True: a
+    route that cannot list its fallbacks cannot be proven closed.
+    """
+
+    judge_model_id: str
+    upstream: Destination | None
+    fallbacks: tuple[FallbackAlias, ...] = ()
+    fallbacks_enumerated: bool = False
+
+    def __post_init__(self) -> None:
+        _validate_route(self)
+
+
+@dataclass(frozen=True)
+class ProfilesInForce:
+    """The organization/project/job profiles read server-side by the caller."""
+
+    organization_profile: str
+    project_profile: str
+    job_profile: str | None = None
+
+
+@dataclass(frozen=True)
+class JudgeAdmission:
+    """Issued only by `admit_judge_route`; never constructed by a caller."""
+
+    route: JudgeRoute
+    profile: str
+
+
+def _snapshot(route: JudgeRoute) -> JudgeRoute:
+    """A fresh private copy built from validated values, sharing no mutable object with
+    the caller (a caller thread mutating its own frozen object after the check cannot
+    change what `send` receives)."""
+    validated = _validate_route(route)
+
+    def dest(value: Destination | None) -> Destination | None:
+        return None if value is None else Destination(value.kind, value.provider)
+
+    return JudgeRoute(
+        validated.judge_model_id,
+        dest(validated.upstream),
+        tuple(FallbackAlias(f.alias, dest(f.upstream)) for f in validated.fallbacks),
+        validated.fallbacks_enumerated,
+    )
+
+
+# id(admission) -> (weakref to the admission, the privately held admitted snapshot). The
+# admitted route lives here, not on the admission object, so `copy.copy` / `__setattr__`
+# forgery of an admission cannot carry or swap a route.
+_ADMITTED: dict[int, tuple[weakref.ReferenceType[JudgeAdmission], JudgeRoute]] = {}
+
+
+def _deny(code: str, profile: str) -> ExternalJudgeDeniedError:
+    return ExternalJudgeDeniedError(code, AuditReason(profile, JUDGE_SURFACE, code))
+
+
+@_fields_guard
+def _profile(profiles: object) -> str:
+    if type(profiles) is not ProfilesInForce:
+        raise InvalidJudgeRequestError("profiles must be ProfilesInForce")
+    for value in (profiles.organization_profile, profiles.project_profile, profiles.job_profile):
+        if value is not None and type(value) is not str:
+            raise InvalidJudgeRequestError("profile must be an exact string")
+    try:
+        return effective_profile(
+            profiles.organization_profile, profiles.project_profile, profiles.job_profile
+        )
+    except SecurityProfileEnforcementError:
+        raise InvalidJudgeRequestError("invalid security profile") from None
+
+
+def _check_destination(
+    destination: Destination | None,
+    profile: str,
+    authorization: RouteAuthorization | None,
+    external_code: str,
+) -> None:
+    if destination is None:
+        raise _deny("external_judge_upstream_unknown", profile)
+    try:
+        enforce_effect(
+            EffectRequest(
+                JUDGE_SURFACE,
+                destination,
+                profile,
+                profile,
+            ),
+            authorization,
+        )
+    except (RouteBlockedByProfileError, RouteNotAuthorizedError):
+        raise _deny(external_code, profile) from None
+
+
+@_fields_guard
+def _exact_authorization(authorization: RouteAuthorization) -> None:
+    """Exact-typed fields: a str/frozenset subclass with lying `__eq__`/`__contains__` must
+    never reach `enforce_effect`'s provider and surface comparisons."""
+    optional = (authorization.account, authorization.region, authorization.retention_terms)
+    if (
+        type(authorization.provider) is not str
+        or type(authorization.surfaces) is not frozenset
+        or any(type(surface) is not str for surface in authorization.surfaces)
+        or any(value is not None and type(value) is not str for value in optional)
+    ):
+        raise InvalidJudgeRequestError("authorization fields must be exact types")
+    # Re-assert FTF-0901's own invariants: `object.__new__` skips its __post_init__.
+    _exact_text(authorization.provider, "authorization provider")
+    _exact_text(authorization.approved_by, "authorization approver")
+    if not authorization.surfaces or any(
+        surface not in SURFACES for surface in authorization.surfaces
+    ):
+        raise InvalidJudgeRequestError("authorization surfaces must be known and non-empty")
+
+
+def _evaluate(
+    route: object,
+    profiles: object,
+    authorization: RouteAuthorization | None,
+) -> str:
+    route = _validate_route(route)
+    if authorization is not None and type(authorization) is not RouteAuthorization:
+        raise InvalidJudgeRequestError("authorization must be a RouteAuthorization")
+    if authorization is not None:
+        _exact_authorization(authorization)
+    profile = _profile(profiles)
+    _check_destination(route.upstream, profile, authorization, "external_judge_upstream_external")
+    if not route.fallbacks_enumerated:
+        raise _deny("external_judge_fallback_denied", profile)
+    for fallback in route.fallbacks:
+        try:
+            _check_destination(
+                fallback.upstream,
+                profile,
+                authorization,
+                "external_judge_fallback_denied",
+            )
+        except ExternalJudgeDeniedError as error:
+            raise _deny("external_judge_fallback_denied", error.reason.profile) from None
+    return profile
+
+
+def admit_judge_route(
+    route: JudgeRoute,
+    profiles: ProfilesInForce,
+    authorization: RouteAuthorization | None = None,
+) -> JudgeAdmission:
+    """Admission-time denial. Returns an issued admission or raises a coded error."""
+    profile = _evaluate(route, profiles, authorization)
+    snapshot = _snapshot(route)
+    admission = JudgeAdmission(_snapshot(snapshot), profile)
+    key = id(admission)
+
+    def _forget(_ref: object, k: int = key) -> None:
+        _ADMITTED.pop(k, None)
+
+    _ADMITTED[key] = (weakref.ref(admission, _forget), snapshot)
+    return admission
+
+
+def check_judge_request(
+    admission: object,
+    route: object,
+    profiles: ProfilesInForce,
+    authorization: RouteAuthorization | None = None,
+) -> JudgeRoute:
+    """Request-time denial against the profile in force *now* and the admitted route.
+    Returns the admitted route snapshot."""
+    profile = _profile(profiles)
+    entry = _ADMITTED.get(id(admission))
+    if type(admission) is not JudgeAdmission or entry is None:
+        raise _deny("external_judge_admission_missing", profile)
+    admitted = entry[1]
+    # Fully validate (exact types, every field) BEFORE any `==`: only then is the dataclass
+    # equality trustworthy. Then evaluate the snapshot that is returned and sent, not just
+    # the caller-held object.
+    current = _snapshot(_validate_route(route))
+    if current != admitted:
+        raise _deny("external_judge_route_changed", profile)
+    # Copy first, evaluate that very copy, return it: no gap between checking an object
+    # and reading it again (the registry snapshot is referenced by nothing else).
+    out = _snapshot(admitted)
+    _evaluate(out, profiles, authorization)
+    return out
+
+
+def guarded_judge_call(
+    admission: object,
+    route: object,
+    profiles: ProfilesInForce,
+    send: Callable[[JudgeRoute], T],
+    authorization: RouteAuthorization | None = None,
+) -> T:
+    """The only supported way to reach a judge client: check first, then `send`."""
+    if not callable(send):
+        raise InvalidJudgeRequestError("send must be callable")
+    # Hand over a private admitted snapshot, never the caller-held object.
+    return send(check_judge_request(admission, route, profiles, authorization))

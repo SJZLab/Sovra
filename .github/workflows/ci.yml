@@ -605,6 +605,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_0901.py
       - name: FTF-0908 negative-test proof (external provider denial -- profile/purpose/approval matrix, label never approves, content-free audit, zero network, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0908.py
+      - name: FTF-0907 negative-test proof (external judge denial -- private-project upstream/fallback denial at admission and request time, forged admission refused, zero network, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_0907.py
       - name: FTF-0903 negative-test proof (content-free telemetry -- bounded workflow/log/span schemas, no snippet/traceback/prompt leak, no DB required)
         run: uv run python3 tests/tasks/test_ftf_0903.py
       - name: FTF-0904 negative-test proof (log redaction -- secret headers/URLs/tokens/exception chains redacted at ingress and sink, redactor failure logs a constant marker only, fault-injected copies of the module, no DB required)
