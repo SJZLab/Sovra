@@ -2,7 +2,7 @@
 # mypy: disable-error-code="arg-type,attr-defined,return-value,assignment,method-assign,misc,func-returns-value"
 """FTF-0701-P2 real proof: `training_experiments` persistence against a live PostgreSQL 16.
 
-Runs migration 0039 (upgrade, downgrade -1, upgrade), then drives
+Runs migration 0040 (upgrade, downgrade -1, upgrade), then drives
 `app.training.training_experiment_store` as the restricted `sovra_app` role. Fixtures are built
 through the certified APIs: the FTF-0519 split-manifest flow (upload, quality report, propose,
 approve = lock), FTF-0301/0305 artifact create / accept license / mark ready, FTF-0403
@@ -1665,8 +1665,8 @@ def main() -> None:
     heads = split_proof._alembic(["heads"], migration_url)
     history = split_proof._alembic(["history"], migration_url)
     check(
-        f"exactly one Alembic head, with 0039 in the chain: {heads.stdout!r}",
-        heads.stdout.count("(head)") == 1 and "0039_training_experiments" in history.stdout,
+        f"exactly one Alembic head, with 0040 in the chain: {heads.stdout!r}",
+        heads.stdout.count("(head)") == 1 and "0040_training_experiments" in history.stdout,
     )
     table_after_cycle = split_proof._alembic(["current"], migration_url)
     check(

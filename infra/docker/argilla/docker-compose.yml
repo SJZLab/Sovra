@@ -1,0 +1,82 @@
+# FTF-R006-P1b round 4: the real Argilla stack on the owner-ruled components (Law 0 licence terms).
+#   - OpenSearch 2.19.x (Apache-2.0), chosen by the owner live 2026-10-14. NOT Elasticsearch (SSPL/ELv2).
+#   - Redis 7.2.x (BSD-3), the last line the licence ruling allows. NOT Redis 7.4+ (RSAL/SSPL).
+#   - argilla-server v2.8.0 plus its background-job worker, telemetry OFF.
+# All images are pinned by digest. No credential is committed: CI (and any local run) generates the
+# bootstrap values and exports them first, e.g.
+#   export ARGILLA_OWNER_API_KEY=$(openssl rand -hex 24) ARGILLA_OWNER_PASSWORD=$(openssl rand -hex 24) \
+#          ARGILLA_AUTH_SECRET_KEY=$(openssl rand -hex 32) ARGILLA_DB_PASSWORD=$(openssl rand -hex 16)
+# Run: docker compose -f infra/docker/argilla/docker-compose.yml up -d --wait
+name: sovra-argilla
+
+x-argilla-env: &argilla-env
+  ARGILLA_ENABLE_TELEMETRY: "0"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  ARGILLA_SEARCH_ENGINE: opensearch
+  ARGILLA_ELASTICSEARCH: http://opensearch:9200
+  ARGILLA_DATABASE_URL: postgresql://argilla:${ARGILLA_DB_PASSWORD:?set ARGILLA_DB_PASSWORD}@argilla-postgres:5432/argilla
+  ARGILLA_REDIS_URL: redis://redis:6379/0
+  ARGILLA_AUTH_SECRET_KEY: ${ARGILLA_AUTH_SECRET_KEY:?set ARGILLA_AUTH_SECRET_KEY}
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch@sha256:72fe2fc84be8295906b8efca020b46c58ed45c8da60cd9b8b49e1991e38e89a4 # 2.19.1
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis@sha256:9907ac0c435717b4d95697cb4d0ce77d100b1d21269a01a0ce66f27335184c38 # 7.2.13-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  argilla-postgres:
+    image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # 16-alpine
+    environment:
+      POSTGRES_USER: argilla
+      POSTGRES_PASSWORD: ${ARGILLA_DB_PASSWORD:?set ARGILLA_DB_PASSWORD}
+      POSTGRES_DB: argilla
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argilla -d argilla"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  argilla-server:
+    container_name: argilla-server
+    image: argilla/argilla-server@sha256:f1adc9cad9db5b01aa4e0cf413dca68e8b611565d51aead267fd165b4d01f3d0 # v2.8.0
+    depends_on:
+      opensearch: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      argilla-postgres: {condition: service_healthy}
+    environment:
+      <<: *argilla-env
+      USERNAME: sovra-ci-owner
+      PASSWORD: ${ARGILLA_OWNER_PASSWORD:?set ARGILLA_OWNER_PASSWORD}
+      API_KEY: ${ARGILLA_OWNER_API_KEY:?set ARGILLA_OWNER_API_KEY}
+      WORKSPACE: sovra-ci-default
+    ports:
+      - "127.0.0.1:6900:6900"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6900/api/v1/version', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  argilla-worker:
+    image: argilla/argilla-server@sha256:f1adc9cad9db5b01aa4e0cf413dca68e8b611565d51aead267fd165b4d01f3d0 # v2.8.0
+    depends_on:
+      argilla-server: {condition: service_healthy}
+    environment:
+      <<: *argilla-env
+    command: ["sh", "-c", "python -m argilla_server worker --num-workers 1"]

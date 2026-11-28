@@ -21,8 +21,8 @@ new `version` row with `parent_version`; a row is never edited or deleted.
 `status` accepts only `draft`: submission and admission belong to FTF-0801, which widens it by its
 own migration.
 
-Revision ID: 0039_training_experiments
-Revises: 0038_dataset_mapping_requests
+Revision ID: 0040_training_experiments
+Revises: 0039_eval_suite_sample_plans
 Create Date: 2026-11-27
 """
 
@@ -33,8 +33,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0039_training_experiments"
-down_revision = "0038_dataset_mapping_requests"
+revision = "0040_training_experiments"
+down_revision = "0039_eval_suite_sample_plans"
 branch_labels = None
 depends_on = None
 
