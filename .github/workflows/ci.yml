@@ -642,6 +642,12 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r004_p3.py
       - name: FTF-R004-P4 negative-test proof (Inspect log normalization, complete accounting and sealed-data guard over real P3 runs, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p4.py
+      - name: FTF-0701-P1 negative-test proof (typed training config schema -- exact allow-lists, bounds, enum variants, enablement, held-out roles, facts table, check order, hash properties, contract parity, META-LEAK, fault-injected module copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_0701_p1.py
+      - name: FTF-0701-P2 negative-test proof (training_experiments persistence -- migration 0040 rules with fault-injected copies and offline SQL, store authorization, idempotency, fact mapping, versions, constraint mapping, reads and integrity over SQLite; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_0701_p2.py
+      - name: FTF-0701 negative-test proof (training experiment routes -- 07 contract paths equal the router, 6-role truth table, strict 64 KiB body, every refusal code with its status on every operation, identical 404s, main.py wiring on the real app, fault-injected route and contract copies; no DB or network required)
+        run: uv run python3 tests/tasks/test_ftf_0701.py
       - name: Mutation gate negative-test proof (fault-injection gate catches weak tests, restores the tree)
         run: uv run python3 tests/tasks/test_mutation_gate.py
       - name: Product-truth check
@@ -4177,6 +4183,77 @@ jobs:
       - name: Prove the real model import fields + import-validation jobs evidence against the live database
         run: uv run python3 tests/integration/test_ftf_h010_p1_model_import.py
 
+  training-experiment-store-integration:
+    # FTF-0701-P2: real Postgres evidence for the training_experiments persistence slice
+    # (migration 0040): upgrade/downgrade/upgrade, SELECT+INSERT-only grant, ENABLE+FORCE RLS and
+    # the tenant_isolation policy, the held-out consistency CHECK and the BEFORE INSERT guard on raw
+    # INSERTs as sovra_app, and the store (create / replay / versions / reads / integrity) over
+    # fixtures built through the certified FTF-0519/0403/0301/0305/0500 APIs, with code and
+    # database faults that must each turn their scenario RED.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' training-experiment-store-integration ')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0701p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0701p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0701p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the training experiment store and migration 0040 against the live database
+        run: uv run python3 tests/integration/test_ftf_0701_p2_training_experiments.py
+
+  training-experiment-routes-integration:
+    # FTF-0701-P3: the three training/experiments operations on the REAL create_app() over
+    # PostgreSQL 16 as sovra_app, through the live FTF-0103A auth path (signed session cookie,
+    # database membership lookup, require_role): the 6-role truth table, 201/200/409 idempotency,
+    # every request-reachable refusal code with its status, held-out refusal with an independent
+    # count, identical 404s for missing / foreign / sibling-project ids, and schema-valid bodies.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' training-experiment-routes-integration ')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job already pinned
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf0701p3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf0701p3"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf0701p3
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - name: Prove the training experiment routes on the real app against the live database
+        run: uv run python3 tests/integration/test_ftf_0701_routes.py
+
   model-import-validation-integration:
     # FTF-H010-P2: real Postgres + a real local TLS gateway for the import-validation activity
     # (migration 0031): upgrade/downgrade/upgrade over a legacy P1 row, the 5x5 transition matrix,
@@ -4694,6 +4771,8 @@ jobs:
       - development-suite-import-integration
       - evaluation-suite-lock-gate-integration
       - inspect-target-bridge-integration
+      - training-experiment-store-integration
+      - training-experiment-routes-integration
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

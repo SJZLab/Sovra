@@ -242,16 +242,19 @@ def main() -> None:  # noqa: C901 - one linear live-database scenario
     if FAILURES:
         _report()
     heads = _alembic(migration_url, "heads")
+    history = _alembic(migration_url, "history")
     check(
         "G1",
-        f"exactly one head, 0039 ({heads.stdout.strip()})",
-        heads.stdout.split() == ["0039_eval_suite_sample_plans", "(head)"],
+        f"exactly one head, with 0039 on its chain ({heads.stdout.strip()})",
+        heads.stdout.count("(head)") == 1 and "0039_eval_suite_sample_plans" in history.stdout,
     )
 
     owner_engine = create_engine(migration_url)
     app_engine = create_engine(_app_role_url(migration_url, app_password))
 
-    down = _alembic(migration_url, "downgrade", "-1")
+    # Down to the revision before 0039 by name, so this still removes 0039 when later migrations
+    # exist (a relative `-1` would only remove the newest one).
+    down = _alembic(migration_url, "downgrade", "0038_dataset_mapping_requests")
     with owner_engine.connect() as conn:
         gone = conn.execute(
             text("SELECT to_regclass('public.evaluation_suite_sample_plans')")
@@ -263,7 +266,7 @@ def main() -> None:  # noqa: C901 - one linear live-database scenario
         ).scalar()
     check(
         "G1",
-        f"0039 round-trips: downgrade -1 drops the table, upgrade head restores it ({down.returncode}/{up.returncode})",
+        f"0039 round-trips: downgrade to 0038 drops the table, upgrade head restores it ({down.returncode}/{up.returncode})",
         down.returncode == 0 and up.returncode == 0 and gone is None and back is not None,
     )
 
