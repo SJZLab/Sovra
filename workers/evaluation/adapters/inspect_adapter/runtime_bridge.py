@@ -338,7 +338,20 @@ def _allowed_process(event: str, args: tuple[object, ...]) -> bool:
     git = shutil.which("git")
     if git is None or os.path.realpath(args[0]) != os.path.realpath(git):  # type: ignore[call-overload]
         return False
-    return tuple(args[1][1:]) in _ALLOWED_GIT_ARGS  # type: ignore[index]
+    if tuple(args[1][1:]) not in _ALLOWED_GIT_ARGS:  # type: ignore[index]
+        return False
+    # Git's configuration can run commands (core.fsmonitor, aliases, hooks). The allowed lookups
+    # may therefore only run exactly as Inspect starts them: no cwd or env override, no GIT_*
+    # variable in the inherited environment, from the run's private workspace, with no
+    # repository discoverable from it.
+    if args[2] is not None or args[3] is not None:
+        return False
+    if any(name.startswith("GIT_") for name in os.environ):
+        return False
+    cwd = Path.cwd().resolve()
+    if not _ACTIVE_GUARDS or any(guard.workspace != cwd for guard in _ACTIVE_GUARDS):
+        return False
+    return not any((folder / ".git").exists() for folder in (cwd, *cwd.parents))
 
 
 def _connected_non_local_sockets() -> int:
@@ -393,8 +406,10 @@ class _NetworkGuard:
 
     * an interpreter audit hook refusing every non-AF_UNIX connect/sendto/sendmsg, every name
       lookup, and every process start or `ctypes` foreign call except the pinned Inspect
-      release's own read-only git lookups -- raised from the C implementation, so it sees the
-      raw `_socket` type, `os.system`, `os.posix_spawn` and `ctypes` too;
+      release's own read-only git lookups (exact argv, no cwd/env override, no GIT_* variable,
+      from the run's workspace with no repository above it) -- raised from the C
+      implementation, so it sees the raw `_socket` type, `os.system`, `os.posix_spawn` and
+      `ctypes` too. GIT_* variables are removed from the environment for the run;
     * a run refuses to START while the process holds any connected non-AF_UNIX Python socket
       (plain, raw `_socket` or TLS): a socket opened before the run, such as a keep-alive HTTPS
       pool, could otherwise carry data out through `_socket`/`ssl` sends no Python patch sees.
@@ -410,7 +425,9 @@ class _NetworkGuard:
     def __init__(self) -> None:
         self.attempts = 0
         self.events: list[str] = []
+        self.workspace: Path | None = None  # set once the run's private workspace exists
         self._lock = threading.Lock()
+        self._git_environment: dict[str, str] = {}
 
     def record(self, event: str) -> None:
         with self._lock:
@@ -421,6 +438,12 @@ class _NetworkGuard:
         if _connected_non_local_sockets():
             raise BridgeError(CODE_OUTBOUND, "socket open before the run")
         _install_audit_hook()
+        # GIT_* variables (GIT_DIR, GIT_CONFIG_*) can redirect Inspect's own read-only git
+        # lookups to a repository or configuration that runs a command: they are removed for
+        # the run and restored after it, and a git call that still sees one is refused
+        self._git_environment = {k: v for k, v in os.environ.items() if k.startswith("GIT_")}
+        for name in self._git_environment:
+            del os.environ[name]
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.append(self)
         return self
@@ -428,6 +451,7 @@ class _NetworkGuard:
     def __exit__(self, *_exc: object) -> None:
         with _GUARD_LOCK:
             _ACTIVE_GUARDS.remove(self)
+        os.environ.update(self._git_environment)
 
 
 # --------------------------------------------------------------------------- run state / result
@@ -866,6 +890,7 @@ def _guarded_run(
         name=f"sovra-{case_set.suite_id}",
     )
     with _private_workspace(workspace_parent) as log_dir, _chdir(log_dir):
+        guard.workspace = log_dir.resolve()
         logs = inspect_eval(
             task,
             model=_MODEL_LESS,
