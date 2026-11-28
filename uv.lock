@@ -2915,6 +2915,12 @@ requires-dist = [{ name = "inspect-ai", specifier = "==0.3.269" }]
 name = "sovra-worker-training"
 version = "0.0.0"
 source = { virtual = "workers/training" }
+dependencies = [
+    { name = "tokenizers" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tokenizers", specifier = ">=0.20.3,<0.21" }]
 
 [[package]]
 name = "sqlalchemy"
