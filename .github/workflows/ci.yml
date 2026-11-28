@@ -2279,6 +2279,24 @@ jobs:
           bao version
       - name: Prove the Argilla review queue against the live database and live OpenBao
         run: uv run python3 tests/integration/test_argilla_review_queue.py
+      - name: Generate the Argilla bootstrap credentials (never committed)
+        run: |
+          for name in ARGILLA_OWNER_API_KEY ARGILLA_OWNER_PASSWORD ARGILLA_AUTH_SECRET_KEY ARGILLA_DB_PASSWORD; do
+            value="$(openssl rand -hex 24)"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          done
+      - name: Start the real Argilla stack (OpenSearch 2.19.x, Redis 7.2.x, server, worker)
+        run: docker compose -f infra/docker/argilla/docker-compose.yml up -d --wait --wait-timeout 300
+      - name: Prove the Argilla review queue against the real argilla-server (own-key responses, cross-workspace refusal, real drift, real outage)
+        run: uv run python3 tests/integration/test_argilla_real_review_queue.py
+        env:
+          ARGILLA_BASE_URL: http://127.0.0.1:6900
+          ARGILLA_OWNER_API_KEY: ${{ env.ARGILLA_OWNER_API_KEY }}
+          ARGILLA_SERVER_CONTAINER: argilla-server
+      - name: Argilla stack logs (on failure)
+        if: failure()
+        run: docker compose -f infra/docker/argilla/docker-compose.yml logs --no-color --tail 200
 
   target-source-snapshot-integration:
     # FTF-04A07: real Postgres TargetSourceSnapshot evidence (Section
