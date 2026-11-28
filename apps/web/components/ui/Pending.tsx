@@ -32,7 +32,13 @@ export function PendingView({ phase, label, onCancel, value, locale = "en" }: Pe
   const determinate = typeof value === "number" && Number.isFinite(value);
   const percent = determinate ? Math.min(100, Math.max(0, value as number)) : 0;
   return (
-    <div role="status" aria-live="polite" lang={resolveLocale(locale)} dir={dirFor(locale)}>
+    <div
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      lang={resolveLocale(locale)}
+      dir={dirFor(locale)}
+    >
       <span>{label}</span>
       {phase === "progress" ? (
         <>

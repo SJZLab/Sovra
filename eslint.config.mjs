@@ -9,7 +9,7 @@ export default tseslint.config(
     // urllib3, which ships a vendored .js worker file inside its wheel) --
     // vendored third-party content, not this repo's own TS/JS source, same
     // category as node_modules/dist/.next above.
-    ignores: ["**/dist/**", "**/node_modules/**", "**/.next/**", "**/.venv/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.next/**", "**/.venv/**", "**/next-env.d.ts"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

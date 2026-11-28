@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 // passWithNoTests stays false (Vitest's own default) so an empty test run
 // fails validation rather than silently reporting success.
 export default defineConfig({
+  // Next.js rewrites apps/web/tsconfig.json to jsx "preserve" on every build. Vitest must still
+  // transform TSX to runnable JS, so JSX is compiled with the automatic runtime here (Vite 8 uses oxc).
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
     include: [
       "apps/web/src/**/*.test.ts",

@@ -78,6 +78,12 @@ export interface GitHubAccessibleRepositorySelectorProps {
   organizationId: string;
   projectId: string;
   onSelect?: (repository: GitHubRepositorySummary) => void;
+  /**
+   * Same selection, but also hands the parent the credential that listed the repository, so the next
+   * step (the branch selector) can reuse it without asking again. The credential stays in memory: it
+   * is never written to a URL or to storage. `onSelect` keeps its single-argument contract.
+   */
+  onSelectWithCredential?: (repository: GitHubRepositorySummary, credential: string) => void;
   locale?: Locale;
 }
 
@@ -146,6 +152,7 @@ function RepositorySelector({
   organizationId,
   projectId,
   onSelect,
+  onSelectWithCredential,
   locale = "en",
 }: GitHubAccessibleRepositorySelectorProps) {
   const [credential, setCredential] = useState("");
@@ -236,6 +243,7 @@ function RepositorySelector({
   function handleSelect(repository: GitHubRepositorySummary) {
     setSelectedRepositoryIdentity(repository.repository_identity);
     onSelect?.(repository);
+    onSelectWithCredential?.(repository, listCredential.current);
   }
 
   function handleDifferentToken() {

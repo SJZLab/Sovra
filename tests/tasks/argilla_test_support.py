@@ -19,6 +19,13 @@ task never calls (confirmed by a real `pip install argilla-server==2.8.0`
 attempt during this task's own development), a materially heavier,
 separately-scoped infrastructure investment disclosed in this task's own
 submission rather than silently worked around.
+
+Round 2 (FTF-R006-P1b): every route now checks the real `X-Argilla-Api-Key`
+header against this server's own configured `api_key` and returns 401 on a
+missing or wrong key, same as the real server would -- round 1's fake
+accepted any key (or none), which is exactly why the real-Argilla CI job in
+`.github/workflows/ci.yml` exists alongside this fake: an auth bug this
+fake could not have caught either way is still caught there.
 """
 
 from __future__ import annotations
@@ -38,14 +45,19 @@ _API = "/api/v1"
 
 
 class FakeArgillaServer:
-    def __init__(self) -> None:
+    def __init__(self, *, api_key: str = "owner-provision-key") -> None:
         self.workspaces: dict[str, dict[str, str]] = {}  # name -> {id, name}
         self.users: dict[str, dict[str, Any]] = {}  # id -> {id, username, role, api_key}
         self.memberships: set[tuple[str, str]] = set()  # (workspace_id, user_id)
         self.healthy = True
+        # The real argilla-server rejects every `/api/v1` request whose `X-Argilla-Api-Key`
+        # header does not match a real, active user's key (the provisioning/"owner" key, here) --
+        # an earlier version of this fake accepted any key (or none), which is exactly the kind of
+        # evidence gap PR #968's L2 review flagged ("the fake server never checks the API key").
+        self.api_key = api_key
         self.requests: list[tuple[str, str]] = []
         # FTF-R006-P2 state: datasets, records and responses, plus an owner identity.
-        self.owner_key = "owner-provision-key"
+        self.owner_key = api_key
         self.datasets: dict[str, dict[str, Any]] = {}
         self.records: dict[str, dict[str, Any]] = {}
         self.responses: dict[str, dict[str, Any]] = {}
@@ -55,6 +67,9 @@ class FakeArgillaServer:
         server = self
 
         class Handler(BaseHTTPRequestHandler):
+            def _authorized(self) -> bool:
+                return self.headers.get("X-Argilla-Api-Key") == server.api_key
+
             def _body(self) -> dict[str, Any]:
                 length = int(self.headers.get("Content-Length") or 0)
                 raw = self.rfile.read(length) if length else b"{}"
@@ -77,6 +92,9 @@ class FakeArgillaServer:
                     self._detail(503, "server stopped")
                     return
                 if server._review_route(self, "GET"):
+                    return
+                if not self._authorized():
+                    self._detail(401, "Unauthorized")
                     return
                 if self.path == f"{_API}/status":
                     self._reply(
@@ -116,6 +134,9 @@ class FakeArgillaServer:
                     return
                 body = self._body()
                 if server._review_route(self, "POST", body):
+                    return
+                if not self._authorized():
+                    self._detail(401, "Unauthorized")
                     return
                 if self.path == f"{_API}/workspaces":
                     name = body.get("name")
@@ -188,6 +209,9 @@ class FakeArgillaServer:
                 if not server.healthy:
                     self._detail(503, "server stopped")
                     return
+                if not self._authorized():
+                    self._detail(401, "Unauthorized")
+                    return
                 parts = self.path.split("/")
                 # ['', 'api', 'v1', 'workspaces', '{wid}', 'users', '{uid}']
                 if len(parts) == 7 and parts[3] == "workspaces" and parts[5] == "users":
@@ -206,6 +230,8 @@ class FakeArgillaServer:
                             self._detail(404, "user not found")
                             return
                         del server.users[user_id]
+                        # The real server cascades a deleted user's workspace memberships.
+                        server.memberships = {m for m in server.memberships if m[1] != user_id}
                     self._reply(200, {})
                     return
                 self._detail(404, "not found")

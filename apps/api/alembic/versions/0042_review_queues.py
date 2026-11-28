@@ -32,8 +32,8 @@ every hash pinned to 64 lowercase hex by CHECK, composite foreign keys that carr
 `organization_id` so a row can never reference a parent in another organization even under a raw
 INSERT.
 
-Revision ID: 0036_review_queues
-Revises: 0034_argilla_review_identity
+Revision ID: 0042_review_queues
+Revises: 0041_argilla_revoke_completion
 Create Date: 2026-10-22
 """
 
@@ -44,8 +44,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0036_review_queues"
-down_revision = "0034_argilla_review_identity"
+revision = "0042_review_queues"
+down_revision = "0041_argilla_revoke_completion"
 branch_labels = None
 depends_on = None
 

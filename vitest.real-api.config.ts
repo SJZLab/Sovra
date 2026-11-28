@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config";
 // the environment, so they are NOT part of the default vitest include
 // (vitest.config.ts) and never run -- or skip -- without that harness.
 export default defineConfig({
+  // Next.js rewrites apps/web/tsconfig.json to jsx "preserve"; see vitest.config.ts.
+  oxc: { jsx: { runtime: "automatic" } },
   test: {
     include: ["apps/web/tests/real_api/**/*.realapi.ts"],
     passWithNoTests: false,
