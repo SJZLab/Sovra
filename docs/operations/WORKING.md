@@ -29,8 +29,13 @@ rules where they differ. The Laws and hard stops in CLAUDE.md are unchanged.
 6. **Blocked.** The Control plane decides technical questions the same day under the
    default-resolution rule. Only a CLAUDE.md hard stop goes to the owner, as one dated line in
    QUEUE.md "Owner actions — current".
-7. **Fresh base, only when it matters.** A PR merges on a green `ci-verdict` for a head that has
-   seen every code change on main. If main has only gained tracker files since (QUEUE.md,
-   PROGRESS.md, docs/certifications/, docs/progress/), no re-run is needed. A tracker-only PR
-   merges on its own green run.
+7. **Fresh base, only when it matters.** A green `ci-verdict` on the PR's head is enough to merge
+   unless main has gained, since that head: (a) a change to a file the PR also changes (ci.yml
+   excepted: PRs add separate job blocks, and a textual conflict refuses the merge anyway); (b) an
+   Alembic migration while the PR adds one too (two heads); or (c) a suite-wide input
+   (pyproject.toml, uv.lock, package.json, pnpm-lock.yaml, pnpm-workspace.yaml,
+   scripts/ci_policy.py). Only then merge main, push once and wait for the new run. Tracker files
+   never count. Unrelated code landing on main does not invalidate a green verdict (2026-11-27: one
+   PR went green eight times and could not merge under the old wording); the nightly full run on
+   main covers cross-effects.
 8. **Capacity.** About five workers at once, on tasks with different parents.
