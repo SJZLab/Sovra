@@ -392,6 +392,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h011_p1_service.py
       - name: FTF-H011-P2 negative-test proof (dataset mapping persistence, no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011_p2.py
+      - name: FTF-H011-P6 negative-test proof (XLSX mapping probe/preview, no DB required)
+        run: uv run python3 tests/tasks/test_ftf_h011_p6.py
       - name: FTF-H011-P5 negative-test proof (grouped_multi_row rows assembled into one record per group with incomplete_group quarantine for gaps / duplicate or earlier orders / non-contiguous groups / no closing assistant turn / unreadable rows, record_too_large bounding one group, invalid_order_key, mapping_unsupported outside the CSV importer and at the store, exact label_enum_map for language / task_category only; no DB required)
         run: uv run python3 tests/tasks/test_ftf_h011_p5.py
       - name: FTF-H011-P3 negative-test proof (dataset mapping routes and contract, no DB required)
@@ -636,6 +638,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_h010_p4.py
       - name: FTF-R004-P3 negative-test proof (pinned Inspect worker + case adapter + native runtime bridge over the real isolated tool backend, no DB/network required)
         run: uv run python3 tests/tasks/test_ftf_r004_p3.py
+      - name: FTF-R004-P4 negative-test proof (Inspect log normalization, complete accounting and sealed-data guard over real P3 runs, no DB/network required)
+        run: uv run python3 tests/tasks/test_ftf_r004_p4.py
       - name: FTF-0701-P1 negative-test proof (typed training config schema -- exact allow-lists, bounds, enum variants, enablement, held-out roles, facts table, check order, hash properties, contract parity, META-LEAK, fault-injected module copies; no DB or network required)
         run: uv run python3 tests/tasks/test_ftf_0701_p1.py
       - name: FTF-0701-P2 negative-test proof (training_experiments persistence -- migration 0040 rules with fault-injected copies and offline SQL, store authorization, idempotency, fact mapping, versions, constraint mapping, reads and integrity over SQLite; no DB or network required)
