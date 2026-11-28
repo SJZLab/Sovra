@@ -2454,6 +2454,57 @@ def test_d_clean_and_faults() -> None:
     )
 
 
+def test_d_deleted_reviewer_is_withdrawn_not_missing() -> None:
+    """FTF-R006-P2 r2: revoke now DELETES the reviewer's real Argilla user (FTF-R006-P1b
+    certifier advisory 2), and the server cascades that user's responses away. The Factory keeps
+    the row as provenance, but reconcile must not call the vanished response `response_missing`
+    once `argilla_user_deleted_at` is set -- and must still call it missing while it is not."""
+    with env_of(records=3) as env:
+        queue = ready_queue(env)
+        alice = env.reviewer("alice")
+        env.respond(queue.id, rid(env, 0), alice, "accept", "ok")
+        env.server.delete_response(next(iter(env.server.responses)))
+        env.sql(
+            "UPDATE argilla_reviewer_identities SET status = 'revoked' WHERE id = :i",
+            i=alice.identity_id,
+        )
+        check(
+            "D9",
+            "a revoked reviewer whose Argilla user is NOT yet deleted: a vanished response is drift",
+            [f.reason for f in env.reconcile(queue.id)] == ["response_missing"],
+        )
+    with env_of(records=3) as env:
+        queue = ready_queue(env)
+        alice = env.reviewer("alice")
+        env.respond(queue.id, rid(env, 0), alice, "accept", "ok")
+        env.server.delete_response(next(iter(env.server.responses)))
+        env.sql(
+            "UPDATE argilla_reviewer_identities SET status = 'revoked', "
+            "argilla_user_deleted_at = '2026-11-28T00:00:00+00:00' WHERE id = :i",
+            i=alice.identity_id,
+        )
+        check(
+            "D9",
+            "a revoked reviewer whose Argilla user was deleted: the cascaded-away response is not drift",
+            env.reconcile(queue.id) == () and drifted(env) == {},
+        )
+        check(
+            "D9",
+            "the Factory keeps the withdrawn reviewer's response row (provenance)",
+            env.sql("SELECT count(*) FROM review_responses")[0][0] == 1,
+        )
+        bob = env.reviewer("bob")
+        env.respond(queue.id, rid(env, 1), bob, "accept", "ok")
+        env.server.delete_response(
+            next(k for k, v in env.server.responses.items() if v["user_id"] == bob.user.id)
+        )
+        check(
+            "D9",
+            "an ACTIVE reviewer's vanished response is still response_missing",
+            [f.reason for f in env.reconcile(queue.id)] == ["response_missing"],
+        )
+
+
 def test_d_foreign_sticky_outage() -> None:
     with env_of(records=3) as env:
         queue = ready_queue(env)

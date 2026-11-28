@@ -62,11 +62,12 @@ sys.path.insert(0, str(ROOT / "tests" / "tasks"))
 sys.path.insert(0, str(ROOT / "tests" / "integration"))
 
 import test_ftf_0519_p1_split_manifests as T  # noqa: E402 -- the real-store seeding helpers
-from argilla_test_support import FakeArgillaServer  # noqa: E402
+import argilla_real_support as real_argilla  # noqa: E402
 from packages.integrations.argilla import review_mapping as rm  # noqa: E402
 from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     OpenBaoConfig,
     build_secret_ref,
+    resolve_secret_ref,
 )
 from sqlalchemy import create_engine, text  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
@@ -179,7 +180,9 @@ def rows_n(n: int, tag: str = "r") -> list[dict[str, Any]]:
 
 
 class World:
-    def __init__(self, env: Any, openbao: OpenBaoConfig | None, server: FakeArgillaServer) -> None:
+    def __init__(
+        self, env: Any, openbao: OpenBaoConfig | None, server: real_argilla.RealArgillaServer
+    ) -> None:
         self.env = env
         self.openbao = openbao
         self.server = server
@@ -199,6 +202,7 @@ class World:
             client=self.client,
         )
         self.reviewers: dict[str, Any] = {}
+        self.seen_keys: list[str] = [server.owner_key]
 
     def _make_binding(self) -> uuid.UUID:
         with Session(self.env.owner) as session:
@@ -304,6 +308,10 @@ class World:
                 client=self.client,
             )
             self.reviewers[subject] = SimpleNamespace(subject=subject, identity=identity)
+            if self.openbao is not None:
+                self.seen_keys.append(
+                    resolve_secret_ref(identity.credential_secret_ref, config=self.openbao)
+                )
         return self.reviewers[subject]
 
     def respond(
@@ -344,6 +352,14 @@ class World:
             actor_id="reconciler-1",
             request_id=f"req-{uuid.uuid4().hex[:8]}",
         )
+
+    def queue_records(self, queue: Any) -> dict[str, dict[str, Any]]:
+        """The real Argilla records of one queue's dataset, by Factory record id."""
+        return {
+            r["external_id"]: r
+            for r in self.server.records.values()
+            if str(r["dataset_id"]) == queue.argilla_dataset_id
+        }
 
     def state(self) -> tuple[int, ...]:
         e = self.env
@@ -492,8 +508,7 @@ def section_create_and_refusals(world: World) -> dict[str, Any]:
     )
     check(
         "I2: the records are really on the Argilla server with the Factory ids",
-        sorted(r["external_id"] for r in world.server.records.values())
-        == sorted(i[0] for i in items),
+        sorted(world.queue_records(queue)) == sorted(i[0] for i in items),
     )
     audit = env.rows(
         "SELECT action, actor_id, details_json::text FROM audit_events WHERE resource_id = :r",
@@ -616,8 +631,8 @@ def section_create_and_refusals(world: World) -> dict[str, Any]:
 def section_resume_and_race(world: World) -> None:
     env = world.env
     resume = world.dataset("resume", "training", rows_n(6, "resume"))
+    state = world.state()  # read while the real server is up; compared after it restarts
     world.server.stop()
-    state = world.state()
     check(
         "I4: Argilla down is argilla_unavailable",
         code_of(lambda: world.create(resume)) == "argilla_unavailable",
@@ -629,8 +644,8 @@ def section_resume_and_race(world: World) -> None:
         "I4: after the outage the queue is 'building' with no Argilla dataset (never 'ready')",
         building == [("building", None)],
     )
-    check("I4: the outage created no Argilla record", world.state()[4] == state[4])
     world.server.start()
+    check("I4: the outage created no Argilla record", world.state()[4] == state[4])
     done = world.create(resume)
     check(
         "I4: the replay completes the same queue",
@@ -701,7 +716,8 @@ def section_responses(world: World, built: dict[str, Any]) -> None:
     alice, bob = world.reviewer("alice"), world.reviewer("bob")
     first = world.respond(queue, 0, train, alice, "accept", "good")
     check("I5: a first response has row_version 1", first.row_version == 1)
-    stored = next(r for r in world.server.responses.values())
+    item0 = world.queue_records(queue)[f"{train.id}:0"]
+    stored = next(r for r in item0["responses"])
     check(
         "I5: the Argilla response author is the mapped annotator",
         stored["user_id"] == alice.identity.argilla_user_id,
@@ -819,6 +835,25 @@ def section_responses(world: World, built: dict[str, Any]) -> None:
         code_of(lambda: world.respond(queue, 0, train, alice, "accept", "", expected_version=2))
         == "reviewer_not_authorized",
     )
+    check(
+        "I5: revoke deleted the reviewer's real Argilla user, and with it the real response",
+        alice.identity.argilla_user_id not in world.server.users
+        and not world.queue_records(queue)[f"{train.id}:0"]["responses"],
+    )
+    check(
+        "I5: the Factory keeps the revoked reviewer's response row (provenance)",
+        int(
+            env.scalar(
+                "SELECT count(*) FROM review_responses WHERE identity_id = :i", i=alice.identity.id
+            )
+        )
+        == 1,
+    )
+    findings = world.reconcile(queue)
+    check(
+        f"I6: a revoked-and-deleted reviewer's cascaded-away response is not drift: {findings}",
+        findings == (),
+    )
 
 
 def section_drift(world: World, built: dict[str, Any]) -> None:
@@ -830,11 +865,7 @@ def section_drift(world: World, built: dict[str, Any]) -> None:
     bob = world.reviewer("bob")
     world.respond(queue, 0, excl, bob, "accept", "ok")
     check("I6: a recorded response is not drift", world.reconcile(queue) == ())
-    records = {
-        r["external_id"]: r
-        for r in world.server.records.values()
-        if r["dataset_id"] == queue.argilla_dataset_id
-    }
+    records = world.queue_records(queue)
     target = records[f"{excl.id}:2"]
     world.server.edit_record_fields(
         target["id"], "conversation", "edited behind the Factory's back"
@@ -869,8 +900,8 @@ def section_drift(world: World, built: dict[str, Any]) -> None:
         "I6: a drifted item takes no response",
         code_of(lambda: world.respond(queue, 2, excl, bob)) == "review_item_drift",
     )
+    state = world.state()  # read while the real server is up; compared after it restarts
     world.server.stop()
-    state = world.state()
     check(
         "I6: an outage during reconcile is argilla_unavailable",
         code_of(lambda: world.reconcile(queue)) == "argilla_unavailable",
@@ -1199,7 +1230,16 @@ def section_database_protections(world: World, built: dict[str, Any]) -> None:
 
 def section_secrecy(world: World) -> None:
     env = world.env
-    keys = [u["api_key"] for u in world.server.users.values()] + [world.server.owner_key]
+    keys = sorted(
+        {u["api_key"] for u in world.server.users.values()} | set(world.seen_keys)
+    )
+    check(
+        "I3: the sealed-suite canary is not findable on the real server, by full scan or by the "
+        "real records/search endpoint, for the owner key or ANY annotator key",
+        not world.server.holds_bytes(
+            CANARY.encode(), annotator_keys=real_argilla.annotator_keys(world.server.users)
+        ),
+    )
     for table in (
         "review_queues",
         "review_items",
@@ -1258,7 +1298,7 @@ def main() -> None:
     openbao: OpenBaoConfig | None = None
     vault = LocalVault()
     saved = (identity_store.store_secret_ref, store.resolve_secret_ref)
-    server = FakeArgillaServer()
+    server = real_argilla.from_env()
     try:
         if binary is not None:
             bao_process = subprocess.Popen(

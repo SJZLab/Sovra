@@ -443,6 +443,8 @@ jobs:
         run: uv run python3 tests/tasks/test_ftf_r006_p1_client.py
       - name: "FTF-R006-P1b negative-test proof (Argilla review scope/identity store - revoke-first, post-write recheck, outage pins, no DB required)"
         run: uv run python3 tests/tasks/test_ftf_r006_p1b.py
+      - name: "FTF-R006-P2 negative-test proof (Argilla review queue and responses - refusals, row_version, drift, no network or DB required)"
+        run: uv run python3 tests/tasks/test_ftf_r006_p2.py
       - name: FTF-1506 negative-test proof (Dependency scanning, no network required)
         run: uv run python3 tests/tasks/test_ftf_1506.py
       - name: FTF-04A17 negative-test proof (DiscoveredAgentCandidate schema/API, no DB required)
@@ -2210,6 +2212,78 @@ jobs:
           ARGILLA_OWNER_API_KEY: ${{ env.ARGILLA_OWNER_API_KEY }}
       - name: Prove the review-scope / reviewer-identity / workspace-membership store against the real Argilla server
         run: uv run python3 tests/integration/test_argilla_real_store.py
+        env:
+          ARGILLA_OWNER_API_KEY: ${{ env.ARGILLA_OWNER_API_KEY }}
+          ARGILLA_SERVER_CONTAINER: argilla-server
+      - name: Argilla stack logs (on failure)
+        if: failure()
+        run: docker compose -f infra/docker/argilla/docker-compose.yml logs --no-color --tail 200
+
+  argilla-review-queue-integration:
+    # FTF-R006-P2: the review queue and concurrency-controlled responses
+    # (apps/api/app/reviews/review_queue_store.py, packages/integrations/argilla/review_mapping.py,
+    # migrations 0041/0042) on the REAL argilla-server v2.8.0 stack from
+    # infra/docker/argilla/docker-compose.yml (OpenSearch 2.19.x, Redis 7.2.x, worker, telemetry
+    # OFF, CI-generated bootstrap credentials), next to a real Postgres 16 (Sovra's own, migrated,
+    # run as the restricted sovra_app role) and a real OpenBao built from the pinned commit --
+    # tests/integration/test_argilla_review_queue.py: a queue built from a real dataset version;
+    # sealed / split-locked / unclear / revoked-grant refusals writing nothing to PostgreSQL or
+    # Argilla, the sealed canary absent from real records/search for the owner and every annotator;
+    # idempotent replay, crash-resume and an 8-thread create race; responses written with the
+    # reviewer's own OpenBao-resolved key; row_version under real SELECT ... FOR UPDATE (8-thread
+    # race: one winner, one Argilla write); real Argilla-side edits and owner responses marked
+    # drift; a really stopped server (`docker stop`) -> argilla_unavailable with the Factory row
+    # unchanged; RLS / trigger / cross-tenant refusals; no API key in any table or audit row.
+    # Its own job (own Postgres service) because the migration chain creates the cluster-wide
+    # sovra_app role, so it cannot share a cluster with argilla-real-server-integration.
+    needs: classify
+    if: needs.classify.outputs.scope == 'full' || contains(needs.classify.outputs.focus, ' argilla-review-queue-integration ')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571 # postgres:16-alpine (amd64) -- same digest every prior integration job pins; Sovra's own database, unrelated to Argilla's own
+        env:
+          POSTGRES_USER: sovra_migrate
+          POSTGRES_PASSWORD: sovra_migrate_ci_only
+          POSTGRES_DB: sovra_ftf_r006_p2
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sovra_migrate -d sovra_ftf_r006_p2"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SOVRA_DATABASE_URL: postgresql+psycopg://sovra_migrate:sovra_migrate_ci_only@localhost:5432/sovra_ftf_r006_p2
+      SOVRA_APP_DB_PASSWORD: sovra_app_ci_only
+      ARGILLA_BASE_URL: http://127.0.0.1:6900
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+      - name: Install Python dependencies (apps/api workspace member)
+        run: uv sync --all-packages
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.23'
+      - name: Build the real OpenBao binary (pinned commit, the owner-selected secret backend)
+        run: |
+          git clone --filter=blob:none https://github.com/openbao/openbao.git /tmp/openbao-src
+          cd /tmp/openbao-src
+          git checkout e98dc184344fe84ee4e69965ac3f4217d5b6a45d
+          go build -o /usr/local/bin/bao .
+          bao version
+      - name: Generate the Argilla bootstrap credentials (never committed)
+        run: |
+          for name in ARGILLA_OWNER_API_KEY ARGILLA_OWNER_PASSWORD ARGILLA_AUTH_SECRET_KEY ARGILLA_DB_PASSWORD; do
+            value="$(openssl rand -hex 24)"
+            echo "::add-mask::${value}"
+            echo "${name}=${value}" >> "$GITHUB_ENV"
+          done
+      - name: Start the real Argilla stack (OpenSearch 2.19.x, Redis 7.2.x, server, worker)
+        run: docker compose -f infra/docker/argilla/docker-compose.yml up -d --wait --wait-timeout 300
+      - name: Prove the review queue and concurrency-controlled responses against the real Argilla server, live Postgres and live OpenBao
+        run: uv run python3 tests/integration/test_argilla_review_queue.py
         env:
           ARGILLA_OWNER_API_KEY: ${{ env.ARGILLA_OWNER_API_KEY }}
           ARGILLA_SERVER_CONTAINER: argilla-server
@@ -4567,6 +4641,7 @@ jobs:
       - dataset-source-connection-integration
       - argilla-identity-scope-integration
       - argilla-real-server-integration
+      - argilla-review-queue-integration
       - target-application-connection-integration
       - target-source-snapshot-integration
       - github-repository-listing-integration
