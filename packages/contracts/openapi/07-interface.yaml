@@ -8,21 +8,162 @@ info:
     `packages/contracts/jsonschema/07-domain.schema.json`). FTF-0701 ("Training
     config schema") is this phase's contract owner (`contract_owner: FTF-0701`).
 
-    This file deliberately declares **zero HTTP paths** in FTF-0701-P1, the
-    FTF-0902 precedent: P1 is the pure typed schema and its frozen domain
-    contract (`workers/training/training_config_schema.py`). The
-    `training/experiments` paths arrive with FTF-0701-P3 when the route is
-    implemented and wired in `apps/api/app/main.py`. Every other phase-07 route
-    (`/training/estimate`, `/training/runs/{id}`, `/metrics`, `/cancel`,
-    `/engine`) belongs to its own owner task (FTF-0703, FTF-0711/0717, FTF-0718,
-    FTF-R003), which extends this file under the same `contracts:07` lock.
-    Declaring any of them now would be a placeholder endpoint (Law 11).
+    This file declares exactly the three `training/experiments` operations
+    FTF-0701-P3 implements and mounts in `apps/api/app/main.py`
+    (`apps/api/app/training/training_experiment_routes.py`): create, list and
+    get. FTF-0701-P1 froze the domain contract with zero paths (the FTF-0902
+    precedent). Every other phase-07 route (`/training/estimate`,
+    `/training/runs/{id}`, `/metrics`, `/cancel`, `/engine`) belongs to its own
+    owner task (FTF-0703, FTF-0711/0717, FTF-0718, FTF-R003), which extends this
+    file under the same `contracts:07` lock. Declaring any of them now would be
+    a placeholder endpoint (Law 11).
 
     `TrainingConfigV1` and its nested shapes in `07-domain.schema.json` are the
     exact enums, bounds, allow-lists and error codes the module enforces; the
     test `tests/tasks/test_ftf_0701_p1.py` byte-compares them with the module
     constants so the two cannot drift.
-paths: {}
+paths:
+  /api/v1/organizations/{organization_id}/projects/{project_id}/training/experiments:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Save one version of a typed training configuration
+      operationId: createTrainingExperiment
+      description: >-
+        Writers are `ml_engineer` and `organization_admin`. The body is exactly
+        `{name, idempotency_key, config}` in at most 64 KiB. The same
+        idempotency key with the same request returns the stored experiment
+        (200) and writes nothing; with another request it is 409
+        `idempotency_key_reused`. A held-out role in either data slot is 403
+        `heldout_training_source_denied` and nothing is stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainingExperimentCreateRequest'
+      responses:
+        '201':
+          description: A new experiment version was stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingExperiment'
+        '200':
+          description: Idempotent replay of a stored experiment; nothing was written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingExperiment'
+        '400':
+          $ref: '#/components/responses/Refused'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Refused'
+        '404':
+          $ref: '#/components/responses/Refused'
+        '409':
+          $ref: '#/components/responses/Refused'
+        '500':
+          $ref: '#/components/responses/Refused'
+    get:
+      summary: List the project's training experiments, by name then version
+      operationId: listTrainingExperiments
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: after_name
+          in: query
+          required: false
+          description: >-
+            Cursor; given together with `after_version` or not at all. A stored
+            name: no control character (U+0000..U+001F); anything else is 400
+            `invalid_body`.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+            pattern: '^[^\u0000-\u001F]+$'
+        - name: after_version
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 2147483647
+      responses:
+        '200':
+          description: One page of experiments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingExperimentList'
+        '400':
+          $ref: '#/components/responses/Refused'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Refused'
+        '404':
+          $ref: '#/components/responses/Refused'
+        '500':
+          $ref: '#/components/responses/Refused'
+  /api/v1/organizations/{organization_id}/projects/{project_id}/training/experiments/{experiment_id}:
+    parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: experiment_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get one training experiment
+      operationId: getTrainingExperiment
+      responses:
+        '200':
+          description: The experiment with its resolved configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingExperiment'
+        '401':
+          $ref: '#/components/responses/NotAuthenticated'
+        '403':
+          $ref: '#/components/responses/Refused'
+        '404':
+          $ref: '#/components/responses/Refused'
+        '500':
+          $ref: '#/components/responses/Refused'
 components:
   schemas:
     TrainingConfigV1:
@@ -31,3 +172,31 @@ components:
       $ref: './../jsonschema/07-domain.schema.json#/$defs/ResolvedTrainingConfig'
     TrainingConfigErrorCode:
       $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingConfigErrorCode'
+    TrainingExperimentCreateRequest:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingExperimentCreateRequest'
+    TrainingExperiment:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingExperiment'
+    TrainingExperimentList:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingExperimentList'
+    TrainingExperimentErrorCode:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingExperimentErrorCode'
+    TrainingExperimentError:
+      $ref: './../jsonschema/07-domain.schema.json#/$defs/TrainingExperimentError'
+  responses:
+    NotAuthenticated:
+      description: No authenticated session.
+    Refused:
+      description: >-
+        A refusal with a stable code and nothing else. From the role gate the
+        detail is `role_not_authorized` or `tenant_mismatch` (403); from the
+        route and the store it is a `TrainingExperimentErrorCode` with that
+        code's own status.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [detail]
+            additionalProperties: false
+            properties:
+              detail:
+                type: string

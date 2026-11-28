@@ -1682,10 +1682,12 @@ def contract_suite(m: Any) -> None:
         "every schema pattern is a module regex",
         schema_patterns == {"^" + getattr(m, n).pattern + "$" for n in regex_names},
     )
+    # P1 froze zero paths; FTF-0701-P3 declares exactly its own two experiments paths (three
+    # operations). Any other phase-07 path here is a placeholder endpoint (Law 11).
     check(
         "H4",
-        "interface freezes zero paths",
-        _yaml_paths_empty(OPENAPI_PATH.read_text(encoding="utf-8")),
+        "interface declares exactly the training/experiments paths FTF-0701 implements",
+        _yaml_paths(OPENAPI_PATH.read_text(encoding="utf-8")) == list(EXPERIMENT_PATHS),
     )
     resolved = defs["ResolvedConfigDocument"]
     server_keys = set(resolved["properties"]["server"]["properties"])
@@ -1774,9 +1776,30 @@ def sorted_like(
     return [k for k in props if k in required or k in optional]
 
 
-def _yaml_paths_empty(text: str) -> bool:
-    lines = [ln for ln in text.splitlines() if ln and not ln.startswith(" ")]
-    return "paths: {}" in lines and not any(re.match(r"^paths:\s*$", ln) for ln in lines)
+EXPERIMENT_PATHS = (
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/training/experiments",
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/training/experiments"
+    "/{experiment_id}",
+)
+
+
+def _yaml_paths(text: str) -> list[str] | None:
+    """The path keys of the top-level `paths:` block, in order; None when the file has no single
+    block-style `paths:` key."""
+    lines = text.splitlines()
+    starts = [i for i, ln in enumerate(lines) if re.match(r"^paths:\s*$", ln)]
+    if len(starts) != 1 or any(
+        ln.startswith("paths:") and i != starts[0] for i, ln in enumerate(lines)
+    ):
+        return None
+    found: list[str] = []
+    for ln in lines[starts[0] + 1 :]:
+        if ln and not ln.startswith(" "):
+            break
+        match = re.match(r"^  (\S[^:]*):\s*$", ln)
+        if match:
+            found.append(match.group(1))
+    return found
 
 
 # ---------------------------------------------------------------------------------------------
