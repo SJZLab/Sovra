@@ -621,6 +621,49 @@ def test_mutation_gate_selects_reference_tests():
     assert '"workers", "packages", "evals")' in block
 
 
+# --- FTF-R006-P1b: the real-Argilla job runs the store on the owner-ruled stack ---------
+
+
+def _argilla_job_and_compose() -> tuple[str, str]:
+    block = _jobs_block(CI.read_text(), "argilla-real-server-integration")
+    compose = (ROOT / "infra" / "docker" / "argilla" / "docker-compose.yml").read_text()
+    return block, compose
+
+
+def test_real_argilla_job_runs_the_store_against_the_real_server():
+    block, _ = _argilla_job_and_compose()
+    assert "tests/integration/test_argilla_real_server.py" in block
+    assert (
+        "tests/integration/test_argilla_real_store.py" in block
+    ), "must call the store (round-3 #3)"
+    assert (
+        "infra/docker/argilla/docker-compose.yml up" in block
+    ), "stack comes from the compose file"
+    assert "postgres:" in block and "go build" in block, "real Postgres and a real OpenBao"
+    assert (
+        "ARGILLA_SERVER_CONTAINER: argilla-server" in block
+    ), "outage test stops the real container"
+    assert "openssl rand" in block and "add-mask" in block, "bootstrap credentials are CI-generated"
+
+
+def test_real_argilla_stack_is_the_owner_ruled_licence_stack():
+    block, compose = _argilla_job_and_compose()
+    both = (block + compose).lower()
+    for banned in ("elasticsearch@", "elasticsearch:8", "redis:7-alpine", "redis:7.4", "redis:8"):
+        assert banned not in both, f"{banned} breaks the licence ruling (round-3 #4)"
+    assert "opensearchproject/opensearch@sha256:" in compose
+    assert re.search(
+        r"image: redis@sha256:[0-9a-f]{64} # 7\.2\.\d+", compose
+    ), "Redis 7.2.x by digest"
+    assert 'ARGILLA_ENABLE_TELEMETRY: "0"' in compose
+    assert "argilla_server worker" in compose, "the Argilla worker container is part of the stack"
+    for image in re.findall(r"image: (\S+)", compose):
+        assert "@sha256:" in image, f"{image} must be pinned by digest"
+    assert not re.search(
+        r"(API_KEY|PASSWORD|SECRET_KEY): [^$\s]", compose
+    ), "no committed credential"
+
+
 def test_model_import_ui_real_api_job_is_wired_into_the_verdict():
     """FTF-H010-P5: the real-API job exists, is scope/focus-gated like its siblings, runs its
     harness and is aggregated by ci-verdict (a dropped needs entry would let it fail silently)."""

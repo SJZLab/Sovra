@@ -44,7 +44,7 @@ FRAMEWORK: Groundwork v0.6.10 (owner-confirmed 2026-10-01), adapted to Sovra. So
 CERTIFIER_IDENTITY: same-account (every session pushes as the owner's GitHub account, so
   independence is proven by Claude-Session trailers + PR text, never by PR author).
 CERTIFIER_TRIGGER_MODE: event (the "Sovra certifier Repo" routine fires on PR opened).
-RELAY_LANES: 1
+RELAY_LANES: 3 (A, B, C; disjoint top-level parents, one PR per item for its whole life — docs/operations/routines.md Relay)
 DATASTORE_BACKENDS: postgres_rls, s3_identity (scripts/data_exposure_check.py, CI gate).
 CLAUDE.md integrity: verify against the committed CLAUDE.md.sha256 (plain
   sha256sum of this file, one line, no prefix) — do not hardcode a hash value
@@ -149,6 +149,10 @@ Remove it the moment the owner responds. Never leave resolved asks in item histo
 A stale ask in item history = invisible to the owner and treated as current by the relay.
 
 ## Relay is execution-only
+Operating model v2 (owner instruction, 2026-11-27, live): docs/operations/WORKING.md is the working
+procedure and overrides the numbered steps below and docs/operations/routines.md where they differ
+(work order comes from `python tools/next_tasks.py`; one independent review before merge replaces
+step 4's relay pre-review; records are the PR description plus the Control plane's certification).
 The relay receives decided, sliced items with DoDs. It does not propose, advise, or design.
 Proposals and design work come from the control plane. Every task's real contract comes from
 `python tools/r1_handoff.py packet <task-id> --plan FINE_TUNING_FACTORY_RELEASE_1.md`.
