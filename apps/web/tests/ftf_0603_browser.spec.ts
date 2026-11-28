@@ -75,10 +75,12 @@ interface UiState {
   routes: Route[];
   steps?: Step[];
   ready: string;
+  /** A modal dialog is open: the page behind it is inert, so the Tab-order walk is the dialog's own. */
+  modal?: boolean;
 }
 const PLAN_STEPS: Step[] = [
   { fill: ["plan-categories", LONG_CATEGORY] },
-  { fill: ["plan-min-cases", "2"] },
+  { fill: ["plan-min-tasks", "2"] },
   { fill: ["plan-min-critical", "1"] },
 ];
 
@@ -129,6 +131,42 @@ const STATES: UiState[] = [
       { click: "suite-lock-lock-button" },
     ],
     ready: '[data-testid="suite-lock-confirm"]',
+    modal: true,
+  },
+  {
+    id: "lock refused with server findings 409",
+    routes: [
+      ...loaded(CASES),
+      {
+        method: "POST",
+        path: `${BASE}/lock`,
+        status: 409,
+        body: {
+          detail: {
+            code: "suite_lock_validation_failed",
+            findings: [
+              { code: "missing_critical_category", subject: LONG_CATEGORY, need: null, have: null },
+              { code: "insufficient_independent_tasks", subject: null, need: 4, have: 2 },
+              { code: "unresolved_expected_output", subject: LONG_KEY, need: null, have: null },
+              { code: "suite_sha256_mismatch", subject: null, need: null, have: null },
+            ],
+          },
+        },
+      },
+    ],
+    steps: [
+      { click: "suite-lock-load-button" },
+      ...PLAN_STEPS,
+      { click: "suite-lock-lock-button" },
+      { click: "suite-lock-confirm-button" },
+    ],
+    ready: '[data-testid="suite-lock-server-findings"]',
+  },
+  {
+    id: "final suite with the Section 26 plan",
+    routes: loaded(CASES, suite({ purpose: "final" })),
+    steps: [{ click: "suite-lock-load-button" }],
+    ready: '[data-testid="suite-lock-findings"]',
   },
   {
     id: "already locked",
@@ -355,6 +393,41 @@ async function keyboardProblems(page: Page): Promise<string[]> {
   return problems;
 }
 
+/** The open confirmation dialog traps Tab, shows a visible focus ring, and Escape returns focus. */
+async function modalProblems(page: Page): Promise<string[]> {
+  const problems: string[] = [];
+  const inside = () =>
+    page.evaluate(() => {
+      const dialog = document.querySelector('[role="alertdialog"]');
+      const el = document.activeElement as HTMLElement | null;
+      if (!dialog || !el) return null;
+      const cs = getComputedStyle(el);
+      return {
+        in: dialog.contains(el),
+        outline: cs.outlineStyle !== "none" && Number.parseFloat(cs.outlineWidth) > 0,
+        label: el.getAttribute("data-testid") ?? el.tagName.toLowerCase(),
+      };
+    });
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press("Tab");
+    const stop = await inside();
+    if (!stop?.in) problems.push(`dialog: Tab ${i} escaped to ${stop?.label ?? "nothing"}`);
+    else if (!stop.outline) problems.push(`dialog: ${stop.label} has no visible focus ring`);
+  }
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('[role="alertdialog"]', { state: "detached" });
+  await page
+    .waitForFunction(
+      () => document.activeElement?.getAttribute("data-testid") === "suite-lock-lock-button",
+      undefined,
+      { timeout: 2000 },
+    )
+    .catch(() => undefined);
+  const back = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+  if (back !== "suite-lock-lock-button") problems.push(`dialog: Escape left focus on ${back}`);
+  return problems;
+}
+
 describe.concurrent("[0603-BROWSER] real-Chromium §72.5 evidence", () => {
   for (const state of STATES) {
     for (const locale of ["en", "ar"] as Locale[]) {
@@ -365,7 +438,7 @@ describe.concurrent("[0603-BROWSER] real-Chromium §72.5 evidence", () => {
             const problems = [
               ...(await axeProblems(page)),
               ...(await rtlProblems(page, locale)),
-              ...(await keyboardProblems(page)),
+              ...(state.modal ? await modalProblems(page) : await keyboardProblems(page)),
               ...(await overflowProblems(page)),
             ];
             expect(problems, problems.join("\n")).toEqual([]);

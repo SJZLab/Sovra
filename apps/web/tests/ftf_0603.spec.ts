@@ -9,6 +9,8 @@
 // Negative acceptance: missing critical categories, an insufficient sample plan and an
 // unresolved expected output each block the lock, in the control and in the handler.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { createElement } from "react";
 
@@ -19,8 +21,11 @@ import {
   canonicalJson,
   computeSuiteSha256,
   defaultPlan,
+  FINDING_CODES,
   hasUnresolvedExpected,
   MAX_CASE_PAGES,
+  MAX_PLAN_CATEGORIES,
+  SECTION_26_CATEGORIES,
   sha256Hex,
   SUITE_LOCK_STRING_KEYS,
   SUITE_LOCK_STRINGS,
@@ -85,11 +90,14 @@ function suiteCase(key: string, extra: Partial<SuiteCase> = {}): SuiteCase {
   };
 }
 
+const SCOPE = { organizationId: ORG, projectId: PROJECT };
+const REPO_ROOT = join(__dirname, "..", "..", "..");
+
 const PLAN: SamplePlan = {
-  requiredCategories: ["refunds", "security"],
-  minCases: 4,
-  minCritical: 2,
-  minPerCategory: 2,
+  required_categories: ["refunds", "security"],
+  min_independent_tasks: 4,
+  min_critical_scenarios: 2,
+  min_cases_per_category: 2,
 };
 
 function goodCases(): SuiteCase[] {
@@ -100,6 +108,9 @@ function goodCases(): SuiteCase[] {
     suiteCase("s2", { category: "security", critical: false, grader_type: "contains_fact" }),
   ];
 }
+
+const codesOf = (findings: { code: string; subject: string | null }[]) =>
+  findings.map((f) => `${f.code}:${f.subject}`);
 
 // ---------------------------------------------------------------------------------------------
 // Pure logic
@@ -124,22 +135,64 @@ test("[SHA256] sha256Hex matches the platform SHA-256 on vectors incl. multi-blo
   }
 });
 
-test("[HASH] suite_sha256 is order independent and changes with identity or any case field", () => {
+interface Vector {
+  format: string;
+  input: {
+    organization_id: string;
+    project_id: string;
+    suite: Omit<SuiteRecord, "status" | "name" | "reviewer_id" | "locked_at">;
+    cases: Omit<SuiteCase, "id">[];
+  };
+  canonical_json: string;
+  suite_sha256: string;
+}
+const VECTOR: Vector = JSON.parse(
+  readFileSync(
+    join(REPO_ROOT, "packages/contracts/test-vectors/evaluation-suite-sha256.json"),
+    "utf8",
+  ),
+) as Vector;
+
+test("[HASH] the browser reproduces the server's shared suite_sha256 test vector byte for byte", () => {
+  const suite: SuiteRecord = {
+    ...VECTOR.input.suite,
+    status: "draft",
+    name: "ignored",
+    reviewer_id: null,
+    locked_at: null,
+  };
+  const cases = VECTOR.input.cases.map((c, i) => ({ ...c, id: `server-id-${i}` }));
+  expect(VECTOR.format).toBe("sovra.evaluation_suite.sha256.v1");
+  expect(
+    computeSuiteSha256(
+      { organizationId: VECTOR.input.organization_id, projectId: VECTOR.input.project_id },
+      suite,
+      cases,
+    ),
+  ).toBe(VECTOR.suite_sha256);
+  // the vector's own canonical bytes also hash to its digest (the vector is self-consistent)
+  expect(createHash("sha256").update(VECTOR.canonical_json, "utf8").digest("hex")).toBe(
+    VECTOR.suite_sha256,
+  );
+});
+
+test("[HASH] suite_sha256 is order independent and changes with scope, identity or any case field", () => {
   const suite = suiteRecord();
   const cases = goodCases();
-  const base = computeSuiteSha256(suite, cases);
+  const base = computeSuiteSha256(SCOPE, suite, cases);
   expect(base).toMatch(/^[0-9a-f]{64}$/);
-  expect(computeSuiteSha256(suite, [...cases].reverse())).toBe(base);
+  expect(computeSuiteSha256(SCOPE, suite, [...cases].reverse())).toBe(base);
   // server ids/timestamps are not part of the identity
   expect(
     computeSuiteSha256(
+      SCOPE,
       suite,
       cases.map((c) => ({ ...c, id: `other-${c.id}` })),
     ),
   ).toBe(base);
 
   const mutated = (patch: Partial<SuiteCase>) =>
-    computeSuiteSha256(suite, [{ ...cases[0]!, ...patch }, ...cases.slice(1)]);
+    computeSuiteSha256(SCOPE, suite, [{ ...cases[0]!, ...patch }, ...cases.slice(1)]);
   const patches: Partial<SuiteCase>[] = [
     { case_key: "r1x" },
     { category: "other" },
@@ -154,7 +207,7 @@ test("[HASH] suite_sha256 is order independent and changes with identity or any 
     { weight: 2 },
   ];
   for (const patch of patches) expect(mutated(patch), JSON.stringify(patch)).not.toBe(base);
-  expect(computeSuiteSha256(suite, cases.slice(1))).not.toBe(base);
+  expect(computeSuiteSha256(SCOPE, suite, cases.slice(1))).not.toBe(base);
   for (const patch of [
     { id: "x" },
     { agent_manifest_id: "55555555-5555-5555-5555-555555555555" },
@@ -162,67 +215,176 @@ test("[HASH] suite_sha256 is order independent and changes with identity or any 
     { purpose: "final" as const },
     { grading_logic_version: 2 },
   ]) {
-    expect(computeSuiteSha256({ ...suite, ...patch }, cases), JSON.stringify(patch)).not.toBe(base);
+    expect(
+      computeSuiteSha256(SCOPE, { ...suite, ...patch }, cases),
+      JSON.stringify(patch),
+    ).not.toBe(base);
   }
+  // the hash binds the organization and the project
+  expect(
+    computeSuiteSha256({ ...SCOPE, organizationId: "o-2" }, suite, cases),
+    "organization",
+  ).not.toBe(base);
+  expect(computeSuiteSha256({ ...SCOPE, projectId: "p-2" }, suite, cases), "project").not.toBe(
+    base,
+  );
   expect(canonicalJson({ b: 1, a: [2, { d: 1, c: 2 }] })).toBe('{"a":[2,{"c":2,"d":1}],"b":1}');
 });
 
+test("[PIN] the Section 26 list and the finding codes are the server's, verbatim", () => {
+  const source = readFileSync(
+    join(REPO_ROOT, "apps/api/app/evaluation/evaluation_suite_lock_gate.py"),
+    "utf8",
+  );
+  const block = (name: string) => {
+    const match = new RegExp(`${name}[^=]*= \\(([^)]*)\\)`).exec(source);
+    expect(match, name).not.toBeNull();
+    return [...match![1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  };
+  expect([...SECTION_26_CATEGORIES]).toEqual(block("SECTION_26_CATEGORIES"));
+  expect([...FINDING_CODES]).toEqual(block("FINDING_CODES"));
+  expect(SECTION_26_CATEGORIES.length).toBe(22);
+  expect(MAX_PLAN_CATEGORIES).toBe(Number(/MAX_PLAN_CATEGORIES = (\d+)/.exec(source)![1]));
+});
+
 test("[VALIDATE] a complete suite passes the plan with no findings", () => {
-  expect(validateSuite(goodCases(), PLAN)).toEqual([]);
+  expect(validateSuite(goodCases(), PLAN, "development")).toEqual([]);
 });
 
 test("[NEG] missing critical category blocks (case exists but none critical, or none at all)", () => {
   const noCritical = goodCases().map((c) =>
     c.category === "security" ? { ...c, critical: false } : c,
   );
-  expect(validateSuite(noCritical, PLAN).map((f) => `${f.code}:${f.subject}`)).toContain(
+  expect(codesOf(validateSuite(noCritical, PLAN, "development"))).toContain(
     "missing_critical_category:security",
   );
   const noCategory = goodCases().filter((c) => c.category !== "security");
-  const codes = validateSuite(noCategory, PLAN).map((f) => f.code);
+  const codes = validateSuite(noCategory, PLAN, "development").map((f) => f.code);
   expect(codes).toContain("missing_critical_category");
   expect(codes).toContain("insufficient_category_sample");
 });
 
-test("[NEG] insufficient sample plan blocks: total, critical and per-category floors", () => {
-  const codes = (cases: SuiteCase[], plan = PLAN) => validateSuite(cases, plan).map((f) => f.code);
-  expect(codes(goodCases(), { ...PLAN, minCases: 5 })).toContain("insufficient_total_cases");
-  expect(codes(goodCases(), { ...PLAN, minCritical: 3 })).toContain("insufficient_critical_cases");
-  expect(codes(goodCases(), { ...PLAN, minPerCategory: 3 })).toContain(
+test("[NEG] insufficient sample plan blocks: independent tasks, critical scenarios, per category", () => {
+  const codes = (cases: SuiteCase[], plan = PLAN) =>
+    validateSuite(cases, plan, "development").map((f) => f.code);
+  expect(codes(goodCases(), { ...PLAN, min_independent_tasks: 5 })).toContain(
+    "insufficient_independent_tasks",
+  );
+  expect(codes(goodCases(), { ...PLAN, min_critical_scenarios: 3 })).toContain(
+    "insufficient_critical_scenarios",
+  );
+  expect(codes(goodCases(), { ...PLAN, min_cases_per_category: 3 })).toContain(
     "insufficient_category_sample",
   );
   // boundary: exactly at the floor passes
-  expect(codes(goodCases(), { ...PLAN, minCases: 4, minCritical: 2, minPerCategory: 2 })).toEqual(
-    [],
-  );
+  expect(codes(goodCases(), { ...PLAN })).toEqual([]);
   expect(codes([], PLAN)).toContain("no_cases");
 });
 
-test("[NEG] the final reference floors default to 1000 cases and 100 critical", () => {
-  expect(defaultPlan("final")).toMatchObject({ minCases: 1000, minCritical: 100 });
-  expect(defaultPlan("development")).toMatchObject({ minCases: 1, minCritical: 0 });
-  const codes = validateSuite(goodCases(), {
-    ...defaultPlan("final"),
-    requiredCategories: ["refunds"],
+test("[NEG] independence counts distinct group_key values, never rows (Section 69.2)", () => {
+  // four rows, all one conversation: one independent task, one critical scenario
+  const oneConversation = goodCases().map((c) => ({ ...c, group_key: "one-conversation" }));
+  const findings = validateSuite(oneConversation, PLAN, "development");
+  expect(findings).toContainEqual({
+    code: "insufficient_independent_tasks",
+    subject: null,
+    need: 4,
+    have: 1,
   });
-  expect(codes.map((f) => f.code)).toEqual(
-    expect.arrayContaining(["insufficient_total_cases", "insufficient_critical_cases"]),
+  expect(findings).toContainEqual({
+    code: "insufficient_critical_scenarios",
+    subject: null,
+    need: 2,
+    have: 1,
+  });
+  expect(findings).toContainEqual({
+    code: "insufficient_category_sample",
+    subject: "refunds",
+    need: 2,
+    have: 1,
+  });
+});
+
+test("[NEG] the final suite defaults to every Section 26 category and the 1000 / 100 floors", () => {
+  const plan = defaultPlan("final");
+  expect(plan.required_categories).toEqual([...SECTION_26_CATEGORIES]);
+  expect(plan.min_independent_tasks).toBe(1000);
+  expect(plan.min_critical_scenarios).toBe(100);
+  expect(defaultPlan("development")).toMatchObject({
+    required_categories: [],
+    min_independent_tasks: 1,
+    min_critical_scenarios: 0,
+  });
+  const codes = validateSuite(goodCases(), plan, "final").map((f) => f.code);
+  expect(codes).toEqual(
+    expect.arrayContaining(["insufficient_independent_tasks", "insufficient_critical_scenarios"]),
   );
+});
+
+test("[NEG] a final plan cannot lower a floor or drop a Section 26 category; a development plan may raise but not go under 1", () => {
+  const finalPlan = defaultPlan("final");
+  const lowered = { ...finalPlan, min_independent_tasks: 1, min_critical_scenarios: 0 };
+  expect(validateSuite(goodCases(), lowered, "final").map((f) => f.code)).toEqual(
+    expect.arrayContaining(["sample_plan_below_floor"]),
+  );
+  expect(codesOf(validateSuite(goodCases(), lowered, "final"))).toEqual(
+    expect.arrayContaining([
+      "sample_plan_below_floor:min_independent_tasks",
+      "sample_plan_below_floor:min_critical_scenarios",
+    ]),
+  );
+  for (const dropped of SECTION_26_CATEGORIES) {
+    const plan = {
+      ...finalPlan,
+      required_categories: finalPlan.required_categories.filter((c) => c !== dropped),
+    };
+    expect(codesOf(validateSuite(goodCases(), plan, "final")), dropped).toContain(
+      `missing_critical_category:${dropped}`,
+    );
+  }
+  // a plan may add categories on top of Section 26 without a finding about the plan itself
+  const raised = {
+    ...finalPlan,
+    required_categories: [...finalPlan.required_categories, "refunds"],
+    min_independent_tasks: 2000,
+  };
+  expect(codesOf(validateSuite(goodCases(), raised, "final"))).not.toContain(
+    "sample_plan_below_floor:min_independent_tasks",
+  );
+  // a development suite needs at least one independent task per category and one task
+  expect(
+    codesOf(validateSuite(goodCases(), { ...PLAN, min_independent_tasks: 0 }, "development")),
+  ).toContain("sample_plan_below_floor:min_independent_tasks");
 });
 
 test("[NEG] a plan with no required category or invalid numbers blocks", () => {
   expect(
-    validateSuite(goodCases(), { ...PLAN, requiredCategories: [] }).map((f) => f.code),
-  ).toContain("plan_has_no_categories");
-  for (const bad of [Number.NaN, -1, 1.5, 0]) {
+    codesOf(validateSuite(goodCases(), { ...PLAN, required_categories: [] }, "development")),
+  ).toContain("sample_plan_below_floor:required_categories");
+  for (const bad of [Number.NaN, -1, 1.5, 1_000_001]) {
     expect(
-      validateSuite(goodCases(), { ...PLAN, minCases: bad }).map((f) => f.code),
+      codesOf(validateSuite(goodCases(), { ...PLAN, min_independent_tasks: bad }, "development")),
       String(bad),
-    ).toContain("plan_invalid");
+    ).toContain("sample_plan_missing:min_independent_tasks");
   }
-  expect(validateSuite(goodCases(), { ...PLAN, minPerCategory: 0 }).map((f) => f.code)).toContain(
-    "plan_invalid",
-  );
+  expect(
+    codesOf(validateSuite(goodCases(), { ...PLAN, min_cases_per_category: 0 }, "development")),
+  ).toContain("sample_plan_below_floor:min_cases_per_category");
+});
+
+test("[NEG] the 201st category is a finding, never silently dropped", () => {
+  const many = Array.from({ length: MAX_PLAN_CATEGORIES + 1 }, (_, i) => `cat-${i}`);
+  expect(
+    codesOf(validateSuite(goodCases(), { ...PLAN, required_categories: many }, "development")),
+  ).toContain("sample_plan_missing:required_categories");
+  const exactly = many.slice(0, MAX_PLAN_CATEGORIES);
+  expect(
+    codesOf(validateSuite(goodCases(), { ...PLAN, required_categories: exactly }, "development")),
+  ).not.toContain("sample_plan_missing:required_categories");
+  const tooLong = ["x".repeat(101)];
+  expect(
+    codesOf(validateSuite(goodCases(), { ...PLAN, required_categories: tooLong }, "development")),
+  ).toContain("sample_plan_missing:required_categories");
 });
 
 test("[NEG] unresolved expected output blocks (placeholder, null, empty, nested, array)", () => {
@@ -238,20 +400,29 @@ test("[NEG] unresolved expected output blocks (placeholder, null, empty, nested,
     expect(hasUnresolvedExpected(expected), JSON.stringify(expected)).toBe(true);
     const cases = goodCases();
     cases[1] = { ...cases[1]!, expected_json: expected };
-    expect(
-      validateSuite(cases, PLAN).map((f) => `${f.code}:${f.subject}`),
-      JSON.stringify(expected),
-    ).toContain("unresolved_expected_output:r2");
+    expect(codesOf(validateSuite(cases, PLAN, "development")), JSON.stringify(expected)).toContain(
+      "unresolved_expected_output:r2",
+    );
   }
   expect(hasUnresolvedExpected({ state: "refunded", count: 0, ok: false })).toBe(false);
 });
 
-test("[NEG] a critical case on a model-self-report grader blocks", () => {
+test("[NEG] a whole number past 2^53 - 1 has no hash both sides agree on and blocks", () => {
+  const cases = goodCases();
+  cases[2] = { ...cases[2]!, input_json: { id: 2 ** 53 } };
+  expect(codesOf(validateSuite(cases, PLAN, "development"))).toContain("non_canonical_number:s1");
+  const safe = goodCases();
+  safe[2] = { ...safe[2]!, input_json: { id: 9_007_199_254_740_991 } };
+  expect(codesOf(validateSuite(safe, PLAN, "development"))).not.toContain(
+    "non_canonical_number:s1",
+  );
+});
+
+test("[PARITY] a critical case on a model-self-report grader is the server's call, not a client-only block", () => {
+  // The server has no oracle-independence clause; a client-only gate would be a browser-only rule.
   const cases = goodCases();
   cases[0] = { ...cases[0]!, grader_type: "llm_judge" };
-  expect(validateSuite(cases, PLAN).map((f) => `${f.code}:${f.subject}`)).toContain(
-    "critical_oracle_not_independent:r1",
-  );
+  expect(validateSuite(cases, PLAN, "development")).toEqual([]);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -329,24 +500,30 @@ function setInput(label: RegExp, value: string) {
 }
 function fillPlan(plan: {
   categories: string;
-  minCases: string;
-  minCritical: string;
+  tasks: string;
+  critical: string;
   perCategory: string;
 }) {
-  setInput(/Required critical categories/, plan.categories);
-  setInput(/Minimum total cases/, plan.minCases);
-  setInput(/Minimum critical cases/, plan.minCritical);
-  setInput(/Minimum cases per required category/, plan.perCategory);
+  for (const [id, value] of [
+    ["plan-categories", plan.categories],
+    ["plan-min-tasks", plan.tasks],
+    ["plan-min-critical", plan.critical],
+    ["plan-min-per-category", plan.perCategory],
+  ] as const) {
+    fireEvent.change(screen.getByTestId(id), { target: { value } });
+  }
 }
 const GOOD_PLAN = {
   categories: "refunds, security",
-  minCases: "4",
-  minCritical: "2",
+  tasks: "4",
+  critical: "2",
   perCategory: "2",
 };
 const lockButton = () => screen.getByRole("button", { name: /Lock suite/ }) as HTMLButtonElement;
 const findingCodes = () =>
   [...document.querySelectorAll("[data-finding]")].map((el) => el.getAttribute("data-finding"));
+const lockBody = (index = 0) =>
+  JSON.parse(calls("POST", LOCK_URL)[index]![1].body as string) as Record<string, unknown>;
 
 test("[UI] nothing is requested until Load; the empty state offers the load action", () => {
   renderUI();
@@ -366,7 +543,7 @@ test("[UI] Load reads the suite then every case page; the hash shown is the comp
   expect(calls("GET", `${CASES_URL}?after=cursor-1`).length).toBe(1);
   expect(screen.getByTestId("suite-lock-summary").textContent).toContain("4 cases");
   expect(screen.getByTestId("suite-lock-sha").textContent).toBe(
-    computeSuiteSha256(suiteRecord(), all),
+    computeSuiteSha256(SCOPE, suiteRecord(), all),
   );
 });
 
@@ -380,7 +557,7 @@ test("[NEG-UI] each blocking finding disables Lock, names category/case key and 
   const codes = findingCodes();
   expect(codes).toContain("missing_critical_category");
   expect(codes).toContain("insufficient_category_sample");
-  expect(codes).toContain("insufficient_total_cases");
+  expect(codes).toContain("insufficient_independent_tasks");
   expect(codes).toContain("unresolved_expected_output");
   expect(screen.getByTestId("suite-lock-findings").textContent).toContain("security");
   expect(screen.getByTestId("suite-lock-findings").textContent).toContain("r2");
@@ -389,14 +566,17 @@ test("[NEG-UI] each blocking finding disables Lock, names category/case key and 
   expect(calls("POST", LOCK_URL).length).toBe(0);
 });
 
-test("[UI] lock is disabled until a plan is declared even when the cases look complete", async () => {
+test("[UI] a development suite starts with no category: lock is disabled until a plan is declared", async () => {
   renderUI();
   await load(goodCases());
-  expect(findingCodes()).toContain("plan_has_no_categories");
+  expect(findingCodes()).toContain("sample_plan_below_floor");
+  expect(screen.getByTestId("suite-lock-findings").textContent).toContain(
+    "Required critical categories",
+  );
   expect(lockButton().disabled).toBe(true);
 });
 
-test("[UI] a complete suite locks: reload, recompute, POST once, show the locked notice", async () => {
+test("[UI] a complete suite locks: reload, recompute, POST the plan and the reviewed hash once", async () => {
   renderUI();
   const cases = goodCases();
   await load(cases);
@@ -404,7 +584,7 @@ test("[UI] a complete suite locks: reload, recompute, POST once, show the locked
   expect(findingCodes()).toEqual([]);
   expect(screen.getByTestId("suite-lock-passed")).toBeTruthy();
   expect(lockButton().disabled).toBe(false);
-  const expectedSha = computeSuiteSha256(suiteRecord(), cases);
+  const expectedSha = computeSuiteSha256(SCOPE, suiteRecord(), cases);
   enqueueLoad(cases);
   enqueue(
     "POST",
@@ -416,6 +596,16 @@ test("[UI] a complete suite locks: reload, recompute, POST once, show the locked
   await waitFor(() => expect(screen.getByTestId("suite-lock-notice")).toBeTruthy());
   expect(calls("POST", LOCK_URL).length).toBe(1);
   expect(calls("POST", LOCK_URL)[0]![1].credentials).toBe("include");
+  // exactly the body the server's `parse_lock_request` takes: the four-field plan and the hash
+  expect(lockBody()).toEqual({
+    sample_plan: {
+      required_categories: ["refunds", "security"],
+      min_independent_tasks: 4,
+      min_critical_scenarios: 2,
+      min_cases_per_category: 2,
+    },
+    suite_sha256: expectedSha,
+  });
   expect(screen.getByTestId("suite-lock-notice").textContent).toContain(expectedSha);
   expect(screen.getByTestId("suite-lock-notice").textContent).toContain("4 cases");
   expect(screen.getByTestId("suite-lock-already")).toBeTruthy();
@@ -433,7 +623,9 @@ test("[NEG-UI] the handler re-validates: a suite that regressed after review is 
   fireEvent.click(screen.getByTestId("suite-lock-confirm-button"));
   await waitFor(() => expect(screen.getByTestId("suite-lock-error")).toBeTruthy());
   expect(calls("POST", LOCK_URL).length).toBe(0);
-  expect(screen.getByTestId("suite-lock-error").textContent).toContain("Nothing was locked");
+  expect(screen.getByTestId("suite-lock-error").textContent).toContain(
+    "Validation failed on the latest cases. Nothing was locked",
+  );
   expect(findingCodes()).toContain("unresolved_expected_output");
 });
 
@@ -452,18 +644,20 @@ test("[NEG-UI] a changed-but-still-valid suite (different hash) is not locked", 
     "changed after you reviewed",
   );
   expect(screen.getByTestId("suite-lock-sha").textContent).toBe(
-    computeSuiteSha256(suiteRecord(), changed),
+    computeSuiteSha256(SCOPE, suiteRecord(), changed),
   );
 });
 
-async function lockWith(reply: Reply) {
-  renderUI();
+async function lockWith(reply: Reply, locale: "en" | "ar" = "en") {
+  renderUI(locale);
   const cases = goodCases();
-  await load(cases);
+  enqueueLoad(cases);
+  fireEvent.click(screen.getByTestId("suite-lock-load-button"));
+  await waitFor(() => expect(screen.getByTestId("suite-lock-summary")).toBeTruthy());
   fillPlan(GOOD_PLAN);
   enqueueLoad(cases);
   enqueue("POST", LOCK_URL, reply);
-  fireEvent.click(lockButton());
+  fireEvent.click(screen.getByTestId("suite-lock-lock-button"));
   fireEvent.click(screen.getByTestId("suite-lock-confirm-button"));
   await waitFor(() => expect(screen.getByTestId("suite-lock-error")).toBeTruthy());
   return screen.getByTestId("suite-lock-error").textContent ?? "";
@@ -479,21 +673,86 @@ test("[LAW17] lock failures never read as a lock: 403, 409, 500, network, non-JS
   cleanup();
   expect(await lockWith(fail(500, { detail: "boom" }))).toContain("request failed");
   cleanup();
-  expect(await lockWith({ ok: false, reject: true })).toContain("could not be reached");
-  cleanup();
-  expect(await lockWith({ ok: true, bad: true })).toContain("not in the expected form");
-  cleanup();
-  for (const body of [
-    suiteBody({ status: "draft" }),
-    suiteBody({ status: "draft", locked_at: "2026-11-20T01:00:00+00:00" }),
-    suiteBody({ status: "locked", locked_at: null }),
-    { ...suiteBody({ status: "locked", locked_at: "2026-11-20T01:00:00+00:00" }), id: "other" },
-    null,
+  for (const reply of [
+    { ok: false, reject: true } as Reply,
+    { ok: true, bad: true } as Reply,
+    ok(suiteBody({ status: "draft" })),
+    ok(suiteBody({ status: "draft", locked_at: "2026-11-20T01:00:00+00:00" })),
+    ok(suiteBody({ status: "locked", locked_at: null })),
+    ok({ ...suiteBody({ status: "locked", locked_at: "2026-11-20T01:00:00+00:00" }), id: "other" }),
+    ok(null),
   ]) {
-    expect(await lockWith(ok(body))).toContain("not in the expected form");
+    // The request was sent: the suite may now be locked, so the page must NOT claim nothing changed.
+    const text = await lockWith(reply);
+    expect(text).toContain("may now be locked");
+    expect(text).not.toContain("Nothing was changed");
+    expect(screen.getByTestId("suite-lock-error-recovery").textContent).toMatch(/current state/i);
     expect(screen.queryByTestId("suite-lock-notice")).toBeNull();
     cleanup();
   }
+});
+
+test("[SERVER-GATE] a 409 suite_lock_validation_failed shows each typed finding and says the suite did not change", async () => {
+  const findings = [
+    { code: "missing_critical_category", subject: "security", need: null, have: null },
+    { code: "insufficient_independent_tasks", subject: null, need: 4, have: 3 },
+    { code: "unresolved_expected_output", subject: "r2", need: null, have: null },
+    { code: "suite_sha256_mismatch", subject: null, need: null, have: null },
+  ];
+  const text = await lockWith(
+    fail(409, { detail: { code: "suite_lock_validation_failed", findings } }),
+  );
+  expect(text).toContain("The suite was not changed");
+  expect(findingCodes()).toEqual(findings.map((f) => f.code));
+  const shown = screen.getByTestId("suite-lock-server-findings").textContent ?? "";
+  expect(shown).toContain("security");
+  expect(shown).toContain("has 3 independent tasks; the plan needs 4");
+  expect(shown).toContain("r2");
+  expect(screen.queryByTestId("suite-lock-notice")).toBeNull();
+  // the suite is still a draft with the lock control available
+  expect(lockButton()).toBeTruthy();
+});
+
+test("[SERVER-GATE] an unknown, malformed or empty finding list is a plain refusal, never a made-up finding", async () => {
+  for (const findings of [
+    [],
+    [{ code: "not_a_code", subject: null }],
+    [{ code: "no_cases", subject: 5 }],
+    [{ code: "no_cases", subject: null, need: "4" }],
+    "oops",
+  ]) {
+    const text = await lockWith(
+      fail(409, { detail: { code: "suite_lock_validation_failed", findings } }),
+    );
+    expect(text).toContain("refused the lock");
+    expect(screen.queryByTestId("suite-lock-server-findings")).toBeNull();
+    cleanup();
+  }
+});
+
+test("[SERVER-GATE] a 400 invalid_lock_request names the field and not the value", async () => {
+  const text = await lockWith(
+    fail(400, {
+      detail: { code: "invalid_lock_request", field: "sample_plan.min_critical_scenarios" },
+    }),
+  );
+  expect(text).toContain("sample_plan.min_critical_scenarios");
+  expect(text).toContain("The suite was not changed");
+});
+
+test("[SERVER-GATE] server findings render localized under ar, with no raw code", async () => {
+  await lockWith(
+    fail(409, {
+      detail: {
+        code: "suite_lock_validation_failed",
+        findings: [{ code: "no_cases", subject: null, need: null, have: null }],
+      },
+    }),
+    "ar",
+  );
+  const shown = screen.getByTestId("suite-lock-server-findings").textContent ?? "";
+  expect(shown).toContain(SUITE_LOCK_STRINGS.fCode_no_cases.ar);
+  expect(shown).not.toContain("no_cases");
 });
 
 test("[LAW17] load failures: 404, network, non-JSON, malformed list, repeated cursor, runaway pages", async () => {
@@ -558,30 +817,65 @@ test("[UI] an already locked suite offers no lock control and no plan", async ()
   expect(screen.queryByLabelText(/Required critical categories/)).toBeNull();
 });
 
-test("[UI] a final suite starts from the 1000/100 reference floors", async () => {
+test("[UI] a final suite starts from every Section 26 category and the 1000 / 100 floors, visible in the fields", async () => {
   renderUI();
   await load(goodCases(), { purpose: "final" });
-  setInput(/Required critical categories/, "refunds");
+  const categories = screen.getByLabelText(/Required critical categories/) as HTMLInputElement;
+  for (const name of SECTION_26_CATEGORIES) expect(categories.value).toContain(name);
+  expect(
+    (screen.getByLabelText(/Minimum independent tasks(?! per)/) as HTMLInputElement).value,
+  ).toBe("1000");
+  expect((screen.getByLabelText(/Minimum critical scenarios/) as HTMLInputElement).value).toBe(
+    "100",
+  );
   expect(findingCodes()).toEqual(
-    expect.arrayContaining(["insufficient_total_cases", "insufficient_critical_cases"]),
+    expect.arrayContaining(["insufficient_independent_tasks", "insufficient_critical_scenarios"]),
   );
   expect(lockButton().disabled).toBe(true);
 });
 
-test("[I18N] ar renders rtl, localized findings and no raw finding code", async () => {
+test("[NEG-UI] a final plan cannot be edited under the floors or without a Section 26 category", async () => {
+  renderUI();
+  await load(goodCases(), { purpose: "final" });
+  setInput(/Minimum independent tasks(?! per)/, "1");
+  setInput(/Minimum critical scenarios/, "0");
+  expect(screen.getByTestId("suite-lock-findings").textContent).toContain("must be at least 1000");
+  expect(screen.getByTestId("suite-lock-findings").textContent).toContain("must be at least 100");
+  setInput(/Required critical categories/, "refunds");
+  expect(findingCodes().filter((c) => c === "missing_critical_category").length).toBeGreaterThan(
+    SECTION_26_CATEGORIES.length - 1,
+  );
+  expect(lockButton().disabled).toBe(true);
+});
+
+test("[NEG-UI] the 201st category is shown as a finding, never silently dropped", async () => {
+  renderUI();
+  await load(goodCases());
+  fillPlan({
+    ...GOOD_PLAN,
+    categories: Array.from({ length: MAX_PLAN_CATEGORIES + 1 }, (_, i) => `c${i}`).join(", "),
+  });
+  expect(findingCodes()).toContain("sample_plan_missing");
+  expect(lockButton().disabled).toBe(true);
+  expect(calls("POST", LOCK_URL).length).toBe(0);
+});
+
+test("[I18N] ar renders rtl, localized findings, localized purpose and status and no raw enum", async () => {
   const { container } = renderUI("ar");
-  enqueueLoad(goodCases());
+  enqueueLoad(goodCases(), { purpose: "final" });
   fireEvent.click(screen.getByRole("button", { name: SUITE_LOCK_STRINGS.loadButton.ar }));
   await waitFor(() => expect(screen.getByTestId("suite-lock-summary")).toBeTruthy());
   const root = container.querySelector("section[lang]")!;
   expect(root.getAttribute("dir")).toBe("rtl");
   expect(root.getAttribute("lang")).toBe("ar");
-  expect(screen.getByTestId("suite-lock-findings").textContent).toContain(
-    SUITE_LOCK_STRINGS.fCode_plan_has_no_categories.ar,
-  );
-  expect(screen.getByTestId("suite-lock-findings").textContent).not.toContain(
-    "plan_has_no_categories",
-  );
+  const summary = screen.getByTestId("suite-lock-summary").textContent ?? "";
+  expect(summary).toContain(SUITE_LOCK_STRINGS.purposeFinal.ar);
+  expect(summary).toContain(SUITE_LOCK_STRINGS.statusDraft.ar);
+  expect(summary).not.toMatch(/\bfinal\b|\bdraft\b/);
+  const findings = screen.getByTestId("suite-lock-findings").textContent ?? "";
+  expect(findings).toContain("مهمة مستقلة");
+  expect(findings).not.toContain("insufficient_independent_tasks");
+  expect(findings).not.toContain("min_independent_tasks");
 });
 
 test("[I18N] every catalogue entry has non-empty en and ar with the same placeholders", () => {
@@ -596,24 +890,46 @@ test("[I18N] every catalogue entry has non-empty en and ar with the same placeho
       `${key} ar has latin`,
     ).toBe(false);
   }
+  // every code the server can answer with has its own sentence in both languages
+  for (const code of FINDING_CODES) {
+    expect(SUITE_LOCK_STRING_KEYS as readonly string[], code).toContain(`fCode_${code}`);
+  }
 });
 
-test("[UI] Lock asks for confirmation first: no POST until Confirm; Cancel sends nothing", async () => {
+test("[UI] Lock opens the UX01 confirmation dialog: no POST until Confirm; Cancel and Escape send nothing and return focus", async () => {
   renderUI();
   await load(goodCases());
   fillPlan(GOOD_PLAN);
-  expect(screen.queryByTestId("suite-lock-confirm")).toBeNull();
-  fireEvent.click(lockButton());
-  expect(screen.getByTestId("suite-lock-confirm").textContent).toContain("permanent");
-  expect(document.activeElement).toBe(screen.getByTestId("suite-lock-confirm"));
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  const opener = lockButton();
+  opener.focus();
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole("alertdialog");
+  expect(dialog.textContent).toContain("permanent");
+  expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
+  expect(dialog.getAttribute("aria-describedby")).toBeTruthy();
   expect(calls("POST", LOCK_URL).length).toBe(0);
   fireEvent.click(screen.getByTestId("suite-lock-cancel-button"));
-  expect(screen.queryByTestId("suite-lock-confirm")).toBeNull();
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(document.activeElement).toBe(opener);
+  expect(calls("POST", LOCK_URL).length).toBe(0);
+  // Escape closes it too and focus returns to the opener
+  fireEvent.click(opener);
+  const second = await screen.findByRole("alertdialog");
+  fireEvent.keyDown(second, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  expect(document.activeElement).toBe(opener);
   expect(calls("POST", LOCK_URL).length).toBe(0);
   // editing the plan so it no longer passes withdraws a pending confirmation
-  fireEvent.click(lockButton());
-  expect(screen.getByTestId("suite-lock-confirm")).toBeTruthy();
-  setInput(/Minimum total cases/, "999");
-  expect(screen.queryByTestId("suite-lock-confirm")).toBeNull();
+  fireEvent.click(opener);
+  await screen.findByRole("alertdialog");
+  setInput(/Minimum independent tasks(?! per)/, "999");
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   expect(calls("POST", LOCK_URL).length).toBe(0);
+});
+
+test("[UI] a failed lock moves focus to the announced error", async () => {
+  await lockWith(fail(500, { detail: "boom" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("suite-lock-error")));
+  expect(screen.getByTestId("suite-lock-error").getAttribute("role")).toBe("alert");
 });

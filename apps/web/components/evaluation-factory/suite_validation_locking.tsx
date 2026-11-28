@@ -23,32 +23,75 @@
  * content. Provider/network failures stay errors and never become a lock (Law 17); a lock reply
  * is accepted only when it is the same suite with `status: "locked"`.
  *
- * Disclosed, not hidden: the frozen contract has no persisted sample plan or `suite_sha256`
- * column (`database_changes`: none), so the plan lives in this browser session and the hash is
- * computed here and shown, not stored. The server's lock route remains the enforcement for
- * reviewer identity, independence and tenant scope; the plan and hash checks are enforced by
- * this UI path only, and no effect is authorized by a control alone. Persisting the plan/hash
- * server-side needs a separately claimed migration prerequisite.
+ * Server enforcement (FTF-0603-F1): the lock request carries `{sample_plan, suite_sha256}` and the
+ * server re-runs every clause itself, inside the locking transaction, refusing a lock with a typed
+ * 409 finding per violated clause (`suite_lock_validation_failed`). The checks here are the same
+ * rules run early so the reviewer sees them before the request; a control alone authorizes nothing.
+ * A final suite starts from the whole Section 26 category list and the 1000 / 100 floors, which the
+ * plan can raise but never lower. `suite_sha256` is the server's canonical hash (organization,
+ * project, suite identity and every case), reproduced from the shared test vector.
+ * If the lock request is sent and its result cannot be read, the outcome is reported as unknown
+ * (verify the state), never as "nothing changed".
  */
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { Button, EmptyState, Field, Pending, resolveLocale, dirFor, type Locale } from "../ui";
+import {
+  AlertMessage,
+  Button,
+  Dialog,
+  EmptyState,
+  Field,
+  Pending,
+  dirFor,
+  kindForStatus,
+  resolveLocale,
+  uiError,
+  type Locale,
+  type UiError,
+} from "../ui";
 
-export const REFERENCE_FINAL_MIN_CASES = 1000;
-export const REFERENCE_FINAL_MIN_CRITICAL = 100;
+/** The reference final suite floors (Section 69.3), the same numbers the server enforces. */
+export const FINAL_MIN_INDEPENDENT_TASKS = 1000;
+export const FINAL_MIN_CRITICAL_SCENARIOS = 100;
 /** Bounded pagination: a cursor that repeats or a runaway listing is an error, never a loop. */
 export const MAX_CASE_PAGES = 200;
-export const MAX_PLAN_CATEGORIES = 100;
+/** The server refuses more than this many categories; the UI never truncates, it reports. */
+export const MAX_PLAN_CATEGORIES = 200;
+export const MAX_PLAN_COUNT = 1_000_000;
+/** The server's `CATEGORY_MAX_LENGTH`: a longer category name is refused, never cut. */
+export const CATEGORY_MAX_LENGTH = 100;
+/** The canonical-JSON format tag the server hashes under (shared test vector). */
+export const HASH_FORMAT = "sovra.evaluation_suite.sha256.v1";
+const MAX_SAFE_INTEGER = 9_007_199_254_740_991;
 
-/** Section 27 / 69.2: graders whose verdict does not rest on model self-report. */
-const INDEPENDENT_CRITICAL_GRADERS: readonly string[] = [
-  "tool_name",
-  "tool_arguments",
-  "tool_sequence",
-  "state_transition",
-  "forbidden_action",
-  "required_refusal",
+/**
+ * Section 26, verbatim and in the spec's order: a final suite must name every one of these in its
+ * plan (the server's `SECTION_26_CATEGORIES`; a test pins the two lists together).
+ */
+export const SECTION_26_CATEGORIES: readonly string[] = [
+  "happy-path tasks",
+  "ambiguous input",
+  "missing information",
+  "invalid input",
+  "incorrect user assumption",
+  "tool failure",
+  "tool timeout",
+  "permission denied",
+  "malformed tool result",
+  "partial tool result",
+  "conflicting tool results",
+  "multi-turn task",
+  "long context",
+  "retry/recovery",
+  "refusal",
+  "prompt injection",
+  "unauthorized tool use",
+  "critical side-effect prevention",
+  "schema compliance",
+  "loop prevention",
+  "termination correctness",
+  "cost efficiency",
 ];
 
 /** A placeholder in an expected output means the answer is not decided yet. */
@@ -89,42 +132,58 @@ export interface SuiteCase {
   weight: number;
 }
 
+/** The wire shape of the lock request's `sample_plan` (exactly these four fields). */
 export interface SamplePlan {
-  requiredCategories: string[];
-  minCases: number;
-  minCritical: number;
-  /** Minimum cases per required category (at least one critical among them is always required). */
-  minPerCategory: number;
+  required_categories: string[];
+  min_independent_tasks: number;
+  min_critical_scenarios: number;
+  min_cases_per_category: number;
 }
 
-export type FindingCode =
-  | "no_cases"
-  | "missing_critical_category"
-  | "insufficient_category_sample"
-  | "insufficient_total_cases"
-  | "insufficient_critical_cases"
-  | "unresolved_expected_output"
-  | "critical_oracle_not_independent"
-  | "plan_invalid"
-  | "plan_has_no_categories";
+/** Every finding code a lock can be blocked on: the server's `FINDING_CODES`. */
+export const FINDING_CODES = [
+  "sample_plan_missing",
+  "sample_plan_below_floor",
+  "no_cases",
+  "insufficient_independent_tasks",
+  "insufficient_critical_scenarios",
+  "missing_critical_category",
+  "insufficient_category_sample",
+  "unresolved_expected_output",
+  "non_canonical_number",
+  "suite_sha256_required",
+  "suite_sha256_mismatch",
+] as const;
+
+export type FindingCode = (typeof FINDING_CODES)[number];
 
 export interface Finding {
   code: FindingCode;
-  /** The category or case_key the finding names; never an expected value. */
+  /** The category, plan field or case_key the finding names; never an expected value. */
   subject: string | null;
   need?: number;
   have?: number;
 }
 
+/**
+ * The plan a suite starts from. A final suite starts from the whole Section 26 list and the
+ * reference floors; the floors and the Section 26 names cannot be lowered or removed (the server
+ * refuses a plan that does), only raised or added to.
+ */
 export function defaultPlan(purpose: "development" | "final"): SamplePlan {
   return purpose === "final"
     ? {
-        requiredCategories: [],
-        minCases: REFERENCE_FINAL_MIN_CASES,
-        minCritical: REFERENCE_FINAL_MIN_CRITICAL,
-        minPerCategory: 1,
+        required_categories: [...SECTION_26_CATEGORIES],
+        min_independent_tasks: FINAL_MIN_INDEPENDENT_TASKS,
+        min_critical_scenarios: FINAL_MIN_CRITICAL_SCENARIOS,
+        min_cases_per_category: 1,
       }
-    : { requiredCategories: [], minCases: 1, minCritical: 0, minPerCategory: 1 };
+    : {
+        required_categories: [],
+        min_independent_tasks: 1,
+        min_critical_scenarios: 0,
+        min_cases_per_category: 1,
+      };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -145,56 +204,112 @@ export function hasUnresolvedExpected(value: unknown): boolean {
   return false;
 }
 
-export function validatePlan(plan: SamplePlan): Finding[] {
+const COUNT_FIELDS = [
+  "min_independent_tasks",
+  "min_critical_scenarios",
+  "min_cases_per_category",
+] as const;
+
+/** Floors the plan itself must meet (server `plan_floor_findings`): purpose floors, then shape. */
+export function validatePlan(plan: SamplePlan, purpose: "development" | "final"): Finding[] {
   const findings: Finding[] = [];
-  const integers = [plan.minCases, plan.minCritical, plan.minPerCategory];
-  if (!integers.every((n) => Number.isInteger(n) && n >= 0 && n <= 1_000_000)) {
-    findings.push({ code: "plan_invalid", subject: null });
+  const floors: Record<(typeof COUNT_FIELDS)[number], number> = {
+    min_independent_tasks: 1,
+    min_critical_scenarios: 0,
+    min_cases_per_category: 1,
+  };
+  if (purpose === "final") {
+    floors.min_independent_tasks = FINAL_MIN_INDEPENDENT_TASKS;
+    floors.min_critical_scenarios = FINAL_MIN_CRITICAL_SCENARIOS;
+    for (const category of SECTION_26_CATEGORIES) {
+      if (!plan.required_categories.includes(category)) {
+        findings.push({ code: "missing_critical_category", subject: category });
+      }
+    }
   }
-  if (plan.minCases < 1 || plan.minPerCategory < 1) {
-    findings.push({ code: "plan_invalid", subject: null });
+  if (
+    plan.required_categories.length > MAX_PLAN_CATEGORIES ||
+    plan.required_categories.some((name) => name.length > CATEGORY_MAX_LENGTH)
+  ) {
+    findings.push({ code: "sample_plan_missing", subject: "required_categories" });
   }
-  if (plan.requiredCategories.length === 0) {
-    findings.push({ code: "plan_has_no_categories", subject: null });
+  if (plan.required_categories.length === 0) {
+    findings.push({
+      code: "sample_plan_below_floor",
+      subject: "required_categories",
+      need: 1,
+      have: 0,
+    });
+  }
+  for (const name of COUNT_FIELDS) {
+    const have = plan[name];
+    if (!Number.isInteger(have) || have < 0 || have > MAX_PLAN_COUNT) {
+      findings.push({ code: "sample_plan_missing", subject: name });
+    } else if (have < floors[name]) {
+      findings.push({ code: "sample_plan_below_floor", subject: name, need: floors[name], have });
+    }
   }
   return findings;
 }
 
-/** Pure suite validation. Every finding blocks the lock; an empty list is the only pass. */
-export function validateSuite(cases: readonly SuiteCase[], plan: SamplePlan): Finding[] {
-  const findings: Finding[] = [...validatePlan(plan)];
+function groups(cases: readonly SuiteCase[]): number {
+  return new Set(cases.map((c) => c.group_key)).size;
+}
+
+function hasUnsafeInteger(value: unknown): boolean {
+  if (typeof value === "number")
+    return Number.isInteger(value) && Math.abs(value) > MAX_SAFE_INTEGER;
+  if (Array.isArray(value)) return value.some(hasUnsafeInteger);
+  if (isRecord(value)) return Object.values(value).some(hasUnsafeInteger);
+  return false;
+}
+
+/**
+ * Pure suite validation, mirroring the server's `content_findings` rule for rule: every count is
+ * of distinct `group_key` values (Section 69.2: turns of one conversation, repeated seeds and
+ * template near-duplicates are not independent tasks), never of rows. Every finding blocks the
+ * lock; an empty list is the only pass. The server re-runs all of this on the lock request.
+ */
+export function validateSuite(
+  cases: readonly SuiteCase[],
+  plan: SamplePlan,
+  purpose: "development" | "final",
+): Finding[] {
+  const findings: Finding[] = [...validatePlan(plan, purpose)];
   if (cases.length === 0) {
     findings.push({ code: "no_cases", subject: null });
     return findings;
   }
-  if (cases.length < plan.minCases) {
+  const independent = groups(cases);
+  if (independent < plan.min_independent_tasks) {
     findings.push({
-      code: "insufficient_total_cases",
+      code: "insufficient_independent_tasks",
       subject: null,
-      need: plan.minCases,
-      have: cases.length,
+      need: plan.min_independent_tasks,
+      have: independent,
     });
   }
-  const criticalTotal = cases.filter((c) => c.critical).length;
-  if (criticalTotal < plan.minCritical) {
+  const critical = groups(cases.filter((c) => c.critical));
+  if (critical < plan.min_critical_scenarios) {
     findings.push({
-      code: "insufficient_critical_cases",
+      code: "insufficient_critical_scenarios",
       subject: null,
-      need: plan.minCritical,
-      have: criticalTotal,
+      need: plan.min_critical_scenarios,
+      have: critical,
     });
   }
-  for (const category of plan.requiredCategories) {
+  for (const category of plan.required_categories) {
     const inCategory = cases.filter((c) => c.category === category);
     if (!inCategory.some((c) => c.critical)) {
       findings.push({ code: "missing_critical_category", subject: category });
     }
-    if (inCategory.length < plan.minPerCategory) {
+    const sample = groups(inCategory);
+    if (sample < plan.min_cases_per_category) {
       findings.push({
         code: "insufficient_category_sample",
         subject: category,
-        need: plan.minPerCategory,
-        have: inCategory.length,
+        need: plan.min_cases_per_category,
+        have: sample,
       });
     }
   }
@@ -202,14 +317,23 @@ export function validateSuite(cases: readonly SuiteCase[], plan: SamplePlan): Fi
     if (hasUnresolvedExpected(c.expected_json)) {
       findings.push({ code: "unresolved_expected_output", subject: c.case_key });
     }
-    if (c.critical && !INDEPENDENT_CRITICAL_GRADERS.includes(c.grader_type)) {
-      findings.push({ code: "critical_oracle_not_independent", subject: c.case_key });
+    if (
+      hasUnsafeInteger(c.input_json) ||
+      hasUnsafeInteger(c.expected_json) ||
+      hasUnsafeInteger(c.grader_config_json) ||
+      hasUnsafeInteger(c.weight)
+    ) {
+      findings.push({ code: "non_canonical_number", subject: c.case_key });
     }
   }
   return findings;
 }
 
-/** Deterministic JSON: object keys sorted, no whitespace. Numbers/strings use JSON.stringify. */
+/**
+ * Canonical JSON (RFC 8785 style, the same bytes as the server's `canonical_json`): object keys
+ * sorted by UTF-16 code units (the default `Array.sort` order), ECMAScript number and string
+ * serialization via `JSON.stringify`, no whitespace.
+ */
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (isRecord(value)) {
@@ -286,13 +410,25 @@ export function sha256Hex(text: string): string {
   return h.map((x) => x.toString(16).padStart(8, "0")).join("");
 }
 
-/** Hash over the locked identity: the suite's own identity fields and every case, in case_key
- * order, with only the fields that define what is graded (never server ids or timestamps). */
-export function computeSuiteSha256(suite: SuiteRecord, cases: readonly SuiteCase[]): string {
+/**
+ * `suite_sha256`: SHA-256 over the canonical JSON of the organization, project, suite identity and
+ * every case in case_key (UTF-16 code unit) order, only the fields that define what is graded
+ * (never server ids, names, reviewers or timestamps). It is byte-for-byte the server's
+ * `compute_suite_sha256`; `packages/contracts/test-vectors/evaluation-suite-sha256.json` is the
+ * shared vector both sides must reproduce.
+ */
+export function computeSuiteSha256(
+  scope: { organizationId: string; projectId: string },
+  suite: SuiteRecord,
+  cases: readonly SuiteCase[],
+): string {
   const ordered = [...cases].sort((x, y) =>
     x.case_key < y.case_key ? -1 : x.case_key > y.case_key ? 1 : 0,
   );
-  const payload = {
+  const document = {
+    format: HASH_FORMAT,
+    organization_id: scope.organizationId,
+    project_id: scope.projectId,
     suite: {
       id: suite.id,
       agent_manifest_id: suite.agent_manifest_id,
@@ -314,7 +450,7 @@ export function computeSuiteSha256(suite: SuiteRecord, cases: readonly SuiteCase
       weight: c.weight,
     })),
   };
-  return sha256Hex(canonicalJson(payload));
+  return sha256Hex(canonicalJson(document));
 }
 
 function trimBase(apiBaseUrl: string): string {
@@ -345,41 +481,55 @@ const STRINGS = {
     en: "Suite {name}, version {version}, purpose {purpose}, status {status}, {count} cases.",
     ar: "المجموعة {name}، الإصدار {version}، الغرض {purpose}، الحالة {status}، عدد الحالات {count}.",
   },
+  purposeDevelopment: { en: "development", ar: "تطوير" },
+  purposeFinal: { en: "final", ar: "نهائية" },
+  statusDraft: { en: "draft", ar: "مسودة" },
+  statusLocked: { en: "locked", ar: "مقفلة" },
   planHeading: { en: "Sample plan", ar: "خطة العينات" },
   planCategories: {
-    en: "Required critical categories (comma separated)",
-    ar: "الفئات الحرجة المطلوبة (مفصولة بفواصل)",
+    en: "Required critical categories (comma or line separated)",
+    ar: "الفئات الحرجة المطلوبة (مفصولة بفواصل أو أسطر)",
   },
   planCategoriesHint: {
-    en: "Each listed category needs at least one critical case.",
-    ar: "تحتاج كل فئة مذكورة إلى حالة حرجة واحدة على الأقل.",
+    en: "Each listed category needs at least one critical case. A final suite must keep every Section 26 category; you can add more.",
+    ar: "تحتاج كل فئة مذكورة إلى حالة حرجة واحدة على الأقل. يجب أن تحتفظ المجموعة النهائية بكل فئات القسم 26، ويمكنك إضافة المزيد.",
   },
-  planMinCases: { en: "Minimum total cases", ar: "الحد الأدنى لإجمالي الحالات" },
-  planMinCritical: { en: "Minimum critical cases", ar: "الحد الأدنى للحالات الحرجة" },
+  planMinTasks: { en: "Minimum independent tasks", ar: "الحد الأدنى للمهام المستقلة" },
+  planMinTasksHint: {
+    en: "Counted by distinct group key, not by case rows. A final suite needs at least 1000.",
+    ar: "تُحسب بمفاتيح المجموعات المختلفة لا بصفوف الحالات. تحتاج المجموعة النهائية إلى 1000 على الأقل.",
+  },
+  planMinCritical: { en: "Minimum critical scenarios", ar: "الحد الأدنى للسيناريوهات الحرجة" },
+  planMinCriticalHint: {
+    en: "Counted by distinct group key among critical cases. A final suite needs at least 100.",
+    ar: "تُحسب بمفاتيح المجموعات المختلفة بين الحالات الحرجة. تحتاج المجموعة النهائية إلى 100 على الأقل.",
+  },
   planMinPerCategory: {
-    en: "Minimum cases per required category",
-    ar: "الحد الأدنى للحالات في كل فئة مطلوبة",
+    en: "Minimum independent tasks per required category",
+    ar: "الحد الأدنى للمهام المستقلة في كل فئة مطلوبة",
   },
   findingsHeading: { en: "Blocking findings", ar: "نتائج تمنع القفل" },
+  serverFindingsHeading: { en: "The server refused the lock", ar: "رفض الخادم القفل" },
   passed: {
     en: "Validation passed. The suite can be locked.",
     ar: "نجح التحقق. يمكن قفل المجموعة.",
   },
   shaLabel: {
-    en: "Computed suite_sha256 (this browser)",
-    ar: "قيمة suite_sha256 المحسوبة (هذا المتصفح)",
+    en: "suite_sha256 computed from the loaded cases",
+    ar: "قيمة suite_sha256 المحسوبة من الحالات المحمّلة",
   },
   lockButton: { en: "Lock suite", ar: "قفل المجموعة" },
   lockBlockedReason: {
     en: "Fix the blocking findings above to enable locking.",
     ar: "عالج النتائج المانعة أعلاه لتفعيل القفل.",
   },
+  confirmTitle: { en: "Lock this suite permanently?", ar: "قفل هذه المجموعة بشكل دائم؟" },
   confirmWarning: {
-    en: "Locking is permanent: the suite and its cases can no longer change. Confirm to lock it.",
-    ar: "القفل دائم: لا يمكن بعد ذلك تغيير المجموعة أو حالاتها. أكّد للقفل.",
+    en: "Locking is permanent: the suite and its cases can no longer change. The server checks the plan and the hash again before it locks.",
+    ar: "القفل دائم: لا يمكن بعد ذلك تغيير المجموعة أو حالاتها. يفحص الخادم الخطة والقيمة مجددًا قبل القفل.",
   },
   confirmButton: { en: "Confirm lock", ar: "تأكيد القفل" },
-  cancelButton: { en: "Cancel", ar: "إلغاء" },
+  cancelButton: { en: "Keep as draft", ar: "إبقاؤها مسودة" },
   locking: { en: "Locking…", ar: "جارٍ القفل…" },
   lockedNotice: {
     en: "Suite locked at {at}. Hash {sha} was computed from {count} cases.",
@@ -418,8 +568,16 @@ const STRINGS = {
     ar: "يمكن للمراجع المعيَّن للمجموعة فقط قفلها.",
   },
   errLockRefused: {
-    en: "The server refused the lock (the suite is already locked or incomplete).",
-    ar: "رفض الخادم القفل (المجموعة مقفلة بالفعل أو غير مكتملة).",
+    en: "The server refused the lock (the suite is already locked or incomplete). The suite was not changed.",
+    ar: "رفض الخادم القفل (المجموعة مقفلة بالفعل أو غير مكتملة). لم تتغير المجموعة.",
+  },
+  errLockFindings: {
+    en: "The server refused the lock because of the findings below. The suite was not changed.",
+    ar: "رفض الخادم القفل بسبب النتائج أدناه. لم تتغير المجموعة.",
+  },
+  errPlanRejected: {
+    en: "The server rejected the sample plan field {field}. The suite was not changed.",
+    ar: "رفض الخادم حقل خطة العينات {field}. لم تتغير المجموعة.",
   },
   errMalformed: {
     en: "The server reply was not in the expected form. Nothing was changed.",
@@ -429,52 +587,54 @@ const STRINGS = {
     en: "The server could not be reached. Nothing was changed.",
     ar: "تعذّر الوصول إلى الخادم. لم يتغير شيء.",
   },
+  errLockOutcomeUnknown: {
+    en: "The lock request was sent, but its result could not be confirmed. The suite may now be locked.",
+    ar: "أُرسل طلب القفل لكن تعذّر تأكيد نتيجته. قد تكون المجموعة مقفلة الآن.",
+  },
   errPaging: {
     en: "The case listing did not finish (repeated or runaway pages). Nothing was locked.",
     ar: "لم يكتمل سرد الحالات (صفحات مكررة أو لا نهائية). لم يتم قفل أي شيء.",
   },
-  recoverRetry: { en: "Press Load again to retry.", ar: "اضغط تحميل للمحاولة مجددًا." },
-  recoverAccess: {
-    en: "Ask an administrator for access; repeating the request will not help.",
-    ar: "اطلب الصلاحية من المسؤول؛ تكرار الطلب لن يفيد.",
+  fCode_sample_plan_missing: {
+    en: "The sample plan field {subject} is missing or not a whole number from 0 to 1,000,000 (at most 200 categories, each up to 100 characters).",
+    ar: "حقل خطة العينات {subject} مفقود أو ليس عددًا صحيحًا من 0 إلى 1,000,000 (200 فئة كحد أقصى، لكل منها 100 حرف كحد أقصى).",
   },
-  recoverSignIn: { en: "Sign in again and retry.", ar: "سجّل الدخول مجددًا ثم أعد المحاولة." },
-  recoverNoFix: {
-    en: "Reload the suite to see its current state.",
-    ar: "أعد تحميل المجموعة لعرض حالتها الحالية.",
+  fCode_sample_plan_below_floor: {
+    en: "The plan field {subject} is {have}; it must be at least {need}.",
+    ar: "قيمة حقل الخطة {subject} هي {have}؛ ويجب ألا تقل عن {need}.",
   },
   fCode_no_cases: { en: "The suite has no cases.", ar: "لا توجد حالات في المجموعة." },
+  fCode_insufficient_independent_tasks: {
+    en: "The suite has {have} independent tasks; the plan needs {need}.",
+    ar: "في المجموعة {have} مهمة مستقلة؛ والخطة تتطلب {need}.",
+  },
+  fCode_insufficient_critical_scenarios: {
+    en: "The suite has {have} critical scenarios; the plan needs {need}.",
+    ar: "في المجموعة {have} سيناريو حرج؛ والخطة تتطلب {need}.",
+  },
   fCode_missing_critical_category: {
     en: "Required category {subject} has no critical case.",
     ar: "الفئة المطلوبة {subject} لا تحتوي على حالة حرجة.",
   },
   fCode_insufficient_category_sample: {
-    en: "Category {subject} has {have} cases; the plan needs {need}.",
-    ar: "الفئة {subject} فيها {have} حالة؛ والخطة تتطلب {need}.",
-  },
-  fCode_insufficient_total_cases: {
-    en: "The suite has {have} cases; the plan needs {need}.",
-    ar: "في المجموعة {have} حالة؛ والخطة تتطلب {need}.",
-  },
-  fCode_insufficient_critical_cases: {
-    en: "The suite has {have} critical cases; the plan needs {need}.",
-    ar: "في المجموعة {have} حالة حرجة؛ والخطة تتطلب {need}.",
+    en: "Category {subject} has {have} independent tasks; the plan needs {need}.",
+    ar: "الفئة {subject} فيها {have} مهمة مستقلة؛ والخطة تتطلب {need}.",
   },
   fCode_unresolved_expected_output: {
     en: "Case {subject} has an unresolved expected output.",
     ar: "الحالة {subject} لها ناتج متوقع غير محسوم.",
   },
-  fCode_critical_oracle_not_independent: {
-    en: "Critical case {subject} does not use an independent oracle.",
-    ar: "الحالة الحرجة {subject} لا تستخدم مرجعًا مستقلًا.",
+  fCode_non_canonical_number: {
+    en: "Case {subject} holds a whole number too large to hash exactly.",
+    ar: "الحالة {subject} تحتوي على عدد صحيح أكبر من أن يُحسب له تجزئة دقيقة.",
   },
-  fCode_plan_invalid: {
-    en: "The sample plan numbers must be whole numbers; totals and per-category counts at least 1.",
-    ar: "يجب أن تكون أرقام خطة العينات أعدادًا صحيحة؛ والإجمالي والعدد لكل فئة 1 على الأقل.",
+  fCode_suite_sha256_required: {
+    en: "No reviewed hash was sent with the lock request.",
+    ar: "لم تُرسل قيمة التجزئة المراجَعة مع طلب القفل.",
   },
-  fCode_plan_has_no_categories: {
-    en: "Declare at least one required critical category in the sample plan.",
-    ar: "حدّد فئة حرجة مطلوبة واحدة على الأقل في خطة العينات.",
+  fCode_suite_sha256_mismatch: {
+    en: "The suite changed after review: the reviewed hash is no longer its hash.",
+    ar: "تغيّرت المجموعة بعد المراجعة: لم تعد القيمة المراجَعة هي قيمتها.",
   },
 } as const;
 
@@ -511,13 +671,31 @@ function withBdi(
   );
 }
 
+/** The plan fields a finding can name, shown by their own label, never as a raw wire name. */
+const PLAN_FIELD_KEY: Record<string, Key> = {
+  required_categories: "planCategories",
+  min_independent_tasks: "planMinTasks",
+  min_critical_scenarios: "planMinCritical",
+  min_cases_per_category: "planMinPerCategory",
+};
+
 function findingNode(f: Finding, locale: Locale | string): ReactNode {
   const key = `fCode_${f.code}` as Key;
   const vars: Record<string, string | number> = {};
   if (f.need !== undefined) vars.need = f.need;
   if (f.have !== undefined) vars.have = f.have;
   if (f.subject === null) return t(key, locale, vars);
-  return withBdi(key, locale, "subject", f.subject, vars);
+  const fieldKey = Object.hasOwn(PLAN_FIELD_KEY, f.subject) ? PLAN_FIELD_KEY[f.subject] : undefined;
+  const subject = fieldKey === undefined ? f.subject : t(fieldKey, locale);
+  return withBdi(key, locale, "subject", subject, vars);
+}
+
+function purposeLabel(purpose: SuiteRecord["purpose"], locale: Locale | string): string {
+  return t(purpose === "final" ? "purposeFinal" : "purposeDevelopment", locale);
+}
+
+function statusLabel(status: SuiteRecord["status"], locale: Locale | string): string {
+  return t(status === "locked" ? "statusLocked" : "statusDraft", locale);
 }
 
 const ERROR_DETAIL_KEY: Record<string, Key> = {
@@ -527,9 +705,35 @@ const ERROR_DETAIL_KEY: Record<string, Key> = {
 };
 
 interface Failure {
-  message: string;
-  recovery: Key;
+  error: UiError;
   restricted: boolean;
+  /** Typed server findings of a 409 `suite_lock_validation_failed`, when the reply carried them. */
+  findings?: Finding[];
+}
+
+function failure(message: string, kind: UiError["kind"] = "retry"): Failure {
+  return { error: uiError(message, kind), restricted: false };
+}
+
+/** A finding only when every field has the server's shape; anything else is not a finding. */
+function parseServerFindings(value: unknown): Finding[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const out: Finding[] = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.code !== "string") return null;
+    if (!(FINDING_CODES as readonly string[]).includes(item.code)) return null;
+    const subject = item.subject;
+    if (!(subject === null || subject === undefined || typeof subject === "string")) return null;
+    const need = item.need;
+    const have = item.have;
+    if (!(need === null || need === undefined || typeof need === "number")) return null;
+    if (!(have === null || have === undefined || typeof have === "number")) return null;
+    const finding: Finding = { code: item.code as FindingCode, subject: subject ?? null };
+    if (typeof need === "number") finding.need = need;
+    if (typeof have === "number") finding.have = have;
+    out.push(finding);
+  }
+  return out;
 }
 
 async function readFailure(
@@ -537,30 +741,44 @@ async function readFailure(
   locale: Locale | string,
   lock: boolean,
 ): Promise<Failure> {
-  let detail: string | null = null;
+  let detail: unknown = null;
   try {
     const body: unknown = await response.json();
-    if (isRecord(body) && typeof body.detail === "string") detail = body.detail;
+    if (isRecord(body)) detail = body.detail;
   } catch {
     detail = null;
   }
   const status = response.status;
+  const kind = kindForStatus(status);
   if (detail === "final_suite_content_restricted") {
-    return { message: t("restricted", locale), recovery: "recoverAccess", restricted: true };
+    return { error: uiError(t("restricted", locale), "permission"), restricted: true };
   }
-  let recovery: Key = "recoverRetry";
-  if (status === 401) recovery = "recoverSignIn";
-  else if (status === 403) recovery = "recoverAccess";
-  else if (status === 404 || status === 409) recovery = "recoverNoFix";
-  let message: string;
-  if (lock && status === 403 && detail !== "role_not_authorized")
-    message = t("errLockForbidden", locale);
-  else if (lock && status === 409) message = t("errLockRefused", locale);
-  else {
-    const detailKey = detail === null ? undefined : ERROR_DETAIL_KEY[detail];
-    message = t(detailKey ?? "errGeneric", locale);
+  if (
+    lock &&
+    status === 409 &&
+    isRecord(detail) &&
+    detail.code === "suite_lock_validation_failed"
+  ) {
+    const findings = parseServerFindings(detail.findings);
+    if (findings !== null) {
+      return {
+        error: uiError(t("errLockFindings", locale), "conflict"),
+        restricted: false,
+        findings,
+      };
+    }
+    return failure(t("errLockRefused", locale), "conflict");
   }
-  return { message, recovery, restricted: false };
+  if (lock && status === 400 && isRecord(detail) && detail.code === "invalid_lock_request") {
+    const field = typeof detail.field === "string" ? detail.field : "sample_plan";
+    return failure(t("errPlanRejected", locale, { field }), "input");
+  }
+  if (lock && status === 403 && detail !== "role_not_authorized") {
+    return failure(t("errLockForbidden", locale), "permission");
+  }
+  if (lock && status === 409) return failure(t("errLockRefused", locale), "conflict");
+  const detailKey = typeof detail === "string" ? ERROR_DETAIL_KEY[detail] : undefined;
+  return failure(t(detailKey ?? "errGeneric", locale), kind);
 }
 
 function isSuite(value: unknown): value is SuiteRecord {
@@ -599,7 +817,7 @@ function isCase(value: unknown): value is SuiteCase {
 class LoadError extends Error {
   failure: Failure;
   constructor(failure: Failure) {
-    super(failure.message);
+    super(failure.error.message);
     this.failure = failure;
   }
 }
@@ -608,22 +826,13 @@ async function loadAll(
   baseSuiteUrl: string,
   locale: Locale | string,
 ): Promise<{ suite: SuiteRecord; cases: SuiteCase[] }> {
-  const malformed = (): LoadError =>
-    new LoadError({
-      message: t("errMalformed", locale),
-      recovery: "recoverRetry",
-      restricted: false,
-    });
+  const malformed = (): LoadError => new LoadError(failure(t("errMalformed", locale)));
   const get = async (url: string): Promise<unknown> => {
     let response: Response;
     try {
       response = await fetch(url, { method: "GET", credentials: "include" });
     } catch {
-      throw new LoadError({
-        message: t("errUnreachable", locale),
-        recovery: "recoverRetry",
-        restricted: false,
-      });
+      throw new LoadError(failure(t("errUnreachable", locale)));
     }
     if (!response.ok) throw new LoadError(await readFailure(response, locale, false));
     try {
@@ -655,29 +864,22 @@ async function loadAll(
       return { suite: suiteBody, cases };
     }
     if (seenCursors.has(body.next_after)) {
-      throw new LoadError({
-        message: t("errPaging", locale),
-        recovery: "recoverRetry",
-        restricted: false,
-      });
+      throw new LoadError(failure(t("errPaging", locale)));
     }
     seenCursors.add(body.next_after);
     after = body.next_after;
   }
-  throw new LoadError({
-    message: t("errPaging", locale),
-    recovery: "recoverRetry",
-    restricted: false,
-  });
+  throw new LoadError(failure(t("errPaging", locale)));
 }
 
+/** Comma or line separated, trimmed, de-duplicated. Never truncated: too many is a finding. */
 function parseCategories(text: string): string[] {
   const seen = new Set<string>();
-  for (const part of text.split(",")) {
+  for (const part of text.split(/[,\n]/)) {
     const trimmed = part.trim();
     if (trimmed !== "") seen.add(trimmed);
   }
-  return [...seen].slice(0, MAX_PLAN_CATEGORIES);
+  return [...seen];
 }
 
 function parseCount(text: string): number {
@@ -692,54 +894,45 @@ export interface SuiteValidationLockingProps {
   locale?: Locale;
 }
 
-function FocusableAlert({ children, testId }: { children: ReactNode; testId: string }) {
+/** A failed lock or load: announced, focus moved to it, with the recovery step beside it. */
+function FocusedAlert({ error, locale }: { error: UiError; locale: Locale }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    ref.current?.focus();
-  }, []);
+    // After a macrotask: closing the confirmation dialog schedules its own focus return to the
+    // Lock button (Radix FocusScope), which would otherwise take focus back from the alert.
+    const timer = setTimeout(() => {
+      ref.current?.querySelector<HTMLElement>("[role=alert]")?.focus();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [error]);
   return (
-    <div ref={ref} tabIndex={-1} role="alert" data-testid={testId}>
-      {children}
+    <div ref={ref} data-testid="suite-lock-error-block">
+      <AlertMessage error={error} locale={locale} testId="suite-lock-error" focusable />
     </div>
   );
 }
 
-function ConfirmLock({
-  warning,
-  confirmLabel,
-  cancelLabel,
-  onConfirm,
-  onCancel,
+function FindingList({
+  findings,
+  heading,
+  locale,
+  testId,
 }: {
-  warning: string;
-  confirmLabel: string;
-  cancelLabel: string;
-  onConfirm: () => void;
-  onCancel: () => void;
+  findings: readonly Finding[];
+  heading: string;
+  locale: Locale;
+  testId: string;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
   return (
-    <div ref={ref} tabIndex={-1} role="group" aria-label={warning} data-testid="suite-lock-confirm">
-      <p>{warning}</p>
-      <Button
-        type="button"
-        variant="danger"
-        data-testid="suite-lock-confirm-button"
-        onClick={onConfirm}
-      >
-        {confirmLabel}
-      </Button>{" "}
-      <Button
-        type="button"
-        variant="secondary"
-        data-testid="suite-lock-cancel-button"
-        onClick={onCancel}
-      >
-        {cancelLabel}
-      </Button>
+    <div data-testid={testId}>
+      <h3>{heading}</h3>
+      <ul>
+        {findings.map((f, index) => (
+          <li key={`${f.code}-${f.subject ?? ""}-${index}`} data-finding={f.code}>
+            {findingNode(f, locale)}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -755,6 +948,8 @@ export function SuiteValidationLocking({
   const dir = dirFor(lang);
   const idPrefix = useId();
   const baseSuiteUrl = suiteUrl(apiBaseUrl, organizationId, projectId, suiteId);
+  const scope = { organizationId, projectId };
+  const lockTriggerRef = useRef<HTMLElement | null>(null);
 
   const [suite, setSuite] = useState<SuiteRecord | null>(null);
   const [cases, setCases] = useState<SuiteCase[] | null>(null);
@@ -762,35 +957,51 @@ export function SuiteValidationLocking({
   const [locking, setLocking] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [restricted, setRestricted] = useState(false);
-  const [error, setError] = useState<Failure | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
+  const [serverFindings, setServerFindings] = useState<Finding[] | null>(null);
   const [notice, setNotice] = useState<ReactNode>(null);
-  const [categoriesText, setCategoriesText] = useState("");
-  const [minCasesText, setMinCasesText] = useState("");
-  const [minCriticalText, setMinCriticalText] = useState("");
-  const [minPerCategoryText, setMinPerCategoryText] = useState("1");
+  // `null` = the purpose default (a final suite starts from the whole Section 26 list and floors).
+  const [categoriesText, setCategoriesText] = useState<string | null>(null);
+  const [minTasksText, setMinTasksText] = useState<string | null>(null);
+  const [minCriticalText, setMinCriticalText] = useState<string | null>(null);
+  const [minPerCategoryText, setMinPerCategoryText] = useState<string | null>(null);
 
-  const defaults = defaultPlan(suite?.purpose ?? "development");
+  const purpose = suite?.purpose ?? "development";
+  const defaults = defaultPlan(purpose);
+  const categoriesValue = categoriesText ?? defaults.required_categories.join(", ");
+  const minTasksValue = minTasksText ?? String(defaults.min_independent_tasks);
+  const minCriticalValue = minCriticalText ?? String(defaults.min_critical_scenarios);
+  const minPerCategoryValue = minPerCategoryText ?? String(defaults.min_cases_per_category);
   const plan: SamplePlan = {
-    requiredCategories: parseCategories(categoriesText),
-    minCases: minCasesText.trim() === "" ? defaults.minCases : parseCount(minCasesText),
-    minCritical: minCriticalText.trim() === "" ? defaults.minCritical : parseCount(minCriticalText),
-    minPerCategory: parseCount(minPerCategoryText),
+    required_categories: parseCategories(categoriesValue),
+    min_independent_tasks: parseCount(minTasksValue),
+    min_critical_scenarios: parseCount(minCriticalValue),
+    min_cases_per_category: parseCount(minPerCategoryValue),
   };
   const findings: Finding[] | null =
     suite !== null && cases !== null && suite.status === "draft"
-      ? validateSuite(cases, plan)
+      ? validateSuite(cases, plan, suite.purpose)
       : null;
-  const sha = suite !== null && cases !== null ? computeSuiteSha256(suite, cases) : null;
+  const sha = suite !== null && cases !== null ? computeSuiteSha256(scope, suite, cases) : null;
   const canLock = findings !== null && findings.length === 0 && !locking && !loading;
+
+  function resetPlan() {
+    setCategoriesText(null);
+    setMinTasksText(null);
+    setMinCriticalText(null);
+    setMinPerCategoryText(null);
+  }
 
   async function handleLoad() {
     setConfirming(false);
     setError(null);
+    setServerFindings(null);
     setNotice(null);
     setLoading(true);
     try {
       const loaded = await loadAll(baseSuiteUrl, locale);
       setRestricted(false);
+      if (loaded.suite.purpose !== suite?.purpose) resetPlan();
       setSuite(loaded.suite);
       setCases(loaded.cases);
     } catch (caught) {
@@ -798,13 +1009,9 @@ export function SuiteValidationLocking({
       setCases(null);
       if (caught instanceof LoadError) {
         setRestricted(caught.failure.restricted);
-        setError(caught.failure);
+        setError(caught.failure.error);
       } else {
-        setError({
-          message: t("errUnreachable", locale),
-          recovery: "recoverRetry",
-          restricted: false,
-        });
+        setError(uiError(t("errUnreachable", locale)));
       }
     } finally {
       setLoading(false);
@@ -815,6 +1022,7 @@ export function SuiteValidationLocking({
     if (suite === null || cases === null || sha === null) return;
     setConfirming(false);
     setError(null);
+    setServerFindings(null);
     setNotice(null);
     setLocking(true);
     try {
@@ -822,24 +1030,18 @@ export function SuiteValidationLocking({
       // the suite that gets locked.
       const fresh = await loadAll(baseSuiteUrl, locale);
       const freshFindings =
-        fresh.suite.status === "draft" ? validateSuite(fresh.cases, plan) : ["locked"];
-      const freshSha = computeSuiteSha256(fresh.suite, fresh.cases);
+        fresh.suite.status === "draft"
+          ? validateSuite(fresh.cases, plan, fresh.suite.purpose)
+          : ["locked"];
+      const freshSha = computeSuiteSha256(scope, fresh.suite, fresh.cases);
       setSuite(fresh.suite);
       setCases(fresh.cases);
       if (freshFindings.length > 0) {
-        setError({
-          message: t("blockedBeforeLock", locale),
-          recovery: "recoverNoFix",
-          restricted: false,
-        });
+        setError(uiError(t("blockedBeforeLock", locale), "conflict"));
         return;
       }
       if (freshSha !== sha) {
-        setError({
-          message: t("changedBeforeLock", locale),
-          recovery: "recoverNoFix",
-          restricted: false,
-        });
+        setError(uiError(t("changedBeforeLock", locale), "conflict"));
         return;
       }
       let response: Response;
@@ -848,29 +1050,24 @@ export function SuiteValidationLocking({
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ sample_plan: plan, suite_sha256: freshSha }),
         });
       } catch {
-        setError({
-          message: t("errUnreachable", locale),
-          recovery: "recoverRetry",
-          restricted: false,
-        });
+        // The request may have reached the server: the outcome is unknown, never "nothing changed".
+        setError(uiError(t("errLockOutcomeUnknown", locale), "verify-state"));
         return;
       }
       if (!response.ok) {
-        setError(await readFailure(response, locale, true));
+        const refused = await readFailure(response, locale, true);
+        setError(refused.error);
+        if (refused.findings) setServerFindings(refused.findings);
         return;
       }
       let body: unknown;
       try {
         body = await response.json();
       } catch {
-        setError({
-          message: t("errMalformed", locale),
-          recovery: "recoverNoFix",
-          restricted: false,
-        });
+        setError(uiError(t("errLockOutcomeUnknown", locale), "verify-state"));
         return;
       }
       if (
@@ -879,11 +1076,7 @@ export function SuiteValidationLocking({
         body.status !== "locked" ||
         body.locked_at === null
       ) {
-        setError({
-          message: t("errMalformed", locale),
-          recovery: "recoverNoFix",
-          restricted: false,
-        });
+        setError(uiError(t("errLockOutcomeUnknown", locale), "verify-state"));
         return;
       }
       setSuite(body);
@@ -900,13 +1093,9 @@ export function SuiteValidationLocking({
           setSuite(null);
           setCases(null);
         }
-        setError(caught.failure);
+        setError(caught.failure.error);
       } else {
-        setError({
-          message: t("errUnreachable", locale),
-          recovery: "recoverRetry",
-          restricted: false,
-        });
+        setError(uiError(t("errUnreachable", locale)));
       }
     } finally {
       setLocking(false);
@@ -937,11 +1126,14 @@ export function SuiteValidationLocking({
       {suite !== null && cases !== null ? loadButton : null}
       {loading ? <Pending label={t("loading", locale)} locale={locale} /> : null}
 
-      {error ? (
-        <FocusableAlert testId="suite-lock-error">
-          <p>{error.message}</p>
-          <p>{t(error.recovery, locale)}</p>
-        </FocusableAlert>
+      {error ? <FocusedAlert error={error} locale={lang} /> : null}
+      {serverFindings ? (
+        <FindingList
+          findings={serverFindings}
+          heading={t("serverFindingsHeading", locale)}
+          locale={lang}
+          testId="suite-lock-server-findings"
+        />
       ) : null}
       {restricted ? <p data-testid="suite-lock-restricted">{t("restricted", locale)}</p> : null}
       {notice ? (
@@ -963,8 +1155,8 @@ export function SuiteValidationLocking({
           <p data-testid="suite-lock-summary">
             {withBdi("suiteSummary", locale, "name", suite.name, {
               version: suite.version,
-              purpose: suite.purpose,
-              status: suite.status,
+              purpose: purposeLabel(suite.purpose, locale),
+              status: statusLabel(suite.status, locale),
               count: cases.length,
             })}
           </p>
@@ -980,52 +1172,48 @@ export function SuiteValidationLocking({
                 helper={t("planCategoriesHint", locale)}
                 requirement="required"
                 locale={locale}
-                value={categoriesText}
+                value={categoriesValue}
                 onChange={(event) => setCategoriesText(event.target.value)}
               />
               <Field
-                id={fieldId("min-cases")}
-                data-testid="plan-min-cases"
-                requirement="optional"
+                id={fieldId("min-tasks")}
+                data-testid="plan-min-tasks"
+                requirement="required"
                 locale={locale}
-                label={t("planMinCases", locale)}
+                label={t("planMinTasks", locale)}
+                helper={t("planMinTasksHint", locale)}
                 inputMode="numeric"
-                placeholder={String(defaults.minCases)}
-                value={minCasesText}
-                onChange={(event) => setMinCasesText(event.target.value)}
+                value={minTasksValue}
+                onChange={(event) => setMinTasksText(event.target.value)}
               />
               <Field
                 id={fieldId("min-critical")}
                 data-testid="plan-min-critical"
-                requirement="optional"
+                requirement="required"
                 locale={locale}
                 label={t("planMinCritical", locale)}
+                helper={t("planMinCriticalHint", locale)}
                 inputMode="numeric"
-                placeholder={String(defaults.minCritical)}
-                value={minCriticalText}
+                value={minCriticalValue}
                 onChange={(event) => setMinCriticalText(event.target.value)}
               />
               <Field
                 id={fieldId("min-per-category")}
                 data-testid="plan-min-per-category"
-                requirement="optional"
+                requirement="required"
                 locale={locale}
                 label={t("planMinPerCategory", locale)}
                 inputMode="numeric"
-                value={minPerCategoryText}
+                value={minPerCategoryValue}
                 onChange={(event) => setMinPerCategoryText(event.target.value)}
               />
               {findings !== null && findings.length > 0 ? (
-                <div data-testid="suite-lock-findings">
-                  <h3>{t("findingsHeading", locale)}</h3>
-                  <ul>
-                    {findings.map((f, index) => (
-                      <li key={`${f.code}-${f.subject ?? ""}-${index}`} data-finding={f.code}>
-                        {findingNode(f, locale)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <FindingList
+                  findings={findings}
+                  heading={t("findingsHeading", locale)}
+                  locale={lang}
+                  testId="suite-lock-findings"
+                />
               ) : (
                 <p data-testid="suite-lock-passed">{t("passed", locale)}</p>
               )}
@@ -1035,7 +1223,10 @@ export function SuiteValidationLocking({
               <Button
                 type="button"
                 data-testid="suite-lock-lock-button"
-                onClick={() => setConfirming(true)}
+                onClick={(event) => {
+                  lockTriggerRef.current = event.currentTarget;
+                  setConfirming(true);
+                }}
                 disabled={!canLock}
                 disabledReason={
                   findings !== null && findings.length > 0
@@ -1045,15 +1236,34 @@ export function SuiteValidationLocking({
               >
                 {locking ? t("locking", locale) : t("lockButton", locale)}
               </Button>
-              {confirming && canLock ? (
-                <ConfirmLock
-                  warning={t("confirmWarning", locale)}
-                  confirmLabel={t("confirmButton", locale)}
-                  cancelLabel={t("cancelButton", locale)}
-                  onConfirm={handleLock}
-                  onCancel={() => setConfirming(false)}
-                />
-              ) : null}
+              <Dialog
+                open={confirming && canLock}
+                onOpenChange={setConfirming}
+                title={t("confirmTitle", locale)}
+                description={t("confirmWarning", locale)}
+                locale={lang}
+                data-testid="suite-lock-confirm"
+                restoreFocusTo={lockTriggerRef.current}
+              >
+                <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "flex-end" }}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    data-testid="suite-lock-cancel-button"
+                    onClick={() => setConfirming(false)}
+                  >
+                    {t("cancelButton", locale)}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    data-testid="suite-lock-confirm-button"
+                    onClick={handleLock}
+                  >
+                    {t("confirmButton", locale)}
+                  </Button>
+                </div>
+              </Dialog>
             </>
           )}
         </>

@@ -78,7 +78,10 @@ export function Dialog({
           }}
           style={{
             position: "fixed",
-            insetInlineStart: "50%",
+            // Physical `left`, not `inset-inline-start`: the centring transform is physical, so
+            // under `dir=rtl` the logical property pushed a 480px dialog off the left edge and its
+            // buttons were unreachable (found by the FTF-0603 Arabic browser evidence).
+            left: "50%",
             insetBlockStart: "50%",
             transform: "translate(-50%, -50%)",
             background: "var(--color-surface)",
