@@ -831,6 +831,17 @@ def hardening_suite() -> None:
         run(rec_upper, config=tok_matches_record),
         "revision_not_approved",
     )
+    rec_upper2 = build_case()
+    real2 = rec_upper2.artifact.base_model_revision
+    rec_upper2.artifact.base_model_revision = real2.upper()
+    job_matches_record = rehash(
+        rec_upper2.config, lambda d: d["server"].__setitem__("base_revision", real2.upper())
+    )
+    expect_refused(
+        "record revision differs only in case from the tokenizer revision",
+        run(rec_upper2, config=job_matches_record),
+        "revision_not_approved",
+    )
     upper_status = build_case()
     upper_status.artifact.status = "READY"
     expect_refused("status READY is not ready", run(upper_status), "artifact_not_approved")
@@ -990,6 +1001,11 @@ def hardening_suite() -> None:
             "manifest_not_strict_json",
         ),
         ("not an object", b"[]", "manifest_keys"),
+        (
+            "keys differing only in case",
+            json.dumps({"schema": bal.MANIFEST_SCHEMA, "SCHEMA": 1, "files": []}).encode(),
+            "manifest_keys",
+        ),
         (
             "extra key",
             json.dumps({"schema": bal.MANIFEST_SCHEMA, "files": [], "x": 1}).encode(),

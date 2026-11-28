@@ -176,11 +176,13 @@ ERROR_CODES: Final = (
 
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 _VERSION_ID = re.compile(r"[A-Za-z0-9._\-+=/]{1,1024}")
+_MANIFEST_NAMES = frozenset({MANIFEST_NAME})
+_MANIFEST_SCHEMAS = frozenset({MANIFEST_SCHEMA})
 _MANIFEST_FILE_KEYS = frozenset({"path", "version_id", "size_bytes", "sha256"})
 _MAX_FILE_BYTES = 1 << 40
 _TIMEOUT_SECONDS = 60.0
 _S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
-_REMOTE_CODE_KEYS = ("auto_map", "trust_remote_code")
+_REMOTE_CODE_KEYS = frozenset({"auto_map", "trust_remote_code"})
 _FILE_CODES: Final[Mapping[str, str]] = {
     "unsafe_weight_format": "unsafe_weight_format",
     "unexpected_file": "artifact_file_unexpected",
@@ -289,7 +291,7 @@ def _split_source_uri(source_uri: str) -> tuple[str, str]:
     # FTF-0301 already requires a private_s3 source_uri to be `s3://bucket/key`.
     bucket, _, key = source_uri.removeprefix("s3://").partition("/")
     prefix, _, name = key.rpartition("/")
-    if not bucket or not prefix or name != MANIFEST_NAME:
+    if not bucket or not prefix or name not in _MANIFEST_NAMES:
         raise _fail("artifact_location_denied", "source_uri_is_not_a_manifest")
     return bucket, prefix + "/"
 
@@ -413,7 +415,7 @@ def _parse_manifest(body: bytes) -> tuple[ManifestFile, ...]:
         raise _fail("manifest_invalid", "manifest_not_strict_json") from None
     if type(doc) is not dict or set(doc) != {"schema", "files"}:
         raise _fail("manifest_invalid", "manifest_keys")
-    if doc["schema"] != MANIFEST_SCHEMA:
+    if doc["schema"] not in _MANIFEST_SCHEMAS:
         raise _fail("manifest_invalid", "manifest_schema")
     entries = doc["files"]
     if type(entries) is not list or not 0 < len(entries) <= MANIFEST_MAX_FILES:
@@ -458,7 +460,7 @@ def _json_object(body: bytes) -> dict[str, object] | None:
 
 def _refuse_remote_code(name: str, body: bytes) -> None:
     obj = _json_object(body)
-    if obj is not None and any(key in obj for key in _REMOTE_CODE_KEYS):
+    if obj is not None and any(key in _REMOTE_CODE_KEYS for key in obj):
         raise _fail("remote_code_not_allowed", f"{name.split('.')[0]}_declares_custom_code")
 
 
