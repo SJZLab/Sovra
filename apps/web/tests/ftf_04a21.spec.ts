@@ -243,6 +243,10 @@ test("URL helpers point at the real FTF-04A19/FTF-04A20 API contract", () => {
 test("mount only reads: it never saves, submits or locks on its own", async () => {
   await renderLoaded();
   expect(server.calls.map((call) => call.method).sort()).toEqual(["GET", "GET"]);
+  // The exact routes: the manifest itself and its per-field evidence (FTF-04A20), nothing else.
+  expect(server.calls.map((call) => call.path).sort()).toEqual(
+    [MANIFEST_PATH, `${MANIFEST_PATH}/evidence`].sort(),
+  );
 });
 
 test("each field shows only its own evidence, and says so when there is none", async () => {

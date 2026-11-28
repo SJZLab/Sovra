@@ -476,6 +476,11 @@ test("selecting an existing connection reveals the authorization panel; a grante
   await waitFor(() =>
     expect(screen.getByTestId("dataset-source-authorization-result-authorized")).toBeTruthy(),
   );
+  // The exact route: the connection's own /authorize, as a POST, and no other write.
+  const writes = fetchMock.mock.calls.filter((call) => call[1]?.method === "POST");
+  expect(writes.map((call) => call[0])).toEqual([
+    `${API_BASE}/api/v1/organizations/${ORG_ID}/projects/${PROJECT_ID}/dataset-sources/${existing.id}/authorize`,
+  ]);
 });
 
 test("checking a purpose the connection was never granted surfaces the real 403 denial, not a client-side guess", async () => {
