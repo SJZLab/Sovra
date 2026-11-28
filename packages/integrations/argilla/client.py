@@ -410,21 +410,12 @@ class ArgillaClient:
         5xx -- the caller (`compute_health`) reports that as unhealthy,
         never as a fabricated healthy result (Law 17).
 
-        Known upstream bug (confirmed 2026-10-22, FTF-R006-P1b round 2,
-        reproduced against a real `pip install argilla-server==2.8.0` and
-        still present on `argilla-io/argilla`'s own `develop` branch as of
-        this date): the real server's `/status` handler returns its
-        Elasticsearch client's raw `ObjectApiResponse` as the `search_engine`
-        field, but the route's own `response_model` declares that field as a
-        plain `dict` -- pydantic v2's response-model validation rejects
-        `ObjectApiResponse` (it is not a `dict` subclass), and Argilla's own
-        blanket `@app.exception_handler(ValueError)` then turns that
-        `pydantic_core.ValidationError` (a `ValueError` subclass) into an
-        opaque, silently-logged 422 on every single call, independent of
-        Elasticsearch's own version. Do not use this method as a
-        liveness/health probe against a real server -- see `get_version()`
-        for a call this same bug cannot touch (it never reaches the search
-        engine at all)."""
+        Search-engine note (FTF-R006-P1b round 4): the 422 once seen on this route
+        was observed only with Elasticsearch 8.x, a stack the owner did not choose.
+        On the owner-ruled OpenSearch 2.19.x stack the real server answers `/status`
+        with 200 and a version (probed in CI by
+        tests/integration/test_argilla_real_server.py). `get_version()` stays as a
+        lighter liveness call that never reaches the search engine."""
         return self._call("GET", "/status")
 
     def get_version(self) -> dict[str, Any]:
