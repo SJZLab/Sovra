@@ -1544,7 +1544,7 @@ def test_p2_revoke_redrives_removal_pending_rows_even_without_user_deletion(env:
     scope, ident = env.scope(), env.identity()
     env.sync(Role.ML_ENGINEER, scope, ident)
     env.sql("UPDATE argilla_workspace_members SET status = 'removal_pending'")
-    env.client.delete_user = lambda _u: None  # type: ignore[method-assign]
+    env.client.delete_user = lambda _u: None  # type: ignore[method-assign,assignment]
     env.revoke()
     check(
         "[P2-U] a removal_pending row is removed for real by revoke",
@@ -1616,7 +1616,7 @@ def test_p2_add_rejected_for_deleted_user_reads_as_revoked(env: Env) -> None:
     def rejected(*_a: Any) -> None:
         raise ArgillaRejectedError("Argilla returned HTTP 422")
 
-    env.client.add_workspace_user = rejected  # type: ignore[method-assign]
+    env.client.add_workspace_user = rejected  # type: ignore[method-assign,assignment]
     check(
         "[P2-K] for a still-active identity a rejected add propagates unchanged",
         raises(ArgillaRejectedError, env.sync, Role.ML_ENGINEER, scope, other, "still-active")

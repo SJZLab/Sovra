@@ -61,8 +61,8 @@ sys.path.insert(0, str(API_ROOT))
 sys.path.insert(0, str(ROOT / "tests" / "tasks"))
 sys.path.insert(0, str(ROOT / "tests" / "integration"))
 
-import test_ftf_0519_p1_split_manifests as T  # noqa: E402 -- the real-store seeding helpers
 import argilla_real_support as real_argilla  # noqa: E402
+import test_ftf_0519_p1_split_manifests as T  # noqa: E402 -- the real-store seeding helpers
 from packages.integrations.argilla import review_mapping as rm  # noqa: E402
 from packages.litellm_client.secret_manager_integration import (  # noqa: E402
     OpenBaoConfig,
@@ -1230,9 +1230,7 @@ def section_database_protections(world: World, built: dict[str, Any]) -> None:
 
 def section_secrecy(world: World) -> None:
     env = world.env
-    keys = sorted(
-        {u["api_key"] for u in world.server.users.values()} | set(world.seen_keys)
-    )
+    keys = sorted({u["api_key"] for u in world.server.users.values()} | set(world.seen_keys))
     check(
         "I3: the sealed-suite canary is not findable on the real server, by full scan or by the "
         "real records/search endpoint, for the owner key or ANY annotator key",

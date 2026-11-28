@@ -16,7 +16,7 @@ FTF-R006-P1b certifier advisories of 2026-11-28T04:00Z; Section 65, 78.4, 80.3; 
    time; `sovra_app` gets UPDATE on this one extra column only.
 
 Revision ID: 0041_argilla_revoke_completion
-Revises: 0039_eval_suite_sample_plans
+Revises: 0040_training_experiments
 Create Date: 2026-11-28
 """
 
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0041_argilla_revoke_completion"
-down_revision = "0039_eval_suite_sample_plans"
+down_revision = "0040_training_experiments"
 branch_labels = None
 depends_on = None
 

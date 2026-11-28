@@ -1,5 +1,6 @@
 """The REAL argilla-server (v2.8.0, `infra/docker/argilla/docker-compose.yml`) behind the small
-surface the FTF-R006-P2 review-queue suite inspects (`tests/integration/test_argilla_review_queue.py`).
+surface the FTF-R006-P2 review-queue suite inspects
+(`tests/integration/test_argilla_review_queue.py`).
 
 Nothing here simulates Argilla. Every value is read from, and every edit is made on, the real
 server over its own `/api/v1` REST API:
@@ -189,7 +190,9 @@ class RealArgillaServer:
     # -- a really stopped server -----------------------------------------------------------
 
     def stop(self) -> None:
-        subprocess.run(["docker", "stop", "-t", "5", self.container], check=True, capture_output=True)
+        subprocess.run(
+            ["docker", "stop", "-t", "5", self.container], check=True, capture_output=True
+        )
 
     def start(self) -> None:
         subprocess.run(["docker", "start", self.container], check=True, capture_output=True)
